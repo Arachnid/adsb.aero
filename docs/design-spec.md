@@ -335,13 +335,13 @@ The compose file becomes the dev config; cloud deploys use Helm charts or Terraf
 ## Initial implementation order
 
 1. **Repo skeleton + tooling**: project structure, ruff/mypy/eslint/prettier/sqlfluff configs, pre-commit hooks, CI pipeline with coverage reporting, Docker Compose with Postgres+PostGIS.
-2. **Schema + reference data**: Postgres schema, Doc 8643 loader (including the type → emitter category mapping), airports loader, airspace loader. Verify joinability and indexing.
-3. **Ingestion pipeline (batch only, no staging)**: tarball download, parse, split into flights, simplify, synthesize emitter category, write to flights. Backfill 30 days of UK data as proof-of-concept.
-4. **Add staging_flights**: refactor ingestion so staging rows feed the same input pipeline as new tarball points. Re-run the backfill.
-5. **API v1**: query endpoint with the JSON DSL, the auxiliary endpoints. asyncpg + FastAPI + Pydantic.
-6. **Frontend v1**: map, basic query builder (bbox + time + emitter-category filters), results plotting with paging.
-7. **Frontend v2**: polygon drawing, multi-region queries, radius-from-airfield pickers.
-8. **ERA5 + on-demand QNH correction**: pressure data fetch, on-demand correction in the query layer for altitude-based predicates and for display.
+2. **Schema + Python DB tooling**: Postgres schema with pg_partman, Alembic migrations, asyncpg connection pool, Pydantic settings. No reference data tables yet.
+3. **Ingestion pipeline**: tarball download, parse, split into flights, simplify, synthesize emitter category, write to `flights`. Staging flights included from the start — in-progress flights feed back into the next batch naturally. Backfill 30 days of UK data as proof-of-concept. `emitter_category` derived from Doc 8643 inline.
+4. **API v1**: query endpoint with the JSON DSL, flight detail and bulk-path endpoints, health check. Flight data only — no airspace or airport endpoints yet.
+5. **Frontend v1**: map, basic query builder (bbox + time + emitter-category filters), results plotting with paging. Flight data only — no airspace overlays or radius-from-airport pickers yet.
+6. **Reference data + enrichment**: Doc 8643 type designators (type → emitter category mapping table), OpenSky aircraft metadata, OurAirports airports, OpenAIP airspace. Each as its own loader with periodic-refresh scheduling. API endpoints for airspace and airport lookup. Frontend gains airspace overlay and radius-from-airport query support.
+7. **ERA5 + on-demand QNH correction**: pressure data fetch, on-demand correction in the query layer for altitude-based predicates and for display.
+8. **Frontend v2**: polygon drawing, multi-region queries, full radius-from-airfield pickers.
 9. **Operational stack**: monitoring, alerting, runbooks.
 10. **Scale up**: ingest whole-world data, validate performance, tune.
 11. **Future**: VFR/IFR classification (separate column or table), streaming ingest, public launch, hardening.

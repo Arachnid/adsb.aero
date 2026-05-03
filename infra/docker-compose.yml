@@ -1,6 +1,7 @@
 services:
   postgres:
-    image: postgis/postgis:17-3.5
+    build: ./postgres
+    image: adsb-postgres:latest
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-adsb}

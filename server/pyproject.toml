@@ -15,6 +15,8 @@ dependencies = [
     "numpy>=2.1",
     "orjson>=3.10",
     "redis>=5.2",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
@@ -52,11 +54,13 @@ python_version = "3.12"
 exclude = ["tests/"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg.*", "dramatiq.*", "shapely.*", "testcontainers.*"]
+module = ["asyncpg.*", "dramatiq.*", "shapely.*", "testcontainers.*", "alembic.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 addopts = "--cov=adsb_server --cov-report=term-missing --cov-fail-under=80"
 

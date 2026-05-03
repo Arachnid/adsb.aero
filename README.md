@@ -45,12 +45,12 @@ cd web && pnpm e2e
 ## Implementation status
 
 - [x] Step 1: Repo skeleton + tooling
-- [ ] Step 2: Schema + reference data
-- [ ] Step 3: Ingestion pipeline (batch, no staging)
-- [ ] Step 4: Staging flights
-- [ ] Step 5: API v1
-- [ ] Step 6: Frontend v1
-- [ ] Step 7: Frontend v2
-- [ ] Step 8: ERA5 + QNH correction
+- [x] Step 2: Schema + Python DB tooling
+- [ ] Step 3: Ingestion pipeline (batch + staging)
+- [ ] Step 4: API v1 (flight data)
+- [ ] Step 5: Frontend v1 (flight data)
+- [ ] Step 6: Reference data + enrichment (Doc 8643, aircraft metadata, airports, airspace)
+- [ ] Step 7: ERA5 + QNH correction
+- [ ] Step 8: Frontend v2
 - [ ] Step 9: Operational stack
 - [ ] Step 10: Scale up
