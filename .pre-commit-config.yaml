@@ -1,0 +1,56 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        files: ^server/
+      - id: ruff-format
+        files: ^server/
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        files: ^server/adsb_server/
+        args: ["--strict"]
+        additional_dependencies:
+          - "pydantic>=2.9"
+          - "fastapi>=0.115"
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        files: ^web/
+        types_or: [ts, tsx, javascript, jsx, json, yaml, css]
+
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.15.0
+    hooks:
+      - id: eslint
+        files: ^web/src/
+        types: [ts, tsx]
+        args: ["--fix"]
+
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 3.3.0
+    hooks:
+      - id: sqlfluff-lint
+        files: \.sql$
+      - id: sqlfluff-fix
+        files: \.sql$

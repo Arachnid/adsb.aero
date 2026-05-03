@@ -1,0 +1,65 @@
+[project]
+name = "adsb-server"
+version = "0.1.0"
+description = "ADS-B historical query platform — server (ingestion + API)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "asyncpg>=0.30",
+    "dramatiq[redis]>=1.17",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.28",
+    "shapely>=2.0",
+    "numpy>=2.1",
+    "orjson>=3.10",
+    "redis>=5.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "testcontainers[postgres]>=4.9",
+    "types-redis>=4.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["adsb_server"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "TCH", "RUF"]
+ignore = ["N999"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+exclude = ["tests/"]
+
+[[tool.mypy.overrides]]
+module = ["asyncpg.*", "dramatiq.*", "shapely.*", "testcontainers.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=adsb_server --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["adsb_server"]
+omit = ["tests/*"]

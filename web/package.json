@@ -1,0 +1,47 @@
+{
+  "name": "adsb-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "e2e": "playwright test",
+    "lint": "eslint src",
+    "format": "prettier --write src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deck.gl/core": "^9.1",
+    "@deck.gl/layers": "^9.1",
+    "@deck.gl/react": "^9.1",
+    "@tanstack/react-query": "^5.62",
+    "maplibre-gl": "^5.0",
+    "react": "^19.0",
+    "react-dom": "^19.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15",
+    "@playwright/test": "^1.49",
+    "@types/react": "^19.0",
+    "@types/react-dom": "^19.0",
+    "@typescript-eslint/eslint-plugin": "^8.16",
+    "@typescript-eslint/parser": "^8.16",
+    "@vitejs/plugin-react": "^4.3",
+    "@vitest/coverage-v8": "^2.1",
+    "autoprefixer": "^10.4",
+    "eslint": "^9.15",
+    "eslint-config-prettier": "^9.1",
+    "eslint-plugin-react-hooks": "^5.0",
+    "jsdom": "^25.0",
+    "postcss": "^8.4",
+    "prettier": "^3.4",
+    "tailwindcss": "^3.4",
+    "typescript": "^5.7",
+    "vite": "^6.0",
+    "vitest": "^2.1"
+  }
+}
