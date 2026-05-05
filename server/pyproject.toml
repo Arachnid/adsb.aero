@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings>=2.6",
     "uvicorn[standard]>=0.32",
     "httpx>=0.28",
+    "pyproj>=3.6",
     "shapely>=2.0",
     "numpy>=2.1",
     "orjson>=3.10",
@@ -54,7 +55,7 @@ python_version = "3.12"
 exclude = ["tests/"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg.*", "dramatiq.*", "shapely.*", "testcontainers.*", "alembic.*"]
+module = ["asyncpg.*", "dramatiq.*", "pyproj.*", "shapely.*", "testcontainers.*", "alembic.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

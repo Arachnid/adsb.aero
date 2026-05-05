@@ -26,6 +26,8 @@
   "devDependencies": {
     "@eslint/js": "^9.15",
     "@playwright/test": "^1.49",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.0",
     "@types/react-dom": "^19.0",
     "@typescript-eslint/eslint-plugin": "^8.16",
@@ -36,6 +38,7 @@
     "eslint": "^9.15",
     "eslint-config-prettier": "^9.1",
     "eslint-plugin-react-hooks": "^5.0",
+    "globals": "^17.6.0",
     "jsdom": "^25.0",
     "postcss": "^8.4",
     "prettier": "^3.4",

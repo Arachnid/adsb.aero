@@ -9,6 +9,7 @@ Create Date: 2026-05-03
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "0001"
@@ -43,6 +44,7 @@ def upgrade() -> None:
             path_geom         GEOMETRY(LINESTRINGZM, 4326)  NOT NULL,
             path_tracks       SMALLINT[]                    NOT NULL DEFAULT '{}',
             squawk_runs       JSONB                         NOT NULL DEFAULT '[]',
+            raw_point_count   INTEGER                       NOT NULL DEFAULT 0,
             ingest_batch_date DATE                          NOT NULL,
             PRIMARY KEY (icao24, start_ts)
         ) PARTITION BY RANGE (start_ts)
