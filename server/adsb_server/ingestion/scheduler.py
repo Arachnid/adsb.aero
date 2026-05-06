@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import shutil
 from datetime import date
 from pathlib import Path  # noqa: TC003
 
@@ -21,6 +22,7 @@ _TAG_PATTERN = re.compile(r"^v(\d{4})\.(\d{2})\.(\d{2})-planes-readsb-prod-\d+$"
 
 # Default timeout for HTTP requests (seconds)
 _HTTP_TIMEOUT = 60.0
+_GITHUB_RELEASES_PER_PAGE = 100
 
 
 def _tag_to_date(tag: str) -> date | None:
@@ -37,12 +39,15 @@ def _tag_to_date(tag: str) -> date | None:
 async def _get_releases(
     client: httpx.AsyncClient,
     year: int,
+    page: int = 1,
 ) -> list[dict[str, object]]:
-    """Fetch up to 100 releases from the GitHub API for the given year's repo."""
+    """Fetch one page of releases from the GitHub API for the given year's repo."""
     repo = _REPO_TEMPLATE.format(year=year)
     url = f"{_GITHUB_API_BASE}/repos/{repo}/releases"
     try:
-        resp = await client.get(url, params={"per_page": 100})
+        resp = await client.get(
+            url, params={"per_page": _GITHUB_RELEASES_PER_PAGE, "page": page}
+        )
         resp.raise_for_status()
         result: list[dict[str, object]] = resp.json()
         return result
@@ -132,6 +137,7 @@ async def _download_and_process_release(
     try:
         count = await run_batch(conn, dest_dir, batch_date)
         logger.info("Batch %s: %d flights ingested", batch_date_str, count)
+        shutil.rmtree(dest_dir, ignore_errors=True)
     except Exception:
         logger.error("Batch %s failed", batch_date_str, exc_info=True)
         await conn.execute(
@@ -151,6 +157,8 @@ async def check_and_run_new_batches(
     """
     Query the GitHub API for new adsb.lol releases and process any unprocessed ones.
     Checks current year and previous year (to handle year boundaries).
+    Paginates through releases (newest-first) until a processed batch is found,
+    then ingests all discovered batches oldest-first.
     """
     today = date.today()
     years_to_check = [today.year, today.year - 1]
@@ -161,17 +169,35 @@ async def check_and_run_new_batches(
         headers={"Accept": "application/vnd.github+json"},
     ) as client:
         for year in years_to_check:
-            releases = await _get_releases(client, year)
-            for release in releases:
-                tag: str = str(release.get("tag_name", ""))
-                batch_date = _tag_to_date(tag)
-                if batch_date is None:
-                    continue
+            to_process: list[tuple[str, date]] = []
+            page = 1
+            stop = False
 
-                if await _is_batch_already_processed(conn, batch_date):
-                    logger.debug("Batch %s already processed, skipping", batch_date)
-                    continue
+            while not stop:
+                releases = await _get_releases(client, year, page=page)
+                if not releases:
+                    break
 
+                for release in releases:
+                    tag: str = str(release.get("tag_name", ""))
+                    batch_date = _tag_to_date(tag)
+                    if batch_date is None:
+                        continue
+
+                    if await _is_batch_already_processed(conn, batch_date):
+                        logger.debug("Batch %s already processed, stopping scan", batch_date)
+                        stop = True
+                        break
+
+                    to_process.append((tag, batch_date))
+
+                if len(releases) < _GITHUB_RELEASES_PER_PAGE:
+                    break
+
+                page += 1
+
+            to_process.sort(key=lambda item: item[1])
+            for tag, batch_date in to_process:
                 logger.info("New batch found: %s (tag=%s)", batch_date, tag)
                 await _download_and_process_release(
                     conn, client, year, tag, batch_date, cache_dir

@@ -105,6 +105,18 @@ class TestGetReleases:
         url = client.get.call_args[0][0]
         assert "2025" in url
 
+    async def test_passes_page_number_to_api(self) -> None:
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = []
+        client = MagicMock()
+        client.get = AsyncMock(return_value=resp)
+
+        await _get_releases(client, 2025, page=3)
+
+        params: dict[str, object] = client.get.call_args[1]["params"]
+        assert params["page"] == 3
+
     async def test_returns_empty_list_on_http_error(self) -> None:
         client = MagicMock()
         client.get = AsyncMock(side_effect=httpx.HTTPError("connection refused"))
@@ -348,6 +360,52 @@ class TestDownloadAndProcessRelease:
         call_url = mock_dl.call_args[0][1]
         assert "good.tar.aa" in call_url
 
+    async def test_deletes_download_dir_after_successful_ingest(
+        self, tmp_path: Path
+    ) -> None:
+        dest_dir = tmp_path / "2025-04-01"
+        dest_dir.mkdir()
+        (dest_dir / "2025-04-01.tar.aa").write_bytes(b"x" * 10)
+
+        client = _release_client(_SAMPLE_RELEASE)
+        conn = AsyncMock()
+
+        with (
+            patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()),
+            patch(
+                "adsb_server.ingestion.scheduler.run_batch",
+                new=AsyncMock(return_value=3),
+            ),
+        ):
+            await _download_and_process_release(
+                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
+            )
+
+        assert not dest_dir.exists()
+
+    async def test_keeps_download_dir_after_failed_ingest(
+        self, tmp_path: Path
+    ) -> None:
+        dest_dir = tmp_path / "2025-04-01"
+        dest_dir.mkdir()
+        (dest_dir / "2025-04-01.tar.aa").write_bytes(b"x" * 10)
+
+        client = _release_client(_SAMPLE_RELEASE)
+        conn = AsyncMock()
+
+        with (
+            patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()),
+            patch(
+                "adsb_server.ingestion.scheduler.run_batch",
+                new=AsyncMock(side_effect=RuntimeError("db error")),
+            ),
+        ):
+            await _download_and_process_release(
+                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
+            )
+
+        assert dest_dir.exists()
+
     async def test_run_batch_failure_marks_batch_failed(
         self, tmp_path: Path
     ) -> None:
@@ -464,6 +522,136 @@ class TestCheckAndRunNewBatches:
             await check_and_run_new_batches(AsyncMock(), tmp_path)
 
         mock_dapr.assert_not_called()
+
+    async def test_fetches_second_page_when_first_page_is_full(
+        self, tmp_path: Path
+    ) -> None:
+        """A release that only appears on page 2 is discovered and processed."""
+        page1 = [{"tag_name": "not-valid"} for _ in range(100)]  # full page, no matches
+        page2 = [{"tag_name": _SAMPLE_TAG}]  # valid unprocessed release
+
+        pages_fetched: list[int] = []
+
+        async def mock_get_releases(
+            client: object, year: int, page: int = 1
+        ) -> list[dict[str, object]]:
+            pages_fetched.append(page)
+            return {1: page1, 2: page2}.get(page, [])  # type: ignore[return-value]
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_releases",
+                side_effect=mock_get_releases,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._is_batch_already_processed",
+                new=AsyncMock(return_value=False),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                new=AsyncMock(),
+            ) as mock_dapr,
+        ):
+            await check_and_run_new_batches(AsyncMock(), tmp_path)
+
+        assert any(p == 2 for p in pages_fetched), "page 2 was never fetched"
+        assert mock_dapr.call_count >= 1, "release on page 2 was not processed"
+
+    async def test_stops_fetching_pages_on_processed_batch(
+        self, tmp_path: Path
+    ) -> None:
+        """Once a processed batch is found on page 2, page 3 is never requested."""
+        page1 = [{"tag_name": "not-valid"} for _ in range(100)]
+        page2 = [{"tag_name": _SAMPLE_TAG}]  # valid but already processed
+
+        pages_fetched: list[int] = []
+
+        async def mock_get_releases(
+            client: object, year: int, page: int = 1
+        ) -> list[dict[str, object]]:
+            pages_fetched.append(page)
+            return {1: page1, 2: page2}.get(  # type: ignore[return-value]
+                page, [{"tag_name": "v2025.03.31-planes-readsb-prod-0"}]
+            )
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_releases",
+                side_effect=mock_get_releases,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._is_batch_already_processed",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                new=AsyncMock(),
+            ) as mock_dapr,
+        ):
+            await check_and_run_new_batches(AsyncMock(), tmp_path)
+
+        assert any(p == 2 for p in pages_fetched), "page 2 was never fetched"
+        assert not any(p >= 3 for p in pages_fetched), "page 3 should not have been fetched"
+        mock_dapr.assert_not_called()
+
+    async def test_processes_in_ascending_date_order(
+        self, tmp_path: Path
+    ) -> None:
+        """Unprocessed releases are ingested oldest-first regardless of API sort order."""
+        # GitHub returns newest-first
+        releases: list[dict[str, object]] = [
+            {"tag_name": "v2025.04.03-planes-readsb-prod-0"},
+            {"tag_name": "v2025.04.02-planes-readsb-prod-0"},
+            {"tag_name": "v2025.04.01-planes-readsb-prod-0"},
+        ]
+
+        processed_dates: list[date] = []
+
+        async def mock_dapr(
+            conn: object,
+            client: object,
+            year: int,
+            tag: str,
+            batch_date: date,
+            cache_dir: object,
+        ) -> None:
+            processed_dates.append(batch_date)
+
+        async def mock_get_releases(
+            client: object, year: int, page: int = 1
+        ) -> list[dict[str, object]]:
+            return releases if year == 2025 and page == 1 else []
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_releases",
+                side_effect=mock_get_releases,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._is_batch_already_processed",
+                new=AsyncMock(return_value=False),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                side_effect=mock_dapr,
+            ),
+        ):
+            await check_and_run_new_batches(AsyncMock(), tmp_path)
+
+        assert len(processed_dates) == 3
+        assert processed_dates == sorted(processed_dates)
 
     async def test_checks_two_years(self, tmp_path: Path) -> None:
         get_releases_mock = AsyncMock(return_value=[])

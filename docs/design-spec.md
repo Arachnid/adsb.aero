@@ -318,7 +318,7 @@ adsb-aero/
 - **Logs**: stdout from each container, scraped by Loki, queryable via Grafana.
 - **Errors**: Sentry SDK in both API and ingestion code. Free tier sufficient.
 - **Secrets**: `.env` files (gitignored) for now. Migrate to `sops` if collaborators are added.
-- **CI/CD**: GitHub Actions builds Docker images, pushes to GitHub Container Registry. Deployment to OVH is `git pull && docker compose pull && docker compose up -d` either manually or via a webhook. No Kubernetes.
+- **CI/CD**: GitHub Actions builds Docker images, pushes to GitHub Container Registry. Deployment to OVH is `git pull && docker compose -f infra/docker-compose.yml pull && docker compose -f infra/docker-compose.yml up -d` (always run from the project root so Docker Compose picks up `.env`) either manually or via a webhook. No Kubernetes.
 - **Backups and DR**: handled at infrastructure level via OVHcloud. Out of scope for this spec.
 
 ## Cloud migration path

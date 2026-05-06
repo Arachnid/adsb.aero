@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,6 +14,9 @@ class Settings(BaseSettings):
     postgres_password: str = ""
 
     redis_url: str = "redis://localhost:6379"
+
+    scheduler_cache_dir: Path = Path("/data/cache")
+    scheduler_interval_seconds: int = 1800
 
     @property
     def asyncpg_dsn(self) -> str:

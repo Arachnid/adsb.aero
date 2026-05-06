@@ -13,9 +13,13 @@ See [docs/design-spec.md](docs/design-spec.md) for full architectural decisions.
 
 ## Quick start
 
+Always run `docker compose` from the **project root** so that `.env` is picked up automatically:
+
 ```bash
 cp .env.example .env          # fill in POSTGRES_PASSWORD
 docker compose -f infra/docker-compose.yml up -d
+# Starts: postgres, redis, prometheus, grafana, loki, and the ingestion scheduler.
+# The scheduler polls adsb.lol releases every 30 minutes and ingests new days automatically.
 
 # Server (dev)
 cd server
