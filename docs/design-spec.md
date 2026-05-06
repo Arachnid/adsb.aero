@@ -121,7 +121,7 @@ Each Dramatiq task processes one release tarball. The job is structured as a map
 
 **Map phase (parallel):**
 
-Workers stream-process the input, decompressing the tarball and unpacking staging blobs in parallel. Each input point is enriched (drop ground points, apply bbox filter, leave altitudes as pressure altitudes, synthesize emitter category from Doc 8643 if missing) and emitted keyed by `icao24`. Staging points and tarball points are not distinguished downstream — they feed the same stream and get sorted together by timestamp.
+Workers stream-process the input, decompressing the tarball and unpacking staging blobs in parallel. Each input point is enriched (apply bbox filter, leave altitudes as pressure altitudes, synthesize emitter category from Doc 8643 if missing) and emitted keyed by `icao24`. Ground points (where `alt_baro` is `"ground"` or null) are **not** dropped here — they carry `new_leg` flags from readsb that the splitter needs to detect flight boundaries. They are excluded from the finalised geometry in the reduce phase. Staging points and tarball points are not distinguished downstream — they feed the same stream and get sorted together by timestamp.
 
 **Shuffle:**
 
@@ -129,12 +129,13 @@ Points are partitioned by `icao24` so that one reducer sees the entire timeline 
 
 **Reduce phase (parallel, one task per aircraft):**
 
-For each aircraft, walk the time-sorted points and split into flights using the gap-detection state machine:
+For each aircraft, walk the time-sorted points and split into flights using the `new_leg` flag emitted by readsb:
 
-- Start a new flight at the first point.
-- For each subsequent point, check the gap from the previous point. If the time gap is ≥10 minutes OR the spatial gap is implausibly large (e.g. >100nm — accommodating an aircraft that landed, was towed/transported, and took off again under the same icao24), close the current flight and start a new one.
+- readsb sets `new_leg=True` (flags bit 1) on the first point of each new leg — typically a ground-roll point at the start of a new departure. This captures time gaps, spatial discontinuities, and manual leg boundaries without re-implementing readsb's heuristics.
+- Ground-level points (where `alt_baro` is null) are included in the point stream so that `new_leg` flags on those points are visible to the splitter. When building the finalised geometry, ground points are excluded — `start_ts`/`end_ts` and vertex positions are derived from airborne points only.
 - A squawk change does *not* end a flight. It contributes a new entry to the flight's `squawk_runs` array.
-- A type change is treated as a new flight (it implies the icao24 was reassigned to a different airframe, which is rare but happens).
+
+Each finalised flight segment is simplified with TD-TR + altitude pass before geometry storage. The `raw_point_count` column records the pre-simplification airborne point count.
 
 Each flight's classification as "in progress" vs "finalisable" is a property of where its last point falls in time:
 

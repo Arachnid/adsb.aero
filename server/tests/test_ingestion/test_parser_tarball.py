@@ -211,12 +211,13 @@ class TestParseTraceJsonEdgeCases:
             "icao": "aabbcc",
             "timestamp": 0.0,
             "trace": [
-                [0.0, 51.5, -0.1, [], None, None, 0, None, None],  # alt_baro=[] → skipped
+                [0.0, 51.5, -0.1, [], None, None, 0, None, None],  # alt_baro=[] → None
                 [1.0, 51.5, -0.1, 35000.0, None, None, 0, None, None],  # valid
             ],
         }
         _, points = _parse_trace_json(data)
-        assert len(points) == 1
+        assert len(points) == 2
+        assert points[0].alt_baro is None
 
     def test_invalid_flags_treated_as_zero(self) -> None:
         """Non-integer flags field → treated as 0, new_leg=False."""

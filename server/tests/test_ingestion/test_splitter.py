@@ -96,15 +96,13 @@ class TestInProgress:
         assert len(finalized) == 0
 
     def test_finalized_flight(self) -> None:
-        """Last point 20 min before cutoff → finalized, in_progress is None."""
-        # Points end 20 minutes before cutoff
-        cutoff = 3000.0
-        # cutoff - 600 = 2400
-        # last_ts must be < 2400
+        """Last airborne point >1 h before cutoff → finalized, in_progress is None."""
+        # Airborne in-progress window is 1 h (3600 s); last_ts must be < cutoff - 3600.
+        cutoff = 10000.0
         points = [
             _make_point(ts=2000.0),
             _make_point(ts=2100.0),
-            _make_point(ts=2200.0),  # 2200 < 2400 → finalized
+            _make_point(ts=2200.0),  # 2200 < 10000 - 3600 = 6400 → finalized
         ]
         header = _make_header()
         finalized, in_progress = split_flights(header, points, cutoff)
@@ -257,6 +255,167 @@ class TestFinalizedFlightShape:
         # Second segment: [ts=1060, ts=1120] → 2 points → finalized
         assert len(finalized) == 1
         assert finalized[0].start_ts.timestamp() == 1060.0
+
+
+# ---------------------------------------------------------------------------
+# Ground point handling
+# ---------------------------------------------------------------------------
+
+
+class TestGroundPointHandling:
+    def test_new_leg_on_ground_yields_two_flights(self) -> None:
+        """Two airborne sequences separated by a ground new_leg point → 2 flights.
+
+        The ground point must not appear as a 0-altitude vertex in either flight,
+        and the second flight's start_ts must be the first airborne point after
+        the ground, not the ground point itself.
+        """
+        points = [
+            _make_point(ts=1000.0, alt_baro=35000.0),
+            _make_point(ts=1060.0, alt_baro=30000.0),
+            _make_point(ts=1120.0, alt_baro=None, new_leg=True),  # ground landing
+            _make_point(ts=1180.0, alt_baro=5000.0),
+            _make_point(ts=1240.0, alt_baro=10000.0),
+        ]
+        header = _make_header()
+        finalized, _ = split_flights(header, points, 10000.0)
+        assert len(finalized) == 2
+        assert finalized[1].start_ts.timestamp() == 1180.0
+        for flight in finalized:
+            assert all(v[2] > 0 for v in flight.vertices)
+
+    def test_segment_leading_ground_excluded_from_geometry(self) -> None:
+        """Segment whose first point is ground: geometry starts at first airborne point."""
+        points = [
+            _make_point(ts=1000.0, alt_baro=None),   # ground
+            _make_point(ts=1060.0, alt_baro=5000.0),
+            _make_point(ts=1120.0, alt_baro=10000.0),
+        ]
+        header = _make_header()
+        finalized, _ = split_flights(header, points, 10000.0)
+        assert len(finalized) == 1
+        f = finalized[0]
+        assert f.start_ts.timestamp() == 1060.0
+        assert all(v[2] > 0 for v in f.vertices)
+
+
+# ---------------------------------------------------------------------------
+# Gap-based splitting (fallback when readsb does not set new_leg)
+# ---------------------------------------------------------------------------
+
+
+class TestGapBasedSplitting:
+    # --- ground gap ---
+
+    def test_ground_gap_over_10min_splits(self) -> None:
+        """Two ground points >10 min apart → new leg, yielding two flights."""
+        points = [
+            _make_point(ts=1000.0, alt_baro=30000.0),
+            _make_point(ts=1060.0, alt_baro=20000.0),
+            _make_point(ts=1120.0, alt_baro=None),    # landing
+            _make_point(ts=1800.0, alt_baro=None),    # ground, 680 s > 10 min gap
+            _make_point(ts=1860.0, alt_baro=5000.0),
+            _make_point(ts=1920.0, alt_baro=10000.0),
+        ]
+        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        assert len(finalized) == 2
+
+    def test_ground_gap_at_threshold_no_split(self) -> None:
+        """Ground gap of exactly 600 s does NOT split (threshold is strict >)."""
+        points = [
+            _make_point(ts=1000.0, alt_baro=30000.0),
+            _make_point(ts=1060.0, alt_baro=None),    # landing
+            _make_point(ts=1660.0, alt_baro=None),    # ground, 600 s gap exactly
+            _make_point(ts=1720.0, alt_baro=5000.0),
+            _make_point(ts=1780.0, alt_baro=10000.0),
+        ]
+        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        assert len(finalized) == 1
+
+    # --- air gap ---
+
+    def test_air_gap_over_1h_splits(self) -> None:
+        """Two airborne points >1 h apart → new leg, yielding two flights."""
+        points = [
+            _make_point(ts=1000.0, alt_baro=35000.0),
+            _make_point(ts=1060.0, alt_baro=35000.0),
+            _make_point(ts=4700.0, alt_baro=35000.0),  # 3640 s > 1 h
+            _make_point(ts=4760.0, alt_baro=35000.0),
+        ]
+        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        assert len(finalized) == 2
+
+    def test_air_gap_at_threshold_no_split(self) -> None:
+        """Air gap of exactly 3600 s does NOT split (threshold is strict >)."""
+        points = [
+            _make_point(ts=1000.0, alt_baro=35000.0),
+            _make_point(ts=1060.0, alt_baro=35000.0),
+            _make_point(ts=4660.0, alt_baro=35000.0),  # 3600 s gap exactly
+            _make_point(ts=4720.0, alt_baro=35000.0),
+        ]
+        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        assert len(finalized) == 1
+
+    # --- 24 h duration cap ---
+
+    def test_24h_duration_cap_splits(self) -> None:
+        """Segment exceeding 24 h is forcibly split even when no individual gap is large."""
+        BASE = 1_000_000.0
+        HOUR = 3600.0
+        # 27 points, 1 h apart — gap is exactly 3600 s (not > 3600, so no air-gap split).
+        # At i=25 the duration from seg[0] = 25 h > 24 h → split.
+        # Seg 1: i=0..24 (25 pts).  Seg 2: i=25..26 (2 pts).
+        points = [_make_point(ts=BASE + i * HOUR, alt_baro=35000.0) for i in range(27)]
+        finalized, _ = split_flights(_make_header(), points, BASE + 100 * HOUR)
+        assert len(finalized) == 2
+        assert finalized[0].end_ts.timestamp() == BASE + 24 * HOUR
+        assert finalized[1].start_ts.timestamp() == BASE + 25 * HOUR
+
+    def test_24h_duration_cap_boundary_no_split(self) -> None:
+        """Segment of exactly 24 h is NOT split (cap triggers only when > 24 h)."""
+        BASE = 1_000_000.0
+        HOUR = 3600.0
+        # 25 points at 1-h intervals → last point at BASE+24 h, duration = 24 h exactly.
+        points = [_make_point(ts=BASE + i * HOUR, alt_baro=35000.0) for i in range(25)]
+        finalized, _ = split_flights(_make_header(), points, BASE + 100 * HOUR)
+        assert len(finalized) == 1
+
+    # --- in-progress window ---
+
+    def test_in_progress_window_airborne_uses_1h(self) -> None:
+        """Airborne last segment within 1 h of cutoff is kept as in-progress."""
+        cutoff = 10000.0
+        # Last point 1800 s (30 min) before cutoff — inside the 1-h window.
+        points = [
+            _make_point(ts=8000.0, alt_baro=35000.0),
+            _make_point(ts=8200.0, alt_baro=35000.0),
+        ]
+        _, in_progress = split_flights(_make_header(), points, cutoff)
+        assert in_progress is not None
+
+    def test_in_progress_window_airborne_over_1h_finalizes(self) -> None:
+        """Airborne last segment more than 1 h before cutoff is finalized."""
+        cutoff = 10000.0
+        # Last point 5400 s (90 min) before cutoff — outside the 1-h window.
+        points = [
+            _make_point(ts=4000.0, alt_baro=35000.0),
+            _make_point(ts=4600.0, alt_baro=35000.0),
+        ]
+        finalized, in_progress = split_flights(_make_header(), points, cutoff)
+        assert in_progress is None
+        assert len(finalized) == 1
+
+    def test_in_progress_window_ground_uses_10min(self) -> None:
+        """Ground-ending last segment uses the 10-min window, not the 1-h window."""
+        cutoff = 10000.0
+        # Last point is ground, 1200 s (20 min) before cutoff.
+        # 20 min > 10-min ground window → finalized, not in-progress.
+        points = [
+            _make_point(ts=8000.0, alt_baro=35000.0),
+            _make_point(ts=8800.0, alt_baro=None),  # ground landing
+        ]
+        _, in_progress = split_flights(_make_header(), points, cutoff)
+        assert in_progress is None
 
 
 # ---------------------------------------------------------------------------

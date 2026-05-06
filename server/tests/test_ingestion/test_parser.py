@@ -36,8 +36,8 @@ def _make_entry(
 
 
 class TestParseGroundPoints:
-    def test_parse_ground_points_skipped(self) -> None:
-        """Points with alt_baro='ground' should be excluded."""
+    def test_parse_ground_alt_gives_none(self) -> None:
+        """Points with alt_baro='ground' are included with alt_baro=None."""
         data = _make_trace(
             trace_entries=[
                 _make_entry(alt_baro="ground"),
@@ -45,11 +45,12 @@ class TestParseGroundPoints:
             ]
         )
         _header, points = _parse_trace_json(data)
-        assert len(points) == 1
-        assert points[0].alt_baro == 10000.0
+        assert len(points) == 2
+        assert points[0].alt_baro is None
+        assert points[1].alt_baro == 10000.0
 
-    def test_parse_null_alt_skipped(self) -> None:
-        """Points with alt_baro=null should be excluded."""
+    def test_parse_null_alt_gives_none(self) -> None:
+        """Points with alt_baro=null are included with alt_baro=None."""
         data = _make_trace(
             trace_entries=[
                 _make_entry(alt_baro=None),
@@ -57,11 +58,12 @@ class TestParseGroundPoints:
             ]
         )
         _header, points = _parse_trace_json(data)
-        assert len(points) == 1
-        assert points[0].alt_baro == 20000.0
+        assert len(points) == 2
+        assert points[0].alt_baro is None
+        assert points[1].alt_baro == 20000.0
 
-    def test_parse_ground_string_excluded(self) -> None:
-        """Any string alt_baro value should result in the point being excluded."""
+    def test_parse_string_alt_gives_none(self) -> None:
+        """Any unrecognised string alt_baro is parsed to None but point is kept."""
         data = _make_trace(
             trace_entries=[
                 _make_entry(alt_baro="ground"),
@@ -70,7 +72,30 @@ class TestParseGroundPoints:
             ]
         )
         _header, points = _parse_trace_json(data)
-        assert len(points) == 1
+        assert len(points) == 3
+        assert points[0].alt_baro is None
+        assert points[1].alt_baro is None
+        assert points[2].alt_baro == 5000.0
+
+
+class TestGroundPointNewLeg:
+    def test_ground_point_with_new_leg_preserved(self) -> None:
+        """A ground point that carries new_leg=True must reach the splitter.
+
+        readsb emits new_leg on the first point of a new leg, which is typically
+        a ground-roll point.  Silently dropping it here destroys the split signal.
+        """
+        data = _make_trace(
+            trace_entries=[
+                _make_entry(offset=0.0, alt_baro=35000.0),
+                _make_entry(offset=60.0, alt_baro="ground", flags=2),  # new_leg on ground
+                _make_entry(offset=120.0, alt_baro=5000.0),
+            ]
+        )
+        _, points = _parse_trace_json(data)
+        assert len(points) == 3
+        assert points[1].alt_baro is None
+        assert points[1].new_leg is True
 
 
 class TestParseFlagFields:

@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 import logging
+import os
+import time as _time
+from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, date, datetime, time
 from pathlib import Path  # noqa: TC003
+from typing import Any
 
 import asyncpg  # noqa: TC002
 
 from adsb_server.geometry.wkt import linestring_zm, point_zm
-from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint
-from adsb_server.ingestion.parser import stream_tarball
+from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
+from adsb_server.ingestion.parser import count_traces, stream_tarball
 from adsb_server.ingestion.splitter import split_flights
 
 logger = logging.getLogger(__name__)
+
+# Traces dispatched to the process pool per asyncio gather cycle.
+# Large enough to keep all workers busy; small enough that the event loop
+# remains responsive and memory stays bounded.
+_CHUNK_SIZE = 256
 
 _UPSERT_FLIGHT_SQL = """
 INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
@@ -102,28 +112,34 @@ def _flight_to_params(
     )
 
 
-async def _write_flight(
-    conn: asyncpg.Connection,    flight: FinalizedFlight,
-    batch_date: date,
-) -> None:
-    """Write a single finalized flight to the database."""
-    params = _flight_to_params(flight, batch_date)
-    await conn.execute(_UPSERT_FLIGHT_SQL, *params)
+def _process_trace(
+    header: TraceHeader,
+    all_points: list[RawPoint],
+    cutoff_ts: float,
+) -> tuple[list[FinalizedFlight], RawFlight | None]:
+    """CPU-bound per-trace work executed in a worker process."""
+    return split_flights(header, all_points, cutoff_ts)
 
 
 async def run_batch(
-    conn: asyncpg.Connection,    tarball_path: Path,
+    conn: asyncpg.Connection,
+    tarball_path: Path,
     batch_date: date,
     bbox: tuple[float, float, float, float] | None = None,
+    workers: int | None = None,
 ) -> int:
     """
     Process a single day's tarball and write flights to the database.
+
+    Trace processing (split + simplify) is parallelised across a
+    ProcessPoolExecutor; DB writes are batched with executemany.
 
     Args:
         conn: asyncpg connection
         tarball_path: path to a .tar.gz file or directory containing .tar.XX parts
         batch_date: the date this batch corresponds to
         bbox: optional (min_lon, min_lat, max_lon, max_lat) filter
+        workers: worker processes for CPU work (default: os.cpu_count())
 
     Returns:
         Number of flights finalized.
@@ -147,7 +163,6 @@ async def run_batch(
         "SELECT icao24, start_ts, last_ts, points FROM staging_flights"
     )
 
-    # Deserialize staging points: dict keyed by icao24
     staging: dict[str, list[RawPoint]] = {}
     for row in staging_rows:
         icao24: str = row["icao24"]
@@ -158,67 +173,134 @@ async def run_batch(
         else:
             staging[icao24] = pts
 
-    # Compute cutoff_ts: midnight UTC at end of batch_date
     cutoff_dt = datetime.combine(batch_date, time.max, tzinfo=UTC)
     cutoff_ts = cutoff_dt.timestamp()
 
+    n_workers = workers if workers is not None and workers > 0 else (os.cpu_count() or 1)
+    loop = asyncio.get_running_loop()
+
+    total_traces = count_traces(tarball_path)
+    if total_traces:
+        logger.info("Found %d trace files; using %d workers", total_traces, n_workers)
+    else:
+        logger.info("Trace count unknown (split archive); using %d workers", n_workers)
+
     flight_count = 0
+    traces_done = 0
+    t_start = _time.monotonic()
     new_staging: dict[str, RawFlight] = {}
+    pending: list[tuple[TraceHeader, list[RawPoint]]] = []
 
-    # Stream tarball
-    for trace_header, new_points in stream_tarball(tarball_path):
-        icao24 = trace_header.icao24
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
 
-        # Apply bbox filter
-        if bbox is not None:
-            min_lon, min_lat, max_lon, max_lat = bbox
-            new_points = [
-                p
-                for p in new_points
-                if min_lon <= p.lon <= max_lon and min_lat <= p.lat <= max_lat
+        async def _flush() -> None:
+            nonlocal flight_count, traces_done
+            if not pending:
+                return
+
+            futures = [
+                loop.run_in_executor(pool, _process_trace, h, pts, cutoff_ts)
+                for h, pts in pending
             ]
-            if not new_points:
-                continue
+            # return_exceptions=True keeps one bad trace from aborting the chunk
+            results: list[Any] = list(
+                await asyncio.gather(*futures, return_exceptions=True)
+            )
 
-        # Merge with staging points
-        existing_pts = staging.get(icao24, [])
-        if existing_pts:
-            merged = existing_pts + new_points
-            # Sort by ts and deduplicate
-            merged.sort(key=lambda p: p.ts)
-            deduped: list[RawPoint] = []
-            last_ts: float | None = None
-            for p in merged:
-                if p.ts != last_ts:
-                    deduped.append(p)
-                    last_ts = p.ts
-            all_points = deduped
-        else:
-            all_points = sorted(new_points, key=lambda p: p.ts)
+            params_batch: list[
+                tuple[
+                    str,
+                    str | None,
+                    str | None,
+                    str | None,
+                    datetime,
+                    datetime,
+                    str,
+                    str,
+                    str,
+                    list[int],
+                    str,
+                    int,
+                    date,
+                ]
+            ] = []
+            for result, (header, _) in zip(results, pending, strict=True):
+                if isinstance(result, BaseException):
+                    logger.error(
+                        "Failed to process trace %s: %s", header.icao24, result
+                    )
+                    continue
+                finalized: list[FinalizedFlight]
+                in_progress: RawFlight | None
+                finalized, in_progress = result
+                for flight in finalized:
+                    params_batch.append(_flight_to_params(flight, batch_date))
+                if in_progress is not None:
+                    new_staging[in_progress.icao24] = in_progress
 
-        if not all_points:
-            continue
+            if params_batch:
+                try:
+                    await conn.executemany(_UPSERT_FLIGHT_SQL, params_batch)
+                    flight_count += len(params_batch)
+                except Exception:
+                    logger.exception(
+                        "Failed to write batch of %d flights", len(params_batch)
+                    )
 
-        # Split into flights
-        finalized_flights, in_progress = split_flights(
-            header=trace_header,
-            points=all_points,
-            cutoff_ts=cutoff_ts,
-        )
-
-        # Write finalized flights
-        for flight in finalized_flights:
-            try:
-                await _write_flight(conn, flight, batch_date)
-                flight_count += 1
-            except Exception:
-                logger.exception(
-                    "Failed to write flight %s start=%s", flight.icao24, flight.start_ts
+            traces_done += len(pending)
+            elapsed = _time.monotonic() - t_start
+            rate = traces_done / (elapsed / 60.0) if elapsed > 0 else 0.0
+            if total_traces:
+                pct = 100.0 * traces_done / total_traces
+                logger.info(
+                    "%d/%d traces (%.0f%%) | %.0f traces/min | %d flights",
+                    traces_done, total_traces, pct, rate, flight_count,
+                )
+            else:
+                logger.info(
+                    "%d traces | %.0f traces/min | %d flights",
+                    traces_done, rate, flight_count,
                 )
 
-        # Track in-progress flight for staging
-        if in_progress is not None:
-            new_staging[icao24] = in_progress
+            pending.clear()
+
+        for trace_header, new_points in stream_tarball(tarball_path):
+            icao24 = trace_header.icao24
+
+            # Apply bbox filter
+            if bbox is not None:
+                min_lon, min_lat, max_lon, max_lat = bbox
+                new_points = [
+                    p
+                    for p in new_points
+                    if min_lon <= p.lon <= max_lon and min_lat <= p.lat <= max_lat
+                ]
+                if not new_points:
+                    continue
+
+            # Merge with staging points
+            existing_pts = staging.get(icao24, [])
+            if existing_pts:
+                merged = existing_pts + new_points
+                merged.sort(key=lambda p: p.ts)
+                deduped: list[RawPoint] = []
+                last_ts: float | None = None
+                for p in merged:
+                    if p.ts != last_ts:
+                        deduped.append(p)
+                        last_ts = p.ts
+                all_points = deduped
+            else:
+                all_points = sorted(new_points, key=lambda p: p.ts)
+
+            if not all_points:
+                continue
+
+            pending.append((trace_header, all_points))
+            if len(pending) >= _CHUNK_SIZE:
+                await _flush()
+
+        await _flush()  # drain remaining
 
     # Update staging table in a transaction
     async with conn.transaction():

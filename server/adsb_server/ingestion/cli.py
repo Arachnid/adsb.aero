@@ -74,8 +74,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=int,
-        default=1,
-        help="Number of workers (reserved for future use; currently ignored)",
+        default=None,
+        metavar="N",
+        help="Worker processes for CPU-bound trace processing (default: os.cpu_count())",
     )
     return parser.parse_args(argv)
 
@@ -98,6 +99,7 @@ async def _main(args: argparse.Namespace) -> int:
             tarball_path=args.tarball_path,
             batch_date=args.batch_date,
             bbox=args.bbox,
+            workers=args.workers,
         )
         print(f"Done: {count} flights finalized.", file=sys.stderr)
         return 0

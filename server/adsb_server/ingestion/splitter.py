@@ -17,8 +17,13 @@ from adsb_server.ingestion.models import (
 
 logger = logging.getLogger(__name__)
 
-# Seconds before cutoff within which a flight is considered in-progress
-_IN_PROGRESS_WINDOW = 600.0
+# Gap thresholds for fallback splitting when readsb doesn't set new_leg.
+# Ground-to-ground gap > 10 min and air-to-air gap > 1 h start a new segment.
+_GROUND_GAP_THRESHOLD = 600.0
+_AIR_GAP_THRESHOLD = 3600.0
+
+# A single segment may never exceed 24 h regardless of reported gaps.
+_MAX_SEGMENT_DURATION = 86400.0
 
 
 def interpolate_missing_values(points: list[RawPoint]) -> list[RawPoint]:
@@ -114,13 +119,14 @@ def _finalize_segment(
     Convert a list of RawPoints into a FinalizedFlight.
     Returns None if the segment has fewer than 2 points.
     """
-    if len(seg_points) < 2:
+    airborne = [p for p in seg_points if p.alt_baro is not None]
+    if len(airborne) < 2:
         return None
 
     callsign = _most_common_non_null([p.callsign for p in seg_points])
     emitter_category = _most_common_non_null([p.emitter_category for p in seg_points])
 
-    interp_points = interpolate_missing_values(seg_points)
+    interp_points = interpolate_missing_values(airborne)
     kept_indices = simplify_flight(interp_points)
 
     if len(kept_indices) < 2:
@@ -154,6 +160,23 @@ def _finalize_segment(
     )
 
 
+def _should_gap_split(prev: RawPoint, curr: RawPoint, seg_start_ts: float) -> bool:
+    """Return True if gap criteria require starting a new segment at curr."""
+    gap = curr.ts - prev.ts
+    if prev.alt_baro is None and curr.alt_baro is None and gap > _GROUND_GAP_THRESHOLD:
+        return True
+    if prev.alt_baro is not None and curr.alt_baro is not None and gap > _AIR_GAP_THRESHOLD:
+        return True
+    if curr.ts - seg_start_ts > _MAX_SEGMENT_DURATION:
+        return True
+    return False
+
+
+def _in_progress_window(seg: list[RawPoint]) -> float:
+    """In-progress retention window based on the last point's altitude state."""
+    return _GROUND_GAP_THRESHOLD if seg[-1].alt_baro is None else _AIR_GAP_THRESHOLD
+
+
 def split_flights(
     header: TraceHeader,
     points: list[RawPoint],  # sorted by ts, non-empty
@@ -173,7 +196,7 @@ def split_flights(
     current_seg: list[RawPoint] = [points[0]]
 
     for curr in points[1:]:
-        if curr.new_leg:
+        if curr.new_leg or _should_gap_split(current_seg[-1], curr, current_seg[0].ts):
             segments.append(current_seg)
             current_seg = [curr]
         else:
@@ -196,7 +219,7 @@ def split_flights(
         last_ts = seg[-1].ts
         is_last_segment = seg_idx == len(segments) - 1
 
-        if is_last_segment and last_ts >= cutoff_ts - _IN_PROGRESS_WINDOW:
+        if is_last_segment and last_ts >= cutoff_ts - _in_progress_window(seg):
             # This segment is in-progress
             callsign = _most_common_non_null([p.callsign for p in seg])
             emitter_category = _most_common_non_null([p.emitter_category for p in seg])

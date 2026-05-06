@@ -120,10 +120,6 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
 
         alt_baro = _parse_alt_baro(entry[3] if len(entry) > 3 else None)
 
-        # Skip ground and missing altitude points
-        if alt_baro is None:
-            continue
-
         # track at index 5
         track_raw = entry[5] if len(entry) > 5 else None
         track: float | None = None
@@ -197,6 +193,19 @@ class _ChainedStream(io.RawIOBase):
 
     def readable(self) -> bool:
         return True
+
+
+def count_traces(path: Path) -> int:
+    """
+    Return the number of trace files in a tarball without parsing their content.
+
+    Uses seeking mode ("r") on single-file tars so only headers are read.
+    Returns 0 for directory-based (split) archives — count is treated as unknown.
+    """
+    if not path.is_file():
+        return 0
+    with tarfile.open(path, "r") as tf:
+        return sum(1 for m in tf if _is_trace_member(m.name))
 
 
 def stream_tarball(path: Path) -> Iterator[tuple[TraceHeader, list[RawPoint]]]:

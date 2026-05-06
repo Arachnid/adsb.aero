@@ -44,7 +44,7 @@ class TestParseArgs:
         assert args.tarball_path == tar
         assert args.batch_date == date.today()
         assert args.bbox is None
-        assert args.workers == 1
+        assert args.workers is None
 
     def test_with_batch_date(self, tmp_path: Path) -> None:
         tar = tmp_path / "data.tar.gz"

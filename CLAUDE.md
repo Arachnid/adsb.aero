@@ -27,7 +27,7 @@ ADS-B historical query platform at adsb.aero. Map-based UI for querying flight t
 
 ## Docker
 
-`docker ps` suppresses output when stdout is not a TTY — pipe through `cat` to see results: `docker ps | cat`.
+All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) suppress tabular and interactive output when stdout is not a TTY. Always pipe through `cat`: `docker ps | cat`, `docker exec infra-postgres-1 psql ... | cat`, etc.
 
 ## Python environment
 
