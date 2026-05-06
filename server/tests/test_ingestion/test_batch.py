@@ -144,7 +144,9 @@ async def test_run_batch_idempotent_upsert(
     await run_batch(conn, tarball_dir, batch_date)
     await run_batch(conn, tarball_dir, batch_date)
 
-    rows = await conn.fetch("SELECT icao24 FROM flights WHERE icao24 = 'aabbcc'")
+    rows = await conn.fetch(
+        "SELECT icao24 FROM flights WHERE icao24 = 'aabbcc' AND ingest_batch_date = '2021-05-01'"
+    )
     assert len(rows) == 1
 
 
