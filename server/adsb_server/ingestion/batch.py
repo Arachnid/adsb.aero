@@ -205,15 +205,17 @@ async def run_batch(
     # Load all in-progress flights from DB
     staging_rows = await conn.fetch(
         """
-        SELECT icao24, callsign, emitter_category, squawk_runs,
+        SELECT icao24, callsign, icao_type, emitter_category, squawk_runs,
                ST_AsText(path_geom) AS path_wkt
         FROM flights WHERE completed = false
         """
     )
 
-    staging: dict[str, list[RawPoint]] = {}
+    # icao24 -> (icao_type, points); icao_type needed to finalize orphaned entries
+    staging: dict[str, tuple[str | None, list[RawPoint]]] = {}
     for row in staging_rows:
         icao24: str = row["icao24"]
+        icao_type: str | None = row["icao_type"]
         callsign: str | None = row["callsign"]
         emitter_category: str | None = row["emitter_category"]
         runs: list[tuple[float, str]] = [
@@ -229,9 +231,9 @@ async def run_batch(
             for x, y, z, m in _parse_linestring_zm(row["path_wkt"])
         ]
         if icao24 in staging:
-            staging[icao24].extend(pts)
+            staging[icao24] = (staging[icao24][0], staging[icao24][1] + pts)
         else:
-            staging[icao24] = pts
+            staging[icao24] = (icao_type, pts)
 
     cutoff_dt = datetime.combine(batch_date, time.max, tzinfo=UTC)
     cutoff_ts = cutoff_dt.timestamp()
@@ -324,8 +326,9 @@ async def run_batch(
                     continue
 
             # Merge with staging points
-            existing_pts = staging.get(icao24, [])
-            if existing_pts:
+            staging_entry = staging.pop(icao24, None)
+            if staging_entry is not None:
+                existing_pts = staging_entry[1]
                 merged = existing_pts + new_points
                 merged.sort(key=lambda p: p.ts)
                 deduped: list[RawPoint] = []
@@ -346,6 +349,17 @@ async def run_batch(
                 await _flush()
 
         await _flush()  # drain remaining
+
+        # Finalize staging entries not seen in this tarball. Their last point is
+        # older than the gap threshold relative to this batch's cutoff, so
+        # split_flights will finalize rather than carry them forward again.
+        for orphan_icao24, (orphan_icao_type, orphan_pts) in staging.items():
+            orphan_pts.sort(key=lambda p: p.ts)
+            header = TraceHeader(icao24=orphan_icao24, icao_type=orphan_icao_type)
+            pending.append((header, orphan_pts))
+            if len(pending) >= _CHUNK_SIZE:
+                await _flush()
+        await _flush()  # drain orphans
 
     # Mark batch as succeeded
     await conn.execute(

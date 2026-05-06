@@ -454,3 +454,52 @@ async def test_squawk_reconstructed_from_in_progress(
     squawk_codes = {r[1] for r in runs_2}
     assert "7700" in squawk_codes, "7700 from batch 1 should survive into finalised squawk_runs"
     assert "2000" in squawk_codes, "2000 from batch 2 should appear in finalised squawk_runs"
+
+
+@pytest.mark.asyncio
+async def test_orphaned_in_progress_finalized_by_next_batch(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+) -> None:
+    """
+    A flight left in-progress by batch 1 that does NOT appear in batch 2's tarball
+    should still be finalized by batch 2 (gap exceeds threshold relative to cutoff).
+    """
+    from adsb_server.ingestion.batch import run_batch
+
+    batch_date_1 = date(2021, 11, 1)
+    cutoff_ts_1 = 1635724800 + 86399  # end of 2021-11-01
+
+    near_entries: list[list[object]] = [
+        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
+        [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, None],
+    ]
+
+    tmp1 = tmp_path / "batch1"
+    tmp1.mkdir()
+    raw_buf = io.BytesIO()
+    with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
+        b = _make_trace_bytes("dd0001", base_ts=float(cutoff_ts_1 - 30), entries=near_entries)
+        ti = tarfile.TarInfo(name="traces/dd/trace_full_dd0001.json.gz")
+        ti.size = len(b)
+        tf.addfile(ti, io.BytesIO(b))
+    (tmp1 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
+
+    await run_batch(conn, tmp1, batch_date_1)
+
+    row = await conn.fetchrow("SELECT completed FROM flights WHERE icao24 = 'dd0001'")
+    assert row is not None
+    assert row["completed"] is False, "should be in-progress after batch 1"
+
+    # Batch 2: dd0001 is absent from the tarball entirely
+    batch_date_2 = date(2021, 11, 2)
+    tmp2 = tmp_path / "batch2"
+    tmp2.mkdir()
+    # Use a different aircraft so the tarball is non-empty but dd0001 is absent
+    tarball_dir = _make_tarball_dir(tmp2, ["ee0002"])
+
+    await run_batch(conn, tarball_dir, batch_date_2)
+
+    row = await conn.fetchrow("SELECT completed FROM flights WHERE icao24 = 'dd0001'")
+    assert row is not None
+    assert row["completed"] is True, "orphaned in-progress should be finalized by next batch"

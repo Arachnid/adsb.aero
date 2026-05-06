@@ -356,6 +356,25 @@ class TestGapBasedSplitting:
         finalized, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 1
 
+    # --- 24-hour duration cap ---
+
+    def test_24h_duration_cap_splits(self) -> None:
+        """A segment spanning >24 h is force-split regardless of gap size."""
+        # 27 hourly points: split fires at point 25 (25*3600 > 86400),
+        # leaving pts[25] and pts[26] as a second 2-point segment that can finalize.
+        step = 3600.0  # 1-point-per-hour, gap well under air threshold
+        pts = [_make_point(ts=float(i * step), alt_baro=35000.0) for i in range(27)]
+        finalized, _ = split_flights(_make_header(), pts, 999999.0)
+        assert len(finalized) >= 2, "25-hour span should produce at least two segments"
+
+    def test_24h_duration_cap_boundary_no_split(self) -> None:
+        """A segment just under 24 h is NOT split by the duration cap alone."""
+        step = 3600.0
+        pts = [_make_point(ts=float(i * step), alt_baro=35000.0) for i in range(24)]
+        # last point is at 23 * 3600 = 82800 s < 86400 s
+        finalized, _ = split_flights(_make_header(), pts, 999999.0)
+        assert len(finalized) == 1, "23-hour span should be a single segment"
+
     # --- in-progress window ---
 
     def test_in_progress_window_airborne_uses_1h(self) -> None:
