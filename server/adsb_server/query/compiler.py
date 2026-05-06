@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
 from typing import Any
 
 from adsb_server.query.models import (
     AndPredicate,
+    AnyGeometry,
     CallsignMatches,
+    CircleGeometry,
     Duration,
     EmitterCategory,
     EndsWithin,
@@ -18,16 +18,11 @@ from adsb_server.query.models import (
     Predicate,
     SpatialPredicateValue,
     StartsWithin,
+    TimeRange,
     TrajectoryDisjoint,
     TrajectoryIntersects,
     TrajectoryWithin,
 )
-
-_GEOJSON_TYPES = {
-    "Point", "MultiPoint", "LineString", "MultiLineString",
-    "Polygon", "MultiPolygon", "GeometryCollection", "Circle",
-}
-_TIME_RANGE_TYPE = "TimeRange"
 
 
 def _p(params: list[Any], val: Any) -> str:
@@ -36,18 +31,18 @@ def _p(params: list[Any], val: Any) -> str:
     return f"${len(params)}"
 
 
-def _compile_geometry_sql(geom: dict[str, Any], params: list[Any]) -> str:
+def _compile_geometry_sql(geom: AnyGeometry, params: list[Any]) -> str:
     """SQL expression for a geometry value (Circle extension or standard GeoJSON)."""
-    if geom.get("type") == "Circle":
-        lon_p = _p(params, geom["coordinates"][0])
-        lat_p = _p(params, geom["coordinates"][1])
-        radius_p = _p(params, geom["radius"])
+    if isinstance(geom, CircleGeometry):
+        lon_p = _p(params, geom.coordinates[0])
+        lat_p = _p(params, geom.coordinates[1])
+        radius_p = _p(params, geom.radius)
         return (
             f"ST_SetSRID(ST_Buffer("
             f"ST_SetSRID(ST_MakePoint({lon_p}, {lat_p}), 4326)::geography, "
             f"{radius_p})::geometry, 4326)"
         )
-    geom_p = _p(params, json.dumps(geom))
+    geom_p = _p(params, geom.model_dump_json())
     return f"ST_SetSRID(ST_GeomFromGeoJSON({geom_p}), 4326)"
 
 
@@ -66,38 +61,29 @@ def _compile_spatial_path(
     return sql
 
 
-def _compile_point_within(col: str, val: dict[str, Any], params: list[Any]) -> str:
+def _compile_point_within(col: str, val: AnyGeometry, params: list[Any]) -> str:
     """Compile a spatial 'within' check on a point column."""
-    if val.get("type") == "Circle":
-        lon_p = _p(params, val["coordinates"][0])
-        lat_p = _p(params, val["coordinates"][1])
-        radius_p = _p(params, val["radius"])
+    if isinstance(val, CircleGeometry):
+        lon_p = _p(params, val.coordinates[0])
+        lat_p = _p(params, val.coordinates[1])
+        radius_p = _p(params, val.radius)
         return (
             f"ST_DWithin({col}::geography, "
             f"ST_SetSRID(ST_MakePoint({lon_p}, {lat_p}), 4326)::geography, "
             f"{radius_p})"
         )
-    geom_p = _p(params, json.dumps(val))
+    geom_p = _p(params, val.model_dump_json())
     return f"ST_Within({col}, ST_SetSRID(ST_GeomFromGeoJSON({geom_p}), 4326))"
 
 
-def _compile_time_window(col: str, val: dict[str, Any], params: list[Any]) -> str:
-    """Compile a temporal 'within' check on a timestamp column.
-
-    val must have type=="TimeRange". from/to bounds are both optional.
-    """
-    if val.get("type") != _TIME_RANGE_TYPE:
-        raise ValueError(f"Expected type 'TimeRange', got {val.get('type')!r}")
+def _compile_time_window(col: str, val: TimeRange, params: list[Any]) -> str:
+    """Compile a temporal 'within' check on a timestamp column."""
     parts: list[str] = []
-    if val.get("from") is not None:
-        parts.append(f"{col} >= {_p(params, datetime.fromisoformat(val['from']))}")
-    if val.get("to") is not None:
-        parts.append(f"{col} < {_p(params, datetime.fromisoformat(val['to']))}")
+    if val.from_ is not None:
+        parts.append(f"{col} >= {_p(params, val.from_)}")
+    if val.to is not None:
+        parts.append(f"{col} < {_p(params, val.to)}")
     return " AND ".join(parts) if parts else "TRUE"
-
-
-def _is_geometry(val: dict[str, Any]) -> bool:
-    return val.get("type") in _GEOJSON_TYPES  # explicit whitelist; TimeRange is not geometry
 
 
 def compile_predicate(pred: Predicate, params: list[Any]) -> str:
@@ -113,15 +99,15 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> str:
 
     if isinstance(pred, StartsWithin):
         val = pred.starts_within
-        if _is_geometry(val):
-            return _compile_point_within("start_point", val, params)
-        return _compile_time_window("start_ts", val, params)
+        if isinstance(val, TimeRange):
+            return _compile_time_window("start_ts", val, params)
+        return _compile_point_within("start_point", val, params)
 
     if isinstance(pred, EndsWithin):
         val = pred.ends_within
-        if _is_geometry(val):
-            return _compile_point_within("end_point", val, params)
-        return _compile_time_window("end_ts", val, params)
+        if isinstance(val, TimeRange):
+            return _compile_time_window("end_ts", val, params)
+        return _compile_point_within("end_point", val, params)
 
     if isinstance(pred, IcaoType):
         types = _p(params, pred.icao_type)

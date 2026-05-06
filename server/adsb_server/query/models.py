@@ -5,9 +5,32 @@ from __future__ import annotations
 import base64
 import json
 from datetime import date, datetime
-from typing import Any, Union
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# Response geometry types
+# ---------------------------------------------------------------------------
+
+
+class GeoJSONPointZ(BaseModel):
+    """GeoJSON Point with a mandatory altitude component, as returned in flight position fields."""
+
+    type: Literal["Point"]
+    coordinates: tuple[float, float, float] = Field(
+        description="`[longitude, latitude, altitude_ft]`."
+    )
+
+
+class GeoJSONLineStringZ(BaseModel):
+    """GeoJSON LineString with a mandatory altitude on every vertex, as returned in path fields."""
+
+    type: Literal["LineString"]
+    coordinates: list[tuple[float, float, float]] = Field(
+        description="Sequence of `[longitude, latitude, altitude_ft]` vertices."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -16,30 +39,99 @@ from pydantic import BaseModel, Field
 
 
 class FlightSummary(BaseModel):
-    flight_id: str
-    icao24: str
-    callsign: str | None
-    icao_type: str | None
-    emitter_category: str | None
-    start_ts: datetime
-    end_ts: datetime
-    start_point: dict[str, Any]
-    end_point: dict[str, Any]
+    """Core identity and bounding timestamps/positions for a single flight leg."""
+
+    flight_id: str = Field(
+        description="Stable identifier: `<icao24>:<start_ts_utc>`. "
+        "Pass this to `GET /api/v1/flights/{flight_id}` to retrieve the full trajectory.",
+        examples=["aabbcc:2025-04-01T10:00:00Z"],
+    )
+    icao24: str = Field(
+        description="24-bit Mode S transponder address in lowercase hex.",
+        examples=["aabbcc"],
+    )
+    callsign: str | None = Field(
+        description="Most common callsign observed during the flight, or null if none was broadcast.",
+        examples=["BAW123"],
+    )
+    icao_type: str | None = Field(
+        description="ICAO aircraft type designator (e.g. `B738`, `A320`), or null if unknown.",
+        examples=["B738"],
+    )
+    emitter_category: str | None = Field(
+        description="ADS-B emitter category code (e.g. `A3` = large aircraft), or null if unknown.",
+        examples=["A3"],
+    )
+    start_ts: datetime = Field(
+        description="UTC timestamp of the first observed position in this leg."
+    )
+    end_ts: datetime = Field(
+        description="UTC timestamp of the last observed position in this leg."
+    )
+    start_point: GeoJSONPointZ = Field(
+        description="GeoJSON Point of the first observed position. "
+        "Coordinates are `[longitude, latitude, altitude_ft]`.",
+        examples=[{"type": "Point", "coordinates": [-0.1275, 51.5072, 35000.0]}],
+    )
+    end_point: GeoJSONPointZ = Field(
+        description="GeoJSON Point of the last observed position. "
+        "Coordinates are `[longitude, latitude, altitude_ft]`.",
+        examples=[{"type": "Point", "coordinates": [-2.2667, 53.4667, 35000.0]}],
+    )
 
 
 class FlightDetail(FlightSummary):
-    path: dict[str, Any]
-    timestamps: list[float]
-    path_tracks: list[int]
-    squawk_runs: list[list[Any]]
-    raw_point_count: int
-    ingest_batch_date: date
+    """Full trajectory detail for a single flight leg, extending FlightSummary."""
+
+    path: GeoJSONLineStringZ = Field(
+        description="Simplified flight path as a GeoJSON LineString. "
+        "Coordinates are `[longitude, latitude, altitude_ft]`. "
+        "Altitude is pressure altitude in feet (QNH correction not applied). "
+        "Ground-roll points are excluded.",
+        examples=[{
+            "type": "LineString",
+            "coordinates": [
+                [-0.1275, 51.5072, 35000.0],
+                [-1.2, 52.5, 36000.0],
+                [-2.2667, 53.4667, 35000.0],
+            ],
+        }],
+    )
+    timestamps: list[float] = Field(
+        description="Unix epoch seconds (UTC) for each vertex in `path.coordinates`. "
+        "Same length as `coordinates`.",
+        examples=[[1743501600.0, 1743505200.0, 1743508800.0]],
+    )
+    path_tracks: list[int] = Field(
+        description="Magnetic track (heading) in degrees 0–359 for each vertex in `path.coordinates`. "
+        "Same length as `coordinates`.",
+        examples=[[90, 315, 315]],
+    )
+    squawk_runs: list[tuple[float, str]] = Field(
+        description="Run-length encoding of transponder squawk codes. "
+        "Each entry is `[unix_timestamp, squawk_code]` and marks the start of a new code. "
+        "Forward-fill from each entry to the next to determine the code in effect at any point.",
+        examples=[[[1743501600.0, "1234"]]],
+    )
+    raw_point_count: int = Field(
+        description="Number of raw ADS-B messages ingested for this leg, "
+        "including ground-roll points not present in the simplified path geometry."
+    )
+    ingest_batch_date: date = Field(
+        description="Calendar date of the archive batch this flight was ingested from.",
+        examples=["2025-04-01"],
+    )
 
 
 class QueryResponse(BaseModel):
-    flights: list[FlightDetail]
-    cursor: str | None
-    sampled: bool = False
+    """Paginated list of flights matching a query."""
+
+    flights: list[FlightDetail] = Field(description="Flights on this page, ordered by `start_ts` descending then `icao24` descending.")
+    cursor: str | None = Field(
+        description="Opaque continuation token. Pass unchanged as `cursor` in the next request "
+        "to retrieve the next page. `null` when there are no more results."
+    )
+    sampled: bool = Field(default=False, description="Reserved for future use.")
 
 
 # ---------------------------------------------------------------------------
@@ -60,56 +152,217 @@ def decode_cursor(cursor: str) -> tuple[datetime, str]:
 
 
 # ---------------------------------------------------------------------------
+# Geometry types (standard GeoJSON + Circle extension)
+# ---------------------------------------------------------------------------
+
+
+class GeoJSONPoint(BaseModel):
+    """GeoJSON Point geometry."""
+
+    type: Literal["Point"]
+    coordinates: list[float] = Field(
+        description="`[longitude, latitude]` or `[longitude, latitude, altitude]`."
+    )
+
+
+class GeoJSONMultiPoint(BaseModel):
+    """GeoJSON MultiPoint geometry."""
+
+    type: Literal["MultiPoint"]
+    coordinates: list[list[float]] = Field(description="Array of Point coordinate arrays.")
+
+
+class GeoJSONLineString(BaseModel):
+    """GeoJSON LineString geometry."""
+
+    type: Literal["LineString"]
+    coordinates: list[list[float]] = Field(description="Array of `[longitude, latitude]` pairs.")
+
+
+class GeoJSONMultiLineString(BaseModel):
+    """GeoJSON MultiLineString geometry."""
+
+    type: Literal["MultiLineString"]
+    coordinates: list[list[list[float]]] = Field(description="Array of LineString coordinate arrays.")
+
+
+class GeoJSONPolygon(BaseModel):
+    """GeoJSON Polygon geometry."""
+
+    type: Literal["Polygon"]
+    coordinates: list[list[list[float]]] = Field(
+        description="Array of linear rings. First ring is the exterior boundary; "
+        "subsequent rings are interior holes. Each ring is closed (first == last position)."
+    )
+
+
+class GeoJSONMultiPolygon(BaseModel):
+    """GeoJSON MultiPolygon geometry."""
+
+    type: Literal["MultiPolygon"]
+    coordinates: list[list[list[list[float]]]] = Field(description="Array of Polygon coordinate arrays.")
+
+
+class CircleGeometry(BaseModel):
+    """Circle geometry extension (not part of the GeoJSON standard)."""
+
+    type: Literal["Circle"]
+    coordinates: list[float] = Field(description="`[longitude, latitude]` of the circle centre.")
+    radius: float = Field(description="Radius in metres.", gt=0)
+
+
+class GeoJSONGeometryCollection(BaseModel):
+    """GeoJSON GeometryCollection — a heterogeneous collection of geometries."""
+
+    type: Literal["GeometryCollection"]
+    geometries: list[Geometry] = Field(description="Array of geometry objects.")
+
+
+# Plain union (no Pydantic metadata) — use this in non-field type annotations.
+AnyGeometry = Union[
+    GeoJSONPoint,
+    GeoJSONMultiPoint,
+    GeoJSONLineString,
+    GeoJSONMultiLineString,
+    GeoJSONPolygon,
+    GeoJSONMultiPolygon,
+    GeoJSONGeometryCollection,
+    CircleGeometry,
+]
+
+# Discriminated union for use as a Pydantic model field.
+Geometry = Annotated[AnyGeometry, Field(discriminator="type")]
+
+# GeoJSONGeometryCollection.geometries references Geometry, so rebuild after Geometry is defined.
+GeoJSONGeometryCollection.model_rebuild()
+
+
+class TimeRange(BaseModel):
+    """Time window for filtering by departure or arrival time."""
+
+    type: Literal["TimeRange"]
+    from_: datetime | None = Field(
+        default=None, alias="from",
+        description="Inclusive lower bound (ISO 8601 UTC). Omit for open-ended.",
+    )
+    to: datetime | None = Field(
+        default=None,
+        description="Exclusive upper bound (ISO 8601 UTC). Omit for open-ended.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+# Union for starts_within / ends_within: any geometry or a time window.
+AnyStartEndValue = Union[AnyGeometry, TimeRange]
+StartEndValue = Annotated[AnyStartEndValue, Field(discriminator="type")]
+
+
+# ---------------------------------------------------------------------------
 # DSL predicate models — leaf types first
 # ---------------------------------------------------------------------------
 
 
 class SpatialPredicateValue(BaseModel):
-    geometry: dict[str, Any]
-    altitude_min_ft: float | None = None
-    altitude_max_ft: float | None = None
+    """Geometry filter with optional altitude bounds for spatial trajectory predicates."""
+
+    geometry: Geometry = Field(
+        description="GeoJSON geometry or Circle extension object to test against the flight path."
+    )
+    altitude_min_ft: float | None = Field(
+        default=None,
+        description="Minimum altitude bound in feet (inclusive). "
+        "Compared against the bounding box of the simplified path — an approximation.",
+    )
+    altitude_max_ft: float | None = Field(
+        default=None,
+        description="Maximum altitude bound in feet (inclusive). "
+        "Compared against the bounding box of the simplified path — an approximation.",
+    )
 
 
 class TrajectoryIntersects(BaseModel):
+    """Flights whose simplified path crosses the given geometry."""
+
     trajectory_intersects: SpatialPredicateValue
 
 
 class TrajectoryWithin(BaseModel):
+    """Flights whose entire simplified path lies within the given geometry."""
+
     trajectory_within: SpatialPredicateValue
 
 
 class TrajectoryDisjoint(BaseModel):
+    """Flights whose simplified path does not intersect the given geometry."""
+
     trajectory_disjoint: SpatialPredicateValue
 
 
 class StartsWithin(BaseModel):
-    # Accepts a geometry object OR a time window {"from": ..., "to": ...}
-    starts_within: dict[str, Any]
+    """Flights whose departure point or time falls within the given geometry or time window.
+
+    Pass a GeoJSON/Circle geometry to filter by departure position, or
+    `{"type": "TimeRange", "from": "...", "to": "..."}` to filter by `start_ts`.
+    """
+
+    starts_within: StartEndValue = Field(
+        description="GeoJSON/Circle geometry for a spatial check on the first position, "
+        "or a TimeRange for a temporal check on `start_ts`."
+    )
 
 
 class EndsWithin(BaseModel):
-    # Accepts a geometry object OR a time window {"from": ..., "to": ...}
-    ends_within: dict[str, Any]
+    """Flights whose arrival point or time falls within the given geometry or time window.
+
+    Pass a GeoJSON/Circle geometry to filter by arrival position, or
+    `{"type": "TimeRange", "from": "...", "to": "..."}` to filter by `end_ts`.
+    """
+
+    ends_within: StartEndValue = Field(
+        description="GeoJSON/Circle geometry for a spatial check on the last position, "
+        "or a TimeRange for a temporal check on `end_ts`."
+    )
 
 
 class IcaoType(BaseModel):
-    icao_type: list[str]
+    """Flights matching one or more ICAO aircraft type designators."""
+
+    icao_type: list[str] = Field(
+        description="List of ICAO type designators to match (case-sensitive). OR semantics.",
+        examples=[["B738", "B737"]],
+    )
 
 
 class EmitterCategory(BaseModel):
-    emitter_category: list[str]
+    """Flights matching one or more ADS-B emitter category codes."""
+
+    emitter_category: list[str] = Field(
+        description="List of ADS-B emitter category codes to match. OR semantics.",
+        examples=[["A3", "A5"]],
+    )
 
 
 class CallsignMatches(BaseModel):
-    callsign_matches: str
+    """Flights whose callsign matches a POSIX regular expression."""
+
+    callsign_matches: str = Field(
+        description="POSIX regular expression matched against the callsign (case-sensitive). "
+        "Flights with a null callsign never match.",
+        examples=["^BAW"],
+    )
 
 
 class DurationValue(BaseModel):
-    min_s: float | None = None
-    max_s: float | None = None
+    """Bounds for a flight duration filter. Both bounds are optional."""
+
+    min_s: float | None = Field(default=None, description="Minimum duration in seconds (inclusive).")
+    max_s: float | None = Field(default=None, description="Maximum duration in seconds (inclusive).")
 
 
 class Duration(BaseModel):
+    """Flights whose duration (`end_ts − start_ts`) falls within the given bounds."""
+
     duration: DurationValue
 
 
@@ -119,19 +372,25 @@ class Duration(BaseModel):
 
 
 class AndPredicate(BaseModel):
-    and_: list[Predicate] = Field(alias="and")
+    """All child predicates must be true (logical AND)."""
+
+    and_: list[Predicate] = Field(alias="and", description="All of these predicates must match.")
 
     model_config = {"populate_by_name": True}
 
 
 class OrPredicate(BaseModel):
-    or_: list[Predicate] = Field(alias="or")
+    """At least one child predicate must be true (logical OR)."""
+
+    or_: list[Predicate] = Field(alias="or", description="At least one of these predicates must match.")
 
     model_config = {"populate_by_name": True}
 
 
 class NotPredicate(BaseModel):
-    not_: Predicate = Field(alias="not")
+    """Negates a child predicate (logical NOT)."""
+
+    not_: Predicate = Field(alias="not", description="This predicate must not match.")
 
     model_config = {"populate_by_name": True}
 
@@ -167,9 +426,17 @@ NotPredicate.model_rebuild()
 
 
 class QueryRequest(BaseModel):
-    match: Predicate | None = None
-    limit: int = Field(100, ge=1, le=10000)
-    cursor: str | None = None
-    # accepted but unused in v1:
-    select: list[str] | None = None
-    order_by: list[dict[str, str]] | None = None
+    """Request body for `POST /api/v1/query`."""
+
+    match: Predicate | None = Field(
+        default=None,
+        description="Filter predicate. Omit or set to `null` to return all flights.",
+    )
+    limit: int = Field(
+        default=100, ge=1, le=10000,
+        description="Maximum number of flights to return per page.",
+    )
+    cursor: str | None = Field(
+        default=None,
+        description="Continuation token from the previous page's `cursor` field.",
+    )

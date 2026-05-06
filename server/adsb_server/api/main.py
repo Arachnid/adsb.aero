@@ -9,12 +9,16 @@ from typing import Any, AsyncGenerator
 
 import asyncpg
 from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from scalar_fastapi import get_scalar_api_reference
 
 from adsb_server.config import get_settings
 from adsb_server.db.pool import create_pool
 from adsb_server.query.compiler import compile_predicate
 from adsb_server.query.models import (
     FlightDetail,
+    GeoJSONLineStringZ,
+    GeoJSONPointZ,
     QueryRequest,
     QueryResponse,
     decode_cursor,
@@ -42,8 +46,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await app.state.pool.close()
 
 
-app = FastAPI(title="adsb.aero API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="adsb.aero API",
+    version="0.1.0",
+    description=(
+        "Historical ADS-B flight trajectory API. "
+        "Query flights by geometry, time, aircraft type, callsign, and more. "
+        "All endpoints are under `/api/v1/`. No authentication required."
+    ),
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url="/api/redoc",
+)
 router = APIRouter(prefix="/api/v1")
+
+
+# ---------------------------------------------------------------------------
+# Documentation endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/docs", include_in_schema=False)
+async def scalar_docs() -> HTMLResponse:
+    return get_scalar_api_reference(
+        openapi_url="/openapi.json",
+        title="adsb.aero API",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -82,15 +110,15 @@ _FLIGHT_COLS = f"""
 
 def _parse_path_wkt(
     wkt: str, path_tracks: list[int], ground_ts: frozenset[float]
-) -> tuple[dict[str, Any], list[float], list[int]]:
-    """Parse a LINESTRINGZM WKT into a GeoJSON LineString dict, timestamps list, and
+) -> tuple[GeoJSONLineStringZ, list[float], list[int]]:
+    """Parse a LINESTRINGZM WKT into a typed GeoJSON LineString, timestamps list, and
     filtered path_tracks, skipping ground points identified by ground_ts.
 
     ST_AsText preserves M (timestamp) values that ST_AsGeoJSON discards.
     Coordinates are rounded to 6 decimal places to match ST_AsGeoJSON precision.
     """
     inner = wkt[wkt.index("(") + 1 : wkt.rindex(")")]
-    coords_3d: list[list[float]] = []
+    coords_3d: list[tuple[float, float, float]] = []
     timestamps: list[float] = []
     filtered_tracks: list[int] = []
     for i, point_str in enumerate(inner.split(",")):
@@ -98,19 +126,21 @@ def _parse_path_wkt(
         m = float(parts[3])
         if m in ground_ts:
             continue  # ground point — omit from API output
-        coords_3d.append([round(float(parts[0]), 6), round(float(parts[1]), 6), round(float(parts[2]), 6)])
+        coords_3d.append((round(float(parts[0]), 6), round(float(parts[1]), 6), round(float(parts[2]), 6)))
         timestamps.append(m)
         if i < len(path_tracks):
             filtered_tracks.append(path_tracks[i])
-    return {"type": "LineString", "coordinates": coords_3d}, timestamps, filtered_tracks
+    return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps, filtered_tracks
 
 
 def _row_to_detail(row: asyncpg.Record) -> FlightDetail:
     raw_tracks = list(row["path_tracks"])
     ground_ts: frozenset[float] = frozenset(row["ground_ts"] or [])
-    path_geojson, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks, ground_ts)
-    squawk_raw = row["squawk_runs"]
-    squawk_runs: list[list[Any]] = json.loads(squawk_raw) if squawk_raw else []
+    path, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks, ground_ts)
+    squawk_raw: str | None = row["squawk_runs"]
+    squawk_runs: list[tuple[float, str]] = (
+        [(float(r[0]), str(r[1])) for r in json.loads(squawk_raw)] if squawk_raw else []
+    )
     return FlightDetail(
         flight_id=row["flight_id"],
         icao24=row["icao24"],
@@ -119,9 +149,9 @@ def _row_to_detail(row: asyncpg.Record) -> FlightDetail:
         emitter_category=row["emitter_category"],
         start_ts=row["start_ts"],
         end_ts=row["end_ts"],
-        start_point=json.loads(row["start_point"]),
-        end_point=json.loads(row["end_point"]),
-        path=path_geojson,
+        start_point=GeoJSONPointZ.model_validate_json(row["start_point"]),
+        end_point=GeoJSONPointZ.model_validate_json(row["end_point"]),
+        path=path,
         timestamps=timestamps,
         path_tracks=filtered_tracks,
         squawk_runs=squawk_runs,
@@ -135,12 +165,30 @@ def _row_to_detail(row: asyncpg.Record) -> FlightDetail:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/health")
+@router.get("/health", summary="Health check")
 async def health() -> dict[str, str]:
+    """Return `{"status": "ok"}` when the server is running."""
     return {"status": "ok"}
 
 
-@router.post("/query", response_model=QueryResponse)
+@router.post(
+    "/query",
+    response_model=QueryResponse,
+    summary="Query flights",
+    description=(
+        "Query flights matching a filter predicate. "
+        "Returns a paginated list of flight details ordered by `start_ts` descending. "
+        "\n\n"
+        "### Pagination\n\n"
+        "Use keyset-based cursor pagination: if the response includes a non-null `cursor`, "
+        "repeat the same request with that value as `cursor` to fetch the next page. "
+        "Stop when `cursor` is `null`.\n\n"
+        "### Query DSL\n\n"
+        "The `match` field accepts a predicate — a JSON object with exactly one key naming the "
+        "predicate type. Predicates can be nested with `and`, `or`, and `not`. "
+        "See the schema definitions for the full predicate vocabulary."
+    ),
+)
 async def query_flights(
     body: QueryRequest,
     request: Request,
@@ -190,7 +238,21 @@ async def query_flights(
     )
 
 
-@router.get("/flights/{flight_id:path}", response_model=FlightDetail)
+@router.get(
+    "/flights/{flight_id:path}",
+    response_model=FlightDetail,
+    summary="Get flight by ID",
+    description=(
+        "Fetch the full trajectory for a single flight by its `flight_id`. "
+        "\n\n"
+        "`flight_id` is the value returned in `flight_id` fields from `/query`, "
+        "in the form `<icao24>:<start_ts_utc>` — for example, `aabbcc:2025-04-01T10:00:00Z`."
+    ),
+    responses={
+        404: {"description": "No flight exists for the given `flight_id`."},
+        422: {"description": "`flight_id` is malformed (missing `:` separator or invalid timestamp)."},
+    },
+)
 async def get_flight(
     flight_id: str,
     request: Request,

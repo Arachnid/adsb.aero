@@ -5,6 +5,7 @@ description = "ADS-B historical query platform — server (ingestion + API)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
+    "scalar-fastapi>=1.8",
     "asyncpg>=0.30",
     "dramatiq[redis]>=1.17",
     "pydantic>=2.9",
