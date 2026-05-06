@@ -203,6 +203,9 @@ async def check_and_run_new_batches(
                     conn, client, year, tag, batch_date, cache_dir
                 )
 
+            if stop:
+                break  # processed release found; all earlier years are also done
+
 
 async def scheduler_loop(
     conn: asyncpg.Connection,    cache_dir: Path,

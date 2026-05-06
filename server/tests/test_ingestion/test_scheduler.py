@@ -670,6 +670,48 @@ class TestCheckAndRunNewBatches:
 
         assert get_releases_mock.call_count == 2
 
+    async def test_skips_previous_year_when_processed_release_found(
+        self, tmp_path: Path
+    ) -> None:
+        """When a processed release is found in year N, year N-1 is not queried."""
+        releases_by_year: dict[int, list[dict[str, object]]] = {
+            2025: [{"tag_name": "v2025.04.02-planes-readsb-prod-0"}],
+            2024: [{"tag_name": "v2024.12.31-planes-readsb-prod-0"}],
+        }
+
+        get_releases_mock = AsyncMock(
+            side_effect=lambda client, year, page=1: (
+                releases_by_year.get(year, []) if page == 1 else []
+            )
+        )
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_releases",
+                new=get_releases_mock,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._is_batch_already_processed",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                new=AsyncMock(),
+            ),
+        ):
+            with patch("adsb_server.ingestion.scheduler.date") as mock_date:
+                mock_date.today.return_value = date(2025, 4, 3)
+                await check_and_run_new_batches(AsyncMock(), tmp_path)
+
+        # Only year 2025 should have been queried; 2024 never reached
+        queried_years = [call.args[1] for call in get_releases_mock.call_args_list]
+        assert 2025 in queried_years
+        assert 2024 not in queried_years
+
 
 # ---------------------------------------------------------------------------
 # scheduler_loop
