@@ -503,3 +503,66 @@ async def test_orphaned_in_progress_finalized_by_next_batch(
     row = await conn.fetchrow("SELECT completed FROM flights WHERE icao24 = 'dd0001'")
     assert row is not None
     assert row["completed"] is True, "orphaned in-progress should be finalized by next batch"
+
+
+@pytest.mark.asyncio
+async def test_ground_points_preserved_across_batch_boundary(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+) -> None:
+    """
+    An in-progress flight that contains a ground phase (alt_baro=None) stores those
+    timestamps in ground_ts. The next batch reconstructs them so the ground gap does
+    not appear as a spurious >1h air gap that would wrongly split the flight.
+    """
+    from adsb_server.ingestion.batch import run_batch
+
+    batch_date_1 = date(2021, 12, 1)
+    cutoff_ts_1 = 1638316800 + 86399  # end of 2021-12-01
+
+    # Three airborne pts, then one ground pt, then one more airborne pt — all near
+    # the cutoff so the whole sequence is stored as in-progress.
+    # The gap between the last airborne pt before landing and the airborne pt after
+    # takeoff is 4000 s (> AIR_GAP_THRESHOLD of 3600 s), but it's bridged by a
+    # ground pt so it must NOT cause a split on reconstruction.
+    base = float(cutoff_ts_1 - 4060)
+    entries: list[list[object]] = [
+        [0.0,    51.5, -0.1, 35000.0, 450.0, 90.0, 0, None, None],  # airborne
+        [30.0,   51.6, -0.2, 35100.0, 455.0, 91.0, 0, None, None],  # airborne
+        [60.0,   51.6, -0.2, "ground", None,  None, 0, None, None],  # on ground
+        [4060.0, 51.7, -0.3, 35200.0, 460.0, 92.0, 0, None, None],  # airborne after takeoff
+    ]
+
+    tmp1 = tmp_path / "batch1"
+    tmp1.mkdir()
+    raw_buf = io.BytesIO()
+    with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
+        b = _make_trace_bytes("ff0001", base_ts=base, entries=entries)
+        ti = tarfile.TarInfo(name="traces/ff/trace_full_ff0001.json.gz")
+        ti.size = len(b)
+        tf.addfile(ti, io.BytesIO(b))
+    (tmp1 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
+
+    await run_batch(conn, tmp1, batch_date_1)
+
+    row = await conn.fetchrow(
+        "SELECT completed, ground_ts FROM flights WHERE icao24 = 'ff0001'"
+    )
+    assert row is not None
+    assert row["completed"] is False, "should be in-progress after batch 1"
+    assert len(row["ground_ts"]) == 1, "one ground timestamp should be stored"
+
+    # Batch 2: ff0001 absent — processed as orphan.  Must produce ONE finalized
+    # flight, not two (which would happen if the ground gap were misread as air gap).
+    batch_date_2 = date(2021, 12, 2)
+    tmp2 = tmp_path / "batch2"
+    tmp2.mkdir()
+    tarball_dir = _make_tarball_dir(tmp2, ["gg0002"])
+
+    await run_batch(conn, tarball_dir, batch_date_2)
+
+    rows = await conn.fetch(
+        "SELECT completed, raw_point_count FROM flights WHERE icao24 = 'ff0001'"
+    )
+    completed_rows = [r for r in rows if r["completed"]]
+    assert len(completed_rows) == 1, "ground gap must not produce a spurious split"

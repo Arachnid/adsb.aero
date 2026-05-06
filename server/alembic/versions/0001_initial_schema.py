@@ -47,6 +47,7 @@ def upgrade() -> None:
             raw_point_count   INTEGER                       NOT NULL DEFAULT 0,
             ingest_batch_date DATE                          NOT NULL,
             completed         BOOLEAN                       NOT NULL DEFAULT TRUE,
+            ground_ts         DOUBLE PRECISION[]            NOT NULL DEFAULT '{}',
             PRIMARY KEY (icao24, start_ts)
         ) PARTITION BY RANGE (start_ts)
         """)

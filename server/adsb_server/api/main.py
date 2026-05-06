@@ -79,8 +79,11 @@ _FLIGHT_COLS = f"""
 """
 
 
-def _parse_path_wkt(wkt: str) -> tuple[dict[str, Any], list[float]]:
-    """Parse a LINESTRINGZM WKT into a GeoJSON LineString dict and a timestamps list.
+def _parse_path_wkt(
+    wkt: str, path_tracks: list[int]
+) -> tuple[dict[str, Any], list[float], list[int]]:
+    """Parse a LINESTRINGZM WKT into a GeoJSON LineString dict, timestamps list, and
+    filtered path_tracks, skipping ground sentinel points (Z=0).
 
     ST_AsText preserves M (timestamp) values that ST_AsGeoJSON discards.
     Coordinates are rounded to 6 decimal places to match ST_AsGeoJSON precision.
@@ -88,15 +91,22 @@ def _parse_path_wkt(wkt: str) -> tuple[dict[str, Any], list[float]]:
     inner = wkt[wkt.index("(") + 1 : wkt.rindex(")")]
     coords_3d: list[list[float]] = []
     timestamps: list[float] = []
-    for point_str in inner.split(","):
+    filtered_tracks: list[int] = []
+    for i, point_str in enumerate(inner.split(",")):
         parts = point_str.split()
-        coords_3d.append([round(float(parts[0]), 6), round(float(parts[1]), 6), round(float(parts[2]), 6)])
+        z = float(parts[2])
+        if z == 0.0:
+            continue  # ground sentinel — omit from API output
+        coords_3d.append([round(float(parts[0]), 6), round(float(parts[1]), 6), round(z, 6)])
         timestamps.append(float(parts[3]))
-    return {"type": "LineString", "coordinates": coords_3d}, timestamps
+        if i < len(path_tracks):
+            filtered_tracks.append(path_tracks[i])
+    return {"type": "LineString", "coordinates": coords_3d}, timestamps, filtered_tracks
 
 
 def _row_to_detail(row: asyncpg.Record) -> FlightDetail:
-    path_geojson, timestamps = _parse_path_wkt(row["path_wkt"])
+    raw_tracks = list(row["path_tracks"])
+    path_geojson, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks)
     squawk_raw = row["squawk_runs"]
     squawk_runs: list[list[Any]] = json.loads(squawk_raw) if squawk_raw else []
     return FlightDetail(
@@ -111,7 +121,7 @@ def _row_to_detail(row: asyncpg.Record) -> FlightDetail:
         end_point=json.loads(row["end_point"]),
         path=path_geojson,
         timestamps=timestamps,
-        path_tracks=list(row["path_tracks"]),
+        path_tracks=filtered_tracks,
         squawk_runs=squawk_runs,
         raw_point_count=row["raw_point_count"],
         ingest_batch_date=row["ingest_batch_date"],

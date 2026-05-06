@@ -30,10 +30,10 @@ _UPSERT_FLIGHT_SQL = """
 INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
     start_ts, end_ts, start_point, end_point, path_geom,
     path_tracks, squawk_runs, raw_point_count, ingest_batch_date,
-    completed)
+    completed, ground_ts)
 VALUES ($1,$2,$3,$4,$5,$6,
     ST_GeomFromText($7,4326), ST_GeomFromText($8,4326), ST_GeomFromText($9,4326),
-    $10, $11::jsonb, $12, $13, $14)
+    $10, $11::jsonb, $12, $13, $14, $15)
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
@@ -41,7 +41,7 @@ ON CONFLICT (icao24, start_ts) DO UPDATE SET
     path_geom=EXCLUDED.path_geom, path_tracks=EXCLUDED.path_tracks,
     squawk_runs=EXCLUDED.squawk_runs, raw_point_count=EXCLUDED.raw_point_count,
     ingest_batch_date=EXCLUDED.ingest_batch_date,
-    completed=EXCLUDED.completed
+    completed=EXCLUDED.completed, ground_ts=EXCLUDED.ground_ts
 """
 
 
@@ -71,7 +71,7 @@ _FlightParams = tuple[
     datetime, datetime,
     str, str, str,
     list[int], str, int, date,
-    bool,
+    bool, list[float],
 ]
 
 
@@ -104,6 +104,7 @@ def _flight_to_params(
         flight.raw_point_count,
         batch_date,
         True,
+        [],
     )
 
 
@@ -114,29 +115,37 @@ def _raw_flight_to_params(
     """Convert an in-progress RawFlight into the parameter tuple for the UPSERT SQL.
 
     Returns None if fewer than 2 airborne points (cannot form valid geometry).
+
+    path_geom stores ALL points: airborne with their actual altitude, ground points
+    with Z=0 as a sentinel (actual lat/lon preserved). ground_ts records the
+    timestamps of ground points so reconstruction can set alt_baro=None without
+    confusing a genuine 0 ft MSL airborne reading for a ground sentinel.
+    The API filters Z=0 points before serving path data.
     """
     airborne = [p for p in flight.points if p.alt_baro is not None]
     if len(airborne) < 2:
         return None
 
-    vertices: list[tuple[float, float, float, float]] = [
-        (p.lon, p.lat, p.alt_baro if p.alt_baro is not None else 0.0, p.ts)
-        for p in airborne
-    ]
+    start_wkt = point_zm(airborne[0].lon, airborne[0].lat, airborne[0].alt_baro, airborne[0].ts)  # type: ignore[arg-type]
+    end_wkt = point_zm(airborne[-1].lon, airborne[-1].lat, airborne[-1].alt_baro, airborne[-1].ts)  # type: ignore[arg-type]
 
-    start_wkt = point_zm(vertices[0][0], vertices[0][1], vertices[0][2], vertices[0][3])
-    end_wkt = point_zm(vertices[-1][0], vertices[-1][1], vertices[-1][2], vertices[-1][3])
-    path_wkt = linestring_zm(vertices)
+    all_vertices: list[tuple[float, float, float, float]] = [
+        (p.lon, p.lat, p.alt_baro if p.alt_baro is not None else 0.0, p.ts)
+        for p in flight.points
+    ]
+    path_wkt = linestring_zm(all_vertices)
 
     path_tracks: list[int] = [
         round(p.track) % 360 if p.track is not None else 0
-        for p in airborne
+        for p in flight.points
     ]
 
-    start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
-    end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
+    start_ts = datetime.fromtimestamp(airborne[0].ts, tz=UTC)
+    end_ts = datetime.fromtimestamp(airborne[-1].ts, tz=UTC)
 
     squawk_runs_json = json.dumps(build_squawk_runs(airborne))
+
+    ground_ts: list[float] = [p.ts for p in flight.points if p.alt_baro is None]
 
     return (
         flight.icao24,
@@ -153,6 +162,7 @@ def _raw_flight_to_params(
         len(flight.points),
         batch_date,
         False,
+        ground_ts,
     )
 
 
@@ -206,7 +216,7 @@ async def run_batch(
     staging_rows = await conn.fetch(
         """
         SELECT icao24, callsign, icao_type, emitter_category, squawk_runs,
-               ST_AsText(path_geom) AS path_wkt
+               ST_AsText(path_geom) AS path_wkt, ground_ts
         FROM flights WHERE completed = false
         """
     )
@@ -221,10 +231,13 @@ async def run_batch(
         runs: list[tuple[float, str]] = [
             (float(r[0]), str(r[1])) for r in json.loads(row["squawk_runs"])
         ]
+        ground_ts_set: frozenset[float] = frozenset(row["ground_ts"] or [])
         pts: list[RawPoint] = [
             RawPoint(
-                ts=m, lat=y, lon=x, alt_baro=z,
-                track=None, squawk=_squawk_at_ts(runs, m),
+                ts=m, lat=y, lon=x,
+                alt_baro=None if m in ground_ts_set else z,
+                track=None,
+                squawk=_squawk_at_ts(runs, m) if m not in ground_ts_set else None,
                 new_leg=False, callsign=callsign,
                 emitter_category=emitter_category,
             )
