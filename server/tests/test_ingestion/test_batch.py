@@ -151,20 +151,16 @@ async def test_run_batch_idempotent_upsert(
 
 
 @pytest.mark.asyncio
-async def test_run_batch_staging_roundtrip(
+async def test_run_batch_in_progress_roundtrip(
     conn: asyncpg.Connection,    tmp_path: Path,
 ) -> None:
     """
-    In-progress flights go to staging_flights; a subsequent batch
-    that is past the cutoff finalizes them.
+    In-progress flights are stored in flights with completed=false;
+    a subsequent batch past the cutoff finalizes them.
     """
     from adsb_server.ingestion.batch import run_batch
 
-    # Points with timestamps close to end-of-day cutoff → in-progress
     batch_date = date(2021, 6, 1)
-    # midnight UTC for 2021-06-01 = 1622505600
-    # cutoff = end of day = 1622505600 + 86399.999...
-    # Use a very large timestamp so the flight appears to end near cutoff
     cutoff_ts = 1622505600 + 86399  # ~end of 2021-06-01
 
     near_cutoff_entries: list[list[object]] = [
@@ -175,58 +171,58 @@ async def test_run_batch_staging_roundtrip(
     raw_buf = io.BytesIO()
     with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
         trace_bytes = _make_trace_bytes(
-            "aabbcc", base_ts=float(cutoff_ts - 30), entries=near_cutoff_entries
+            "ip0001", base_ts=float(cutoff_ts - 30), entries=near_cutoff_entries
         )
-        ti = tarfile.TarInfo(name="traces/aa/trace_full_aabbcc.json.gz")
+        ti = tarfile.TarInfo(name="traces/ip/trace_full_ip0001.json.gz")
         ti.size = len(trace_bytes)
         tf.addfile(ti, io.BytesIO(trace_bytes))
     (tmp_path / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    count = await run_batch(conn, tmp_path, batch_date)
-    # Flight ends near cutoff, so might be in-progress; staging should have it
-    staging = await conn.fetchrow(
-        "SELECT icao24 FROM staging_flights WHERE icao24 = 'aabbcc'"
+    await run_batch(conn, tmp_path, batch_date)
+
+    # Flight ends within the airborne in-progress window → stored as completed=false
+    row = await conn.fetchrow(
+        "SELECT completed FROM flights WHERE icao24 = 'ip0001'"
     )
-    # Either finalized or in staging
-    assert count >= 0 or staging is not None
+    assert row is not None
+    assert row["completed"] is False
 
 
 @pytest.mark.asyncio
-async def test_run_batch_merges_staging(
+async def test_run_batch_merges_in_progress(
     conn: asyncpg.Connection,
     tmp_path: Path,
 ) -> None:
     """
-    Pre-existing staging points are merged with new tarball points.
+    Pre-existing in-progress points in flights are merged with new tarball points.
     The combined data produces a single finalized flight.
     """
-    import json
     from datetime import datetime
 
     from adsb_server.ingestion.batch import run_batch
 
-    # Insert staging entry for "cc1122" with 2 points from 1000.0 to 1030.0
-    staging_points = [
-        {
-            "ts": 1000.0, "lat": 51.5, "lon": -0.1, "alt_baro": 35000.0,
-            "track": 90.0, "squawk": None, "new_leg": False,
-            "callsign": None, "emitter_category": None,
-        },
-        {
-            "ts": 1030.0, "lat": 51.6, "lon": -0.2, "alt_baro": 35100.0,
-            "track": 91.0, "squawk": None, "new_leg": False,
-            "callsign": None, "emitter_category": None,
-        },
-    ]
+    # Insert an in-progress flight for "cc1122" with 2 points from 1000.0 to 1030.0
+    start_ts = datetime.fromtimestamp(1000.0, tz=UTC)
+    end_ts = datetime.fromtimestamp(1030.0, tz=UTC)
     await conn.execute(
         """
-        INSERT INTO staging_flights (icao24, start_ts, last_ts, points, source)
-        VALUES ($1, $2, $3, $4::jsonb, 'batch')
+        INSERT INTO flights (
+            icao24, start_ts, end_ts,
+            start_point, end_point, path_geom,
+            path_tracks, squawk_runs, raw_point_count,
+            ingest_batch_date, completed
+        ) VALUES (
+            $1, $2, $3,
+            ST_GeomFromText('POINT ZM (-0.1 51.5 35000 1000)', 4326),
+            ST_GeomFromText('POINT ZM (-0.2 51.6 35100 1030)', 4326),
+            ST_GeomFromText('LINESTRING ZM (-0.1 51.5 35000 1000,-0.2 51.6 35100 1030)', 4326),
+            ARRAY[90, 91], '[]'::jsonb, 2,
+            '2021-01-01', false
+        )
         """,
         "cc1122",
-        datetime.fromtimestamp(1000.0, tz=UTC),
-        datetime.fromtimestamp(1030.0, tz=UTC),
-        json.dumps(staging_points),
+        start_ts,
+        end_ts,
     )
 
     # Tarball continues from ts=1060.0 to 1090.0
@@ -246,6 +242,13 @@ async def test_run_batch_merges_staging(
     batch_date = date(2099, 1, 1)
     count = await run_batch(conn, tmp_path, batch_date)
     assert count == 1  # one merged flight
+
+    # The row should now be completed
+    row = await conn.fetchrow(
+        "SELECT completed FROM flights WHERE icao24 = 'cc1122'"
+    )
+    assert row is not None
+    assert row["completed"] is True
 
 
 @pytest.mark.asyncio
@@ -267,7 +270,187 @@ async def test_run_batch_serialization_roundtrip(
     )
     assert row is not None
     assert isinstance(row["path_tracks"], list)
-    # squawk_runs should be valid JSON (list of [ts, squawk] pairs)
     import json as _json
     runs = _json.loads(row["squawk_runs"])
     assert isinstance(runs, list)
+
+
+@pytest.mark.asyncio
+async def test_in_progress_and_completed_visible_together(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+) -> None:
+    """completed=false and completed=true rows both appear in unfiltered flights queries."""
+    from adsb_server.ingestion.batch import run_batch
+
+    # Batch 1: one aircraft well before cutoff (finalised), one near cutoff (in-progress)
+    batch_date = date(2021, 8, 1)
+    cutoff_ts = 1627776000 + 86399  # end of 2021-08-01
+
+    far_entries: list[list[object]] = [
+        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
+        [60.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, None],
+        [120.0, 51.7, -0.3, 35200.0, 92.0, 0.0, 0, None, None],
+    ]
+    near_entries: list[list[object]] = [
+        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
+        [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, None],
+    ]
+
+    raw_buf = io.BytesIO()
+    with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
+        # "aa0001" ends at ts=100 — well before cutoff
+        b = _make_trace_bytes("aa0001", base_ts=100.0, entries=far_entries)
+        ti = tarfile.TarInfo(name="traces/aa/trace_full_aa0001.json.gz")
+        ti.size = len(b)
+        tf.addfile(ti, io.BytesIO(b))
+        # "aa0002" ends near cutoff
+        b = _make_trace_bytes("aa0002", base_ts=float(cutoff_ts - 30), entries=near_entries)
+        ti = tarfile.TarInfo(name="traces/aa/trace_full_aa0002.json.gz")
+        ti.size = len(b)
+        tf.addfile(ti, io.BytesIO(b))
+    (tmp_path / "archive.tar.aa").write_bytes(raw_buf.getvalue())
+
+    await run_batch(conn, tmp_path, batch_date)
+
+    rows = await conn.fetch(
+        "SELECT icao24, completed FROM flights WHERE icao24 = ANY($1)",
+        ["aa0001", "aa0002"],
+    )
+    by_icao = {r["icao24"]: r["completed"] for r in rows}
+    assert by_icao.get("aa0001") is True
+    assert by_icao.get("aa0002") is False
+
+
+@pytest.mark.asyncio
+async def test_run_batch_two_batches_finalizes_in_progress(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+) -> None:
+    """
+    A flight left in-progress by batch 1 is completed=false in the DB.
+    Batch 2, with a later date, picks it up and finalises it as completed=true.
+    """
+    from adsb_server.ingestion.batch import run_batch
+
+    batch_date_1 = date(2021, 9, 1)
+    cutoff_ts_1 = 1630454400 + 86399  # end of 2021-09-01
+
+    near_entries: list[list[object]] = [
+        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
+        [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, None],
+    ]
+
+    # --- Batch 1 ---
+    tmp1 = tmp_path / "batch1"
+    tmp1.mkdir()
+    raw_buf = io.BytesIO()
+    with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
+        b = _make_trace_bytes("bb0001", base_ts=float(cutoff_ts_1 - 30), entries=near_entries)
+        ti = tarfile.TarInfo(name="traces/bb/trace_full_bb0001.json.gz")
+        ti.size = len(b)
+        tf.addfile(ti, io.BytesIO(b))
+    (tmp1 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
+
+    await run_batch(conn, tmp1, batch_date_1)
+
+    row = await conn.fetchrow("SELECT completed FROM flights WHERE icao24 = 'bb0001'")
+    assert row is not None
+    assert row["completed"] is False, "should be in-progress after batch 1"
+
+    # --- Batch 2: same points but well before the new batch's cutoff ---
+    batch_date_2 = date(2021, 9, 2)
+    tmp2 = tmp_path / "batch2"
+    tmp2.mkdir()
+    cont_entries: list[list[object]] = [
+        [0.0,  51.7, -0.3, 35200.0, 92.0, 0.0, 0, None, None],
+        [30.0, 51.8, -0.4, 35300.0, 93.0, 0.0, 0, None, None],
+        [60.0, 51.9, -0.5, 35400.0, 94.0, 0.0, 0, None, None],
+    ]
+    raw_buf = io.BytesIO()
+    with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
+        b = _make_trace_bytes("bb0001", base_ts=float(cutoff_ts_1 + 60), entries=cont_entries)
+        ti = tarfile.TarInfo(name="traces/bb/trace_full_bb0001.json.gz")
+        ti.size = len(b)
+        tf.addfile(ti, io.BytesIO(b))
+    (tmp2 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
+
+    count = await run_batch(conn, tmp2, batch_date_2)
+    assert count >= 1, "at least the merged flight should be finalised"
+
+    row = await conn.fetchrow("SELECT completed FROM flights WHERE icao24 = 'bb0001'")
+    assert row is not None
+    assert row["completed"] is True, "should be finalised after batch 2"
+
+
+@pytest.mark.asyncio
+async def test_squawk_reconstructed_from_in_progress(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+) -> None:
+    """
+    Squawk codes observed in batch 1 are stored as squawk_runs on the in-progress row
+    and reconstructed when batch 2 loads it, so the finalised squawk_runs span both batches.
+    """
+    import json as _json
+
+    from adsb_server.ingestion.batch import run_batch
+
+    batch_date_1 = date(2021, 10, 1)
+    cutoff_ts_1 = 1633046400 + 86399  # end of 2021-10-01
+
+    # Points near cutoff with a distinctive squawk
+    squawk_entries: list[list[object]] = [
+        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, {"squawk": "7700"}],
+        [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, {"squawk": "7700"}],
+    ]
+
+    tmp1 = tmp_path / "batch1"
+    tmp1.mkdir()
+    raw_buf = io.BytesIO()
+    with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
+        b = _make_trace_bytes("cc0001", base_ts=float(cutoff_ts_1 - 30), entries=squawk_entries)
+        ti = tarfile.TarInfo(name="traces/cc/trace_full_cc0001.json.gz")
+        ti.size = len(b)
+        tf.addfile(ti, io.BytesIO(b))
+    (tmp1 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
+
+    await run_batch(conn, tmp1, batch_date_1)
+
+    # In-progress row should have the 7700 squawk stored
+    row = await conn.fetchrow(
+        "SELECT completed, squawk_runs FROM flights WHERE icao24 = 'cc0001'"
+    )
+    assert row is not None
+    assert row["completed"] is False
+    runs_1 = _json.loads(row["squawk_runs"])
+    assert any(r[1] == "7700" for r in runs_1), "7700 should be in squawk_runs after batch 1"
+
+    # Batch 2: continuation well before new cutoff, different squawk
+    batch_date_2 = date(2021, 10, 2)
+    cont_entries: list[list[object]] = [
+        [0.0,  51.7, -0.3, 35200.0, 92.0, 0.0, 0, None, {"squawk": "2000"}],
+        [30.0, 51.8, -0.4, 35300.0, 93.0, 0.0, 0, None, {"squawk": "2000"}],
+        [60.0, 51.9, -0.5, 35400.0, 94.0, 0.0, 0, None, None],
+    ]
+    tmp2 = tmp_path / "batch2"
+    tmp2.mkdir()
+    raw_buf = io.BytesIO()
+    with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
+        b = _make_trace_bytes("cc0001", base_ts=float(cutoff_ts_1 + 60), entries=cont_entries)
+        ti = tarfile.TarInfo(name="traces/cc/trace_full_cc0001.json.gz")
+        ti.size = len(b)
+        tf.addfile(ti, io.BytesIO(b))
+    (tmp2 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
+
+    await run_batch(conn, tmp2, batch_date_2)
+
+    row = await conn.fetchrow(
+        "SELECT completed, squawk_runs FROM flights WHERE icao24 = 'cc0001'"
+    )
+    assert row is not None
+    assert row["completed"] is True
+    runs_2 = _json.loads(row["squawk_runs"])
+    squawk_codes = {r[1] for r in runs_2}
+    assert "7700" in squawk_codes, "7700 from batch 1 should survive into finalised squawk_runs"
+    assert "2000" in squawk_codes, "2000 from batch 2 should appear in finalised squawk_runs"

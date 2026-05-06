@@ -22,9 +22,6 @@ logger = logging.getLogger(__name__)
 _GROUND_GAP_THRESHOLD = 600.0
 _AIR_GAP_THRESHOLD = 3600.0
 
-# A single segment may never exceed 24 h regardless of reported gaps.
-_MAX_SEGMENT_DURATION = 86400.0
-
 
 def interpolate_missing_values(points: list[RawPoint]) -> list[RawPoint]:
     """
@@ -96,7 +93,7 @@ def _most_common_non_null(values: list[str | None]) -> str | None:
     return counter.most_common(1)[0][0]
 
 
-def _build_squawk_runs(points: list[RawPoint]) -> list[tuple[float, str]]:
+def build_squawk_runs(points: list[RawPoint]) -> list[tuple[float, str]]:
     """
     Build run-length encoding of squawk codes.
     Emits a new run when squawk changes from the previous non-null value.
@@ -141,7 +138,7 @@ def _finalize_segment(
         track_int = round(p.track) % 360 if p.track is not None else 0
         path_tracks.append(track_int)
 
-    squawk_runs = _build_squawk_runs([interp_points[i] for i in kept_indices])
+    squawk_runs = build_squawk_runs([interp_points[i] for i in kept_indices])
 
     start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
     end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
@@ -160,14 +157,12 @@ def _finalize_segment(
     )
 
 
-def _should_gap_split(prev: RawPoint, curr: RawPoint, seg_start_ts: float) -> bool:
+def _should_gap_split(prev: RawPoint, curr: RawPoint) -> bool:
     """Return True if gap criteria require starting a new segment at curr."""
     gap = curr.ts - prev.ts
     if prev.alt_baro is None and curr.alt_baro is None and gap > _GROUND_GAP_THRESHOLD:
         return True
     if prev.alt_baro is not None and curr.alt_baro is not None and gap > _AIR_GAP_THRESHOLD:
-        return True
-    if curr.ts - seg_start_ts > _MAX_SEGMENT_DURATION:
         return True
     return False
 
@@ -196,7 +191,7 @@ def split_flights(
     current_seg: list[RawPoint] = [points[0]]
 
     for curr in points[1:]:
-        if curr.new_leg or _should_gap_split(current_seg[-1], curr, current_seg[0].ts):
+        if curr.new_leg or _should_gap_split(current_seg[-1], curr):
             segments.append(current_seg)
             current_seg = [curr]
         else:

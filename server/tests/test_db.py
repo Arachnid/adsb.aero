@@ -12,7 +12,6 @@ import pytest
 
 EXPECTED_TABLES = {
     "flights",
-    "staging_flights",
     "ingest_batches",
 }
 

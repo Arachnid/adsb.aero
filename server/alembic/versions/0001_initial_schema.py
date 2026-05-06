@@ -46,6 +46,7 @@ def upgrade() -> None:
             squawk_runs       JSONB                         NOT NULL DEFAULT '[]',
             raw_point_count   INTEGER                       NOT NULL DEFAULT 0,
             ingest_batch_date DATE                          NOT NULL,
+            completed         BOOLEAN                       NOT NULL DEFAULT TRUE,
             PRIMARY KEY (icao24, start_ts)
         ) PARTITION BY RANGE (start_ts)
         """)
@@ -85,23 +86,6 @@ def upgrade() -> None:
     op.execute(sa.text("CREATE INDEX flights_alt_max ON flights ((ST_ZMax(path_geom::box3d)))"))
 
     # ------------------------------------------------------------------
-    # staging_flights — in-progress flights awaiting finalisation
-    # ------------------------------------------------------------------
-    op.execute(
-        sa.text("""
-        CREATE TABLE staging_flights (
-            icao24    VARCHAR     NOT NULL,
-            start_ts  TIMESTAMPTZ NOT NULL,
-            last_ts   TIMESTAMPTZ NOT NULL,
-            points    JSONB       NOT NULL DEFAULT '[]',
-            source    VARCHAR     NOT NULL CHECK (source IN ('batch', 'stream')),
-            PRIMARY KEY (icao24, start_ts)
-        )
-        """)
-    )
-    op.execute(sa.text("CREATE INDEX staging_flights_icao24 ON staging_flights (icao24)"))
-
-    # ------------------------------------------------------------------
     # ingest_batches — per-release job state for the scheduler
     # ------------------------------------------------------------------
     op.execute(
@@ -123,7 +107,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(sa.text("DROP TABLE IF EXISTS ingest_batches"))
-    op.execute(sa.text("DROP TABLE IF EXISTS staging_flights"))
     op.execute(sa.text("DROP TABLE IF EXISTS flights"))
     op.execute(sa.text("DROP EXTENSION IF EXISTS pg_partman"))
     op.execute(sa.text("DROP SCHEMA IF EXISTS partman CASCADE"))

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import json
 import logging
 import os
@@ -18,7 +17,7 @@ import asyncpg  # noqa: TC002
 from adsb_server.geometry.wkt import linestring_zm, point_zm
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import count_traces, stream_tarball
-from adsb_server.ingestion.splitter import split_flights
+from adsb_server.ingestion.splitter import build_squawk_runs, split_flights
 
 logger = logging.getLogger(__name__)
 
@@ -30,61 +29,56 @@ _CHUNK_SIZE = 256
 _UPSERT_FLIGHT_SQL = """
 INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
     start_ts, end_ts, start_point, end_point, path_geom,
-    path_tracks, squawk_runs, raw_point_count, ingest_batch_date)
+    path_tracks, squawk_runs, raw_point_count, ingest_batch_date,
+    completed)
 VALUES ($1,$2,$3,$4,$5,$6,
     ST_GeomFromText($7,4326), ST_GeomFromText($8,4326), ST_GeomFromText($9,4326),
-    $10, $11::jsonb, $12, $13)
+    $10, $11::jsonb, $12, $13, $14)
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
     end_ts=EXCLUDED.end_ts, end_point=EXCLUDED.end_point,
     path_geom=EXCLUDED.path_geom, path_tracks=EXCLUDED.path_tracks,
     squawk_runs=EXCLUDED.squawk_runs, raw_point_count=EXCLUDED.raw_point_count,
-    ingest_batch_date=EXCLUDED.ingest_batch_date
+    ingest_batch_date=EXCLUDED.ingest_batch_date,
+    completed=EXCLUDED.completed
 """
 
 
-def _raw_point_to_dict(p: RawPoint) -> dict[str, object]:
-    """Serialize a RawPoint to a JSON-compatible dict."""
-    return dataclasses.asdict(p)
+def _parse_linestring_zm(wkt: str) -> list[tuple[float, float, float, float]]:
+    """Parse a LINESTRING ZM WKT string into (lon, lat, alt, ts) tuples."""
+    inner = wkt.split("(", 1)[1].rstrip(")")
+    result: list[tuple[float, float, float, float]] = []
+    for point_str in inner.split(","):
+        x, y, z, m = point_str.split()
+        result.append((float(x), float(y), float(z), float(m)))
+    return result
 
 
-def _raw_point_from_dict(d: dict[str, object]) -> RawPoint:
-    """Deserialize a RawPoint from a dict."""
-    # d values are `object`; we cast to the expected concrete types via str() / float().
-    return RawPoint(
-        ts=float(str(d["ts"])),
-        lat=float(str(d["lat"])),
-        lon=float(str(d["lon"])),
-        alt_baro=float(str(d["alt_baro"])) if d.get("alt_baro") is not None else None,
-        track=float(str(d["track"])) if d.get("track") is not None else None,
-        squawk=str(d["squawk"]) if d.get("squawk") is not None else None,
-        new_leg=bool(d.get("new_leg", False)),
-        callsign=str(d["callsign"]) if d.get("callsign") is not None else None,
-        emitter_category=(
-            str(d["emitter_category"]) if d.get("emitter_category") is not None else None
-        ),
-    )
+def _squawk_at_ts(squawk_runs: list[tuple[float, str]], ts: float) -> str | None:
+    """Return the squawk code in effect at ts via forward-fill over sorted squawk_runs."""
+    result: str | None = None
+    for run_ts, code in squawk_runs:
+        if run_ts <= ts:
+            result = code
+        else:
+            break
+    return result
+
+
+_FlightParams = tuple[
+    str, str | None, str | None, str | None,
+    datetime, datetime,
+    str, str, str,
+    list[int], str, int, date,
+    bool,
+]
 
 
 def _flight_to_params(
     flight: FinalizedFlight,
     batch_date: date,
-) -> tuple[
-    str,
-    str | None,
-    str | None,
-    str | None,
-    datetime,
-    datetime,
-    str,
-    str,
-    str,
-    list[int],
-    str,
-    int,
-    date,
-]:
+) -> _FlightParams:
     """Convert a FinalizedFlight into the parameter tuple for the UPSERT SQL."""
     start_v = flight.vertices[0]
     end_v = flight.vertices[-1]
@@ -109,6 +103,56 @@ def _flight_to_params(
         squawk_runs_json,
         flight.raw_point_count,
         batch_date,
+        True,
+    )
+
+
+def _raw_flight_to_params(
+    flight: RawFlight,
+    batch_date: date,
+) -> _FlightParams | None:
+    """Convert an in-progress RawFlight into the parameter tuple for the UPSERT SQL.
+
+    Returns None if fewer than 2 airborne points (cannot form valid geometry).
+    """
+    airborne = [p for p in flight.points if p.alt_baro is not None]
+    if len(airborne) < 2:
+        return None
+
+    vertices: list[tuple[float, float, float, float]] = [
+        (p.lon, p.lat, p.alt_baro if p.alt_baro is not None else 0.0, p.ts)
+        for p in airborne
+    ]
+
+    start_wkt = point_zm(vertices[0][0], vertices[0][1], vertices[0][2], vertices[0][3])
+    end_wkt = point_zm(vertices[-1][0], vertices[-1][1], vertices[-1][2], vertices[-1][3])
+    path_wkt = linestring_zm(vertices)
+
+    path_tracks: list[int] = [
+        round(p.track) % 360 if p.track is not None else 0
+        for p in airborne
+    ]
+
+    start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
+    end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
+
+    squawk_runs_json = json.dumps(build_squawk_runs(airborne))
+
+    return (
+        flight.icao24,
+        flight.callsign,
+        flight.icao_type,
+        flight.emitter_category,
+        start_ts,
+        end_ts,
+        start_wkt,
+        end_wkt,
+        path_wkt,
+        path_tracks,
+        squawk_runs_json,
+        len(flight.points),
+        batch_date,
+        False,
     )
 
 
@@ -158,16 +202,32 @@ async def run_batch(
         batch_date,
     )
 
-    # Load all staging flights from DB
+    # Load all in-progress flights from DB
     staging_rows = await conn.fetch(
-        "SELECT icao24, start_ts, last_ts, points FROM staging_flights"
+        """
+        SELECT icao24, callsign, emitter_category, squawk_runs,
+               ST_AsText(path_geom) AS path_wkt
+        FROM flights WHERE completed = false
+        """
     )
 
     staging: dict[str, list[RawPoint]] = {}
     for row in staging_rows:
         icao24: str = row["icao24"]
-        raw_points: list[dict[str, object]] = json.loads(row["points"])
-        pts = [_raw_point_from_dict(d) for d in raw_points]
+        callsign: str | None = row["callsign"]
+        emitter_category: str | None = row["emitter_category"]
+        runs: list[tuple[float, str]] = [
+            (float(r[0]), str(r[1])) for r in json.loads(row["squawk_runs"])
+        ]
+        pts: list[RawPoint] = [
+            RawPoint(
+                ts=m, lat=y, lon=x, alt_baro=z,
+                track=None, squawk=_squawk_at_ts(runs, m),
+                new_leg=False, callsign=callsign,
+                emitter_category=emitter_category,
+            )
+            for x, y, z, m in _parse_linestring_zm(row["path_wkt"])
+        ]
         if icao24 in staging:
             staging[icao24].extend(pts)
         else:
@@ -188,7 +248,6 @@ async def run_batch(
     flight_count = 0
     traces_done = 0
     t_start = _time.monotonic()
-    new_staging: dict[str, RawFlight] = {}
     pending: list[tuple[TraceHeader, list[RawPoint]]] = []
 
     with ProcessPoolExecutor(max_workers=n_workers) as pool:
@@ -207,23 +266,7 @@ async def run_batch(
                 await asyncio.gather(*futures, return_exceptions=True)
             )
 
-            params_batch: list[
-                tuple[
-                    str,
-                    str | None,
-                    str | None,
-                    str | None,
-                    datetime,
-                    datetime,
-                    str,
-                    str,
-                    str,
-                    list[int],
-                    str,
-                    int,
-                    date,
-                ]
-            ] = []
+            params_batch: list[_FlightParams] = []
             for result, (header, _) in zip(results, pending, strict=True):
                 if isinstance(result, BaseException):
                     logger.error(
@@ -236,7 +279,9 @@ async def run_batch(
                 for flight in finalized:
                     params_batch.append(_flight_to_params(flight, batch_date))
                 if in_progress is not None:
-                    new_staging[in_progress.icao24] = in_progress
+                    raw_params = _raw_flight_to_params(in_progress, batch_date)
+                    if raw_params is not None:
+                        params_batch.append(raw_params)
 
             if params_batch:
                 try:
@@ -301,24 +346,6 @@ async def run_batch(
                 await _flush()
 
         await _flush()  # drain remaining
-
-    # Update staging table in a transaction
-    async with conn.transaction():
-        await conn.execute("DELETE FROM staging_flights")
-        for icao24, raw_flight in new_staging.items():
-            points_json = json.dumps([_raw_point_to_dict(p) for p in raw_flight.points])
-            start_ts_dt = datetime.fromtimestamp(raw_flight.points[0].ts, tz=UTC)
-            last_ts_dt = datetime.fromtimestamp(raw_flight.points[-1].ts, tz=UTC)
-            await conn.execute(
-                """
-                INSERT INTO staging_flights (icao24, start_ts, last_ts, points, source)
-                VALUES ($1, $2, $3, $4::jsonb, 'batch')
-                """,
-                icao24,
-                start_ts_dt,
-                last_ts_dt,
-                points_json,
-            )
 
     # Mark batch as succeeded
     await conn.execute(

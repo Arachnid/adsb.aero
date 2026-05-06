@@ -356,30 +356,6 @@ class TestGapBasedSplitting:
         finalized, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 1
 
-    # --- 24 h duration cap ---
-
-    def test_24h_duration_cap_splits(self) -> None:
-        """Segment exceeding 24 h is forcibly split even when no individual gap is large."""
-        BASE = 1_000_000.0
-        HOUR = 3600.0
-        # 27 points, 1 h apart — gap is exactly 3600 s (not > 3600, so no air-gap split).
-        # At i=25 the duration from seg[0] = 25 h > 24 h → split.
-        # Seg 1: i=0..24 (25 pts).  Seg 2: i=25..26 (2 pts).
-        points = [_make_point(ts=BASE + i * HOUR, alt_baro=35000.0) for i in range(27)]
-        finalized, _ = split_flights(_make_header(), points, BASE + 100 * HOUR)
-        assert len(finalized) == 2
-        assert finalized[0].end_ts.timestamp() == BASE + 24 * HOUR
-        assert finalized[1].start_ts.timestamp() == BASE + 25 * HOUR
-
-    def test_24h_duration_cap_boundary_no_split(self) -> None:
-        """Segment of exactly 24 h is NOT split (cap triggers only when > 24 h)."""
-        BASE = 1_000_000.0
-        HOUR = 3600.0
-        # 25 points at 1-h intervals → last point at BASE+24 h, duration = 24 h exactly.
-        points = [_make_point(ts=BASE + i * HOUR, alt_baro=35000.0) for i in range(25)]
-        finalized, _ = split_flights(_make_header(), points, BASE + 100 * HOUR)
-        assert len(finalized) == 1
-
     # --- in-progress window ---
 
     def test_in_progress_window_airborne_uses_1h(self) -> None:
