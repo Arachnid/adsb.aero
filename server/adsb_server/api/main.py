@@ -75,15 +75,16 @@ _FLIGHT_COLS = f"""
     f.path_tracks,
     f.squawk_runs,
     f.raw_point_count,
-    f.ingest_batch_date
+    f.ingest_batch_date,
+    f.ground_ts
 """
 
 
 def _parse_path_wkt(
-    wkt: str, path_tracks: list[int]
+    wkt: str, path_tracks: list[int], ground_ts: frozenset[float]
 ) -> tuple[dict[str, Any], list[float], list[int]]:
     """Parse a LINESTRINGZM WKT into a GeoJSON LineString dict, timestamps list, and
-    filtered path_tracks, skipping ground sentinel points (Z=0).
+    filtered path_tracks, skipping ground points identified by ground_ts.
 
     ST_AsText preserves M (timestamp) values that ST_AsGeoJSON discards.
     Coordinates are rounded to 6 decimal places to match ST_AsGeoJSON precision.
@@ -94,11 +95,11 @@ def _parse_path_wkt(
     filtered_tracks: list[int] = []
     for i, point_str in enumerate(inner.split(",")):
         parts = point_str.split()
-        z = float(parts[2])
-        if z == 0.0:
-            continue  # ground sentinel — omit from API output
-        coords_3d.append([round(float(parts[0]), 6), round(float(parts[1]), 6), round(z, 6)])
-        timestamps.append(float(parts[3]))
+        m = float(parts[3])
+        if m in ground_ts:
+            continue  # ground point — omit from API output
+        coords_3d.append([round(float(parts[0]), 6), round(float(parts[1]), 6), round(float(parts[2]), 6)])
+        timestamps.append(m)
         if i < len(path_tracks):
             filtered_tracks.append(path_tracks[i])
     return {"type": "LineString", "coordinates": coords_3d}, timestamps, filtered_tracks
@@ -106,7 +107,8 @@ def _parse_path_wkt(
 
 def _row_to_detail(row: asyncpg.Record) -> FlightDetail:
     raw_tracks = list(row["path_tracks"])
-    path_geojson, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks)
+    ground_ts: frozenset[float] = frozenset(row["ground_ts"] or [])
+    path_geojson, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks, ground_ts)
     squawk_raw = row["squawk_runs"]
     squawk_runs: list[list[Any]] = json.loads(squawk_raw) if squawk_raw else []
     return FlightDetail(
