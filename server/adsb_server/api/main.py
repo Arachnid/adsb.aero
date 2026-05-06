@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, AsyncGenerator
+from typing import Annotated, Any, AsyncGenerator
 
 import asyncpg
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from scalar_fastapi import get_scalar_api_reference
 
@@ -104,7 +104,8 @@ _FLIGHT_COLS = f"""
     f.squawk_runs,
     f.raw_point_count,
     f.ingest_batch_date,
-    f.ground_ts
+    f.ground_ts,
+    ST_NPoints(f.path_geom) - COALESCE(array_length(f.ground_ts, 1), 0) AS point_count
 """
 
 
@@ -133,14 +134,19 @@ def _parse_path_wkt(
     return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps, filtered_tracks
 
 
-def _row_to_detail(row: asyncpg.Record) -> FlightDetail:
-    raw_tracks = list(row["path_tracks"])
+def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDetail:
     ground_ts: frozenset[float] = frozenset(row["ground_ts"] or [])
-    path, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks, ground_ts)
-    squawk_raw: str | None = row["squawk_runs"]
-    squawk_runs: list[tuple[float, str]] = (
-        [(float(r[0]), str(r[1])) for r in json.loads(squawk_raw)] if squawk_raw else []
-    )
+    path = None
+    timestamps = None
+    filtered_tracks = None
+    squawk_runs = None
+    if include_path:
+        raw_tracks = list(row["path_tracks"])
+        path, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks, ground_ts)
+        squawk_raw: str | None = row["squawk_runs"]
+        squawk_runs = (
+            [(float(r[0]), str(r[1])) for r in json.loads(squawk_raw)] if squawk_raw else []
+        )
     return FlightDetail(
         flight_id=row["flight_id"],
         icao24=row["icao24"],
@@ -151,6 +157,7 @@ def _row_to_detail(row: asyncpg.Record) -> FlightDetail:
         end_ts=row["end_ts"],
         start_point=GeoJSONPointZ.model_validate_json(row["start_point"]),
         end_point=GeoJSONPointZ.model_validate_json(row["end_point"]),
+        point_count=row["point_count"],
         path=path,
         timestamps=timestamps,
         path_tracks=filtered_tracks,
@@ -190,7 +197,67 @@ async def health() -> dict[str, str]:
     ),
 )
 async def query_flights(
-    body: QueryRequest,
+    body: Annotated[
+        QueryRequest,
+        Body(
+            openapi_examples={
+                "no_filter": {
+                    "summary": "Most recent flights",
+                    "value": {"limit": 10, "include_path": False},
+                },
+                "aircraft_type_at_airport": {
+                    "summary": "B737 family arriving at Heathrow",
+                    "value": {
+                        "match": {
+                            "and": [
+                                {"icao_type": ["B738", "B737", "B737M"]},
+                                {"ends_within": {"type": "Circle", "coordinates": [-0.4543, 51.4775], "radius": 8000}},
+                            ]
+                        },
+                        "limit": 50,
+                        "include_path": False,
+                    },
+                },
+                "area_and_altitude": {
+                    "summary": "High-altitude flights over the UK",
+                    "value": {
+                        "match": {
+                            "and": [
+                                {
+                                    "trajectory_intersects": {
+                                        "geometry": {
+                                            "type": "Polygon",
+                                            "coordinates": [[[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]],
+                                        },
+                                        "altitude_min_ft": 35000,
+                                    }
+                                },
+                                {"starts_within": {"type": "TimeRange", "from": "2026-03-30T00:00:00Z", "to": "2026-03-31T00:00:00Z"}},
+                            ]
+                        },
+                        "limit": 100,
+                        "include_path": False,
+                    },
+                },
+                "callsign_prefix": {
+                    "summary": "British Airways flights (callsign prefix)",
+                    "value": {"match": {"callsign_matches": "^BAW"}, "limit": 50, "include_path": False},
+                },
+                "short_haul": {
+                    "summary": "Short flights (under 1 hour)",
+                    "value": {"match": {"duration": {"max_s": 3600}}, "limit": 50, "include_path": False},
+                },
+                "departing_from": {
+                    "summary": "Departures from Charles de Gaulle area",
+                    "value": {
+                        "match": {"starts_within": {"type": "Circle", "coordinates": [2.5479, 49.0097], "radius": 10000}},
+                        "limit": 50,
+                        "include_path": False,
+                    },
+                },
+            }
+        ),
+    ],
     request: Request,
 ) -> QueryResponse:
     pool = await get_pool(request)
@@ -233,7 +300,7 @@ async def query_flights(
         next_cursor = encode_cursor(last["start_ts"], last["icao24"])
 
     return QueryResponse(
-        flights=[_row_to_detail(r) for r in result_rows],
+        flights=[_row_to_detail(r, include_path=body.include_path) for r in result_rows],
         cursor=next_cursor,
     )
 

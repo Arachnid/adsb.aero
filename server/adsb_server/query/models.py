@@ -83,11 +83,17 @@ class FlightSummary(BaseModel):
 class FlightDetail(FlightSummary):
     """Full trajectory detail for a single flight leg, extending FlightSummary."""
 
-    path: GeoJSONLineStringZ = Field(
+    point_count: int = Field(
+        description="Number of vertices in the simplified path geometry. "
+        "Always present, even when `include_path` is false."
+    )
+    path: GeoJSONLineStringZ | None = Field(
+        default=None,
         description="Simplified flight path as a GeoJSON LineString. "
         "Coordinates are `[longitude, latitude, altitude_ft]`. "
         "Altitude is pressure altitude in feet (QNH correction not applied). "
-        "Ground-roll points are excluded.",
+        "Ground-roll points are excluded. "
+        "Omitted when the request sets `include_path` to false.",
         examples=[{
             "type": "LineString",
             "coordinates": [
@@ -97,20 +103,24 @@ class FlightDetail(FlightSummary):
             ],
         }],
     )
-    timestamps: list[float] = Field(
+    timestamps: list[float] | None = Field(
+        default=None,
         description="Unix epoch seconds (UTC) for each vertex in `path.coordinates`. "
-        "Same length as `coordinates`.",
+        "Same length as `coordinates`. Omitted when `include_path` is false.",
         examples=[[1743501600.0, 1743505200.0, 1743508800.0]],
     )
-    path_tracks: list[int] = Field(
+    path_tracks: list[int] | None = Field(
+        default=None,
         description="Magnetic track (heading) in degrees 0–359 for each vertex in `path.coordinates`. "
-        "Same length as `coordinates`.",
+        "Same length as `coordinates`. Omitted when `include_path` is false.",
         examples=[[90, 315, 315]],
     )
-    squawk_runs: list[tuple[float, str]] = Field(
+    squawk_runs: list[tuple[float, str]] | None = Field(
+        default=None,
         description="Run-length encoding of transponder squawk codes. "
         "Each entry is `[unix_timestamp, squawk_code]` and marks the start of a new code. "
-        "Forward-fill from each entry to the next to determine the code in effect at any point.",
+        "Forward-fill from each entry to the next to determine the code in effect at any point. "
+        "Omitted when `include_path` is false.",
         examples=[[[1743501600.0, "1234"]]],
     )
     raw_point_count: int = Field(
@@ -131,7 +141,6 @@ class QueryResponse(BaseModel):
         description="Opaque continuation token. Pass unchanged as `cursor` in the next request "
         "to retrieve the next page. `null` when there are no more results."
     )
-    sampled: bool = Field(default=False, description="Reserved for future use.")
 
 
 # ---------------------------------------------------------------------------
@@ -439,4 +448,9 @@ class QueryRequest(BaseModel):
     cursor: str | None = Field(
         default=None,
         description="Continuation token from the previous page's `cursor` field.",
+    )
+    include_path: bool = Field(
+        default=True,
+        description="Whether to include `path`, `timestamps`, `path_tracks`, and `squawk_runs` in each result. "
+        "Set to `false` for lightweight listing queries where trajectory data is not needed.",
     )

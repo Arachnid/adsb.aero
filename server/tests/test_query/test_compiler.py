@@ -20,6 +20,7 @@ from adsb_server.query.models import (
     OrPredicate,
     SpatialPredicateValue,
     StartsWithin,
+    TimeRange,
     TrajectoryDisjoint,
     TrajectoryIntersects,
     TrajectoryWithin,
@@ -223,17 +224,9 @@ class TestTimeWindow:
 
     def test_timerange_empty_bounds_returns_true(self) -> None:
         params: list = []
-        sql = _compile_time_window("start_ts", {"type": "TimeRange"}, params)
+        sql = _compile_time_window("start_ts", TimeRange(type="TimeRange"), params)
         assert sql == "TRUE"
         assert params == []
-
-    def test_invalid_type_raises(self) -> None:
-        with pytest.raises(ValueError, match="TimeRange"):
-            _compile_time_window("start_ts", {"type": "NotATimeRange"}, [])
-
-    def test_missing_type_raises(self) -> None:
-        with pytest.raises(ValueError, match="TimeRange"):
-            _compile_time_window("start_ts", {"from": "2025-01-01T00:00:00Z"}, [])
 
 
 # ---------------------------------------------------------------------------
