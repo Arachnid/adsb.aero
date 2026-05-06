@@ -15,7 +15,6 @@ from adsb_server.db.pool import create_pool
 from adsb_server.query.compiler import compile_predicate
 from adsb_server.query.models import (
     FlightDetail,
-    FlightSummary,
     QueryRequest,
     QueryResponse,
     decode_cursor,
@@ -58,12 +57,49 @@ async def get_pool(request: Request) -> asyncpg.Pool:
 
 
 # ---------------------------------------------------------------------------
-# Helper: row → FlightSummary
+# Helper: row → FlightDetail
 # ---------------------------------------------------------------------------
 
+# Columns selected by both /query and /flights/{id}
+_FLIGHT_COLS = f"""
+    {FLIGHT_ID_EXPR} AS flight_id,
+    f.icao24,
+    f.callsign,
+    f.icao_type,
+    f.emitter_category,
+    f.start_ts,
+    f.end_ts,
+    ST_AsGeoJSON(f.start_point, 6) AS start_point,
+    ST_AsGeoJSON(f.end_point, 6) AS end_point,
+    ST_AsText(f.path_geom) AS path_wkt,
+    f.path_tracks,
+    f.squawk_runs,
+    f.raw_point_count,
+    f.ingest_batch_date
+"""
 
-def _row_to_summary(row: asyncpg.Record) -> FlightSummary:
-    return FlightSummary(
+
+def _parse_path_wkt(wkt: str) -> tuple[dict[str, Any], list[float]]:
+    """Parse a LINESTRINGZM WKT into a GeoJSON LineString dict and a timestamps list.
+
+    ST_AsText preserves M (timestamp) values that ST_AsGeoJSON discards.
+    Coordinates are rounded to 6 decimal places to match ST_AsGeoJSON precision.
+    """
+    inner = wkt[wkt.index("(") + 1 : wkt.rindex(")")]
+    coords_3d: list[list[float]] = []
+    timestamps: list[float] = []
+    for point_str in inner.split(","):
+        parts = point_str.split()
+        coords_3d.append([round(float(parts[0]), 6), round(float(parts[1]), 6), round(float(parts[2]), 6)])
+        timestamps.append(float(parts[3]))
+    return {"type": "LineString", "coordinates": coords_3d}, timestamps
+
+
+def _row_to_detail(row: asyncpg.Record) -> FlightDetail:
+    path_geojson, timestamps = _parse_path_wkt(row["path_wkt"])
+    squawk_raw = row["squawk_runs"]
+    squawk_runs: list[list[Any]] = json.loads(squawk_raw) if squawk_raw else []
+    return FlightDetail(
         flight_id=row["flight_id"],
         icao24=row["icao24"],
         callsign=row["callsign"],
@@ -73,6 +109,12 @@ def _row_to_summary(row: asyncpg.Record) -> FlightSummary:
         end_ts=row["end_ts"],
         start_point=json.loads(row["start_point"]),
         end_point=json.loads(row["end_point"]),
+        path=path_geojson,
+        timestamps=timestamps,
+        path_tracks=list(row["path_tracks"]),
+        squawk_runs=squawk_runs,
+        raw_point_count=row["raw_point_count"],
+        ingest_batch_date=row["ingest_batch_date"],
     )
 
 
@@ -113,16 +155,7 @@ async def query_flights(
     limit_p = _p(params, body.limit + 1)
 
     sql = f"""
-        SELECT
-            {FLIGHT_ID_EXPR} AS flight_id,
-            icao24,
-            callsign,
-            icao_type,
-            emitter_category,
-            start_ts,
-            end_ts,
-            ST_AsGeoJSON(start_point, 6) AS start_point,
-            ST_AsGeoJSON(end_point, 6) AS end_point
+        SELECT {_FLIGHT_COLS}
         FROM flights f
         {where_sql}
         ORDER BY start_ts DESC, icao24 DESC
@@ -140,7 +173,7 @@ async def query_flights(
         next_cursor = encode_cursor(last["start_ts"], last["icao24"])
 
     return QueryResponse(
-        flights=[_row_to_summary(r) for r in result_rows],
+        flights=[_row_to_detail(r) for r in result_rows],
         cursor=next_cursor,
     )
 
@@ -166,62 +199,16 @@ async def get_flight(
         raise HTTPException(status_code=422, detail="Malformed flight_id timestamp")
 
     sql = f"""
-        SELECT
-            {FLIGHT_ID_EXPR} AS flight_id,
-            f.icao24,
-            f.callsign,
-            f.icao_type,
-            f.emitter_category,
-            f.start_ts,
-            f.end_ts,
-            ST_AsGeoJSON(f.start_point, 6) AS start_point,
-            ST_AsGeoJSON(f.end_point, 6) AS end_point,
-            ST_AsGeoJSON(f.path_geom, 6) AS path,
-            ts_agg.timestamps,
-            f.path_tracks,
-            f.squawk_runs,
-            f.raw_point_count,
-            f.ingest_batch_date
-        FROM flights f,
-        LATERAL (
-            SELECT ARRAY_AGG(ST_M(dp.geom) ORDER BY dp.path) AS timestamps
-            FROM ST_DumpPoints(f.path_geom) AS dp
-        ) ts_agg
-        WHERE f.icao24 = $1 AND f.start_ts = $2
+        SELECT {_FLIGHT_COLS}
+        FROM flights f
+        WHERE f.icao24 = $1 AND date_trunc('second', f.start_ts) = $2
     """
 
     row = await pool.fetchrow(sql, icao24, start_ts)
     if row is None:
         raise HTTPException(status_code=404, detail="Flight not found")
 
-    path_geojson: dict[str, Any] = json.loads(row["path"])
-    # Strip M coordinate from each vertex — GeoJSON from ST_AsGeoJSON includes
-    # Z but the 6-decimal call may include M as 4th element; keep only first 3.
-    if "coordinates" in path_geojson:
-        path_geojson["coordinates"] = [
-            c[:3] for c in path_geojson["coordinates"]
-        ]
-
-    squawk_raw = row["squawk_runs"]
-    squawk_runs: list[list[Any]] = json.loads(squawk_raw) if squawk_raw else []
-
-    return FlightDetail(
-        flight_id=row["flight_id"],
-        icao24=row["icao24"],
-        callsign=row["callsign"],
-        icao_type=row["icao_type"],
-        emitter_category=row["emitter_category"],
-        start_ts=row["start_ts"],
-        end_ts=row["end_ts"],
-        start_point=json.loads(row["start_point"]),
-        end_point=json.loads(row["end_point"]),
-        path=path_geojson,
-        timestamps=[float(t) for t in row["timestamps"]],
-        path_tracks=list(row["path_tracks"]),
-        squawk_runs=squawk_runs,
-        raw_point_count=row["raw_point_count"],
-        ingest_batch_date=row["ingest_batch_date"],
-    )
+    return _row_to_detail(row)
 
 
 def _p(params: list[Any], val: Any) -> str:

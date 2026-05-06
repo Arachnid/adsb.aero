@@ -27,6 +27,11 @@ async def test_no_filter_returns_all(api_client: AsyncClient) -> None:
     flight_ids = {f["flight_id"] for f in data["flights"]}
     assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
     assert "ddeeff:2025-04-01T06:00:00Z" in flight_ids
+    # Every result should include the full trace
+    for f in data["flights"]:
+        assert f["path"]["type"] == "LineString"
+        assert len(f["timestamps"]) == len(f["path"]["coordinates"])
+        assert len(f["path_tracks"]) == len(f["path"]["coordinates"])
 
 
 async def test_starts_within_time_filter(api_client: AsyncClient) -> None:
@@ -138,6 +143,143 @@ async def test_duration_filter(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
         json={"match": {"duration": {"min_s": 9000}}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "ddeeff:2025-04-01T06:00:00Z" in flight_ids
+    assert "aabbcc:2025-04-01T10:00:00Z" not in flight_ids
+
+
+async def test_trajectory_within_uk(api_client: AsyncClient) -> None:
+    # Flight A (London→Manchester) lies entirely within a generous UK bbox.
+    # Flight B (Paris→Rome) does not.
+    uk_containing = {
+        "type": "Polygon",
+        "coordinates": [[[-5, 50], [2, 50], [2, 55], [-5, 55], [-5, 50]]],
+    }
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={"match": {"trajectory_within": {"geometry": uk_containing}}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+
+
+async def test_trajectory_disjoint_uk(api_client: AsyncClient) -> None:
+    # Flight B (Paris→Rome) is entirely outside the UK.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={"match": {"trajectory_disjoint": {"geometry": UK_BBOX}}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "ddeeff:2025-04-01T06:00:00Z" in flight_ids
+    assert "aabbcc:2025-04-01T10:00:00Z" not in flight_ids
+
+
+async def test_trajectory_intersects_altitude_band(api_client: AsyncClient) -> None:
+    # Flight A cruises at 35000–36000 ft; altitude_min_ft=34000 should match.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={
+            "match": {
+                "trajectory_intersects": {
+                    "geometry": UK_BBOX,
+                    "altitude_min_ft": 34000,
+                }
+            }
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+
+
+async def test_starts_within_polygon(api_client: AsyncClient) -> None:
+    # Flight A departs London; a polygon around London should match it.
+    london_box = {
+        "type": "Polygon",
+        "coordinates": [[[-0.5, 51.3], [0.2, 51.3], [0.2, 51.7], [-0.5, 51.7], [-0.5, 51.3]]],
+    }
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={"match": {"starts_within": london_box}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+
+
+async def test_ends_within_time_range(api_client: AsyncClient) -> None:
+    # Flight B ends at 09:00; Flight A ends at 12:00.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={
+            "match": {
+                "ends_within": {
+                    "type": "TimeRange",
+                    "from": "2025-04-01T08:00:00Z",
+                    "to": "2025-04-01T10:00:00Z",
+                }
+            }
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "ddeeff:2025-04-01T06:00:00Z" in flight_ids
+    assert "aabbcc:2025-04-01T10:00:00Z" not in flight_ids
+
+
+async def test_emitter_category_filter(api_client: AsyncClient) -> None:
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={"match": {"emitter_category": ["A3"]}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" in flight_ids
+
+
+async def test_duration_max_s_filter(api_client: AsyncClient) -> None:
+    # Flight A: 7200s; Flight B: 10800s. max_s=8000 → only Flight A.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={"match": {"duration": {"max_s": 8000}}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+
+
+async def test_or_predicate(api_client: AsyncClient) -> None:
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={"match": {"or": [{"icao_type": ["B738"]}, {"icao_type": ["A320"]}]}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" in flight_ids
+
+
+async def test_not_predicate(api_client: AsyncClient) -> None:
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={"match": {"not": {"callsign_matches": "^BAW"}}},
     )
     assert resp.status_code == 200
     data = resp.json()

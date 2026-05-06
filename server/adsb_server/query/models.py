@@ -37,7 +37,7 @@ class FlightDetail(FlightSummary):
 
 
 class QueryResponse(BaseModel):
-    flights: list[FlightSummary]
+    flights: list[FlightDetail]
     cursor: str | None
     sampled: bool = False
 
