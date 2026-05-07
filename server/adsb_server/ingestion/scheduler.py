@@ -67,7 +67,7 @@ async def _is_batch_already_processed(
     if row is None:
         return False
     status: str = row["status"]
-    return status in ("running", "succeeded")
+    return status == "succeeded"
 
 
 async def _download_asset(

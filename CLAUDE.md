@@ -29,6 +29,12 @@ ADS-B historical query platform at adsb.aero. Map-based UI for querying flight t
 
 All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) suppress tabular and interactive output when stdout is not a TTY. Always pipe through `cat`: `docker ps | cat`, `docker exec infra-postgres-1 psql ... | cat`, etc.
 
+**Compose setup**: All compose files live in `infra/`. Run all `docker compose` commands from that directory. The `.env` file lives at the repo root; `infra/.env` is a symlink to it (create once with `ln -sf ../.env infra/.env` if missing).
+
+**Container names**: The compose project is `infra`, so containers are named `infra-<service>-1` (e.g. `infra-postgres-1`, `infra-scheduler-1`). Use these names for `docker stop`, `docker logs`, `docker exec`, etc. — `docker compose stop <service>` also works when run from `infra/`.
+
+**Rebuilding a service**: `docker compose up --build -d <service>` from `infra/`. This rebuilds the image and recreates the container in one step.
+
 ## Python environment
 
 Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. Activate with `source server/.venv/bin/activate` before running Python tools.

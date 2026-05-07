@@ -161,13 +161,13 @@ class TestIsBatchAlreadyProcessed:
 
         assert result is True
 
-    async def test_status_running_returns_true(self) -> None:
+    async def test_status_running_returns_false(self) -> None:
         conn = AsyncMock()
         conn.fetchrow.return_value = {"status": "running"}
 
         result = await _is_batch_already_processed(conn, date(2025, 4, 1))
 
-        assert result is True
+        assert result is False
 
     async def test_status_failed_returns_false(self) -> None:
         conn = AsyncMock()
