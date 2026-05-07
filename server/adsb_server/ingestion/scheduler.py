@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import re
 import shutil
@@ -71,53 +70,43 @@ async def _is_batch_already_processed(
     return status in ("running", "succeeded")
 
 
-def _sha256_file(path: Path) -> str:
-    """Return the hex SHA-256 digest of a file."""
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 async def _download_asset(
     client: httpx.AsyncClient,
     asset_url: str,
     dest: Path,
     expected_size: int,
+    updated_at: str,
 ) -> None:
     """Download a release asset to dest.
 
-    Skips the download when both the file and its .sha256 sidecar are present
-    and the sidecar's digest matches the file on disk. Redownloads if the size
-    is wrong, the sidecar is missing, or the hash does not match.
+    Skips the download when the file exists at the expected size and its .etag
+    sidecar records the same updated_at timestamp as the GitHub API returns.
+    Redownloads if the file is missing, the wrong size, the sidecar is absent,
+    or updated_at has changed (indicating the asset was replaced on GitHub).
     """
-    sha_path = Path(str(dest) + ".sha256")
+    etag_path = Path(str(dest) + ".etag")
 
-    if dest.exists() and dest.stat().st_size == expected_size and sha_path.exists():
-        stored = sha_path.read_text().strip()
-        if stored == _sha256_file(dest):
-            logger.debug("Asset already downloaded and verified: %s", dest.name)
+    if dest.exists() and dest.stat().st_size == expected_size and etag_path.exists():
+        if etag_path.read_text().strip() == updated_at:
+            logger.debug("Asset already downloaded and current: %s", dest.name)
             return
-        logger.warning("Cached %s failed hash check — redownloading", dest.name)
+        logger.info("Asset %s has changed on GitHub (updated_at differs) — redownloading", dest.name)
 
     if dest.exists():
         dest.unlink()
-    if sha_path.exists():
-        sha_path.unlink()
+    if etag_path.exists():
+        etag_path.unlink()
 
     logger.info("Downloading %s → %s", asset_url, dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    hasher = hashlib.sha256()
     async with client.stream("GET", asset_url) as resp:
         resp.raise_for_status()
         with dest.open("wb") as f:
             async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
                 f.write(chunk)
-                hasher.update(chunk)
 
-    sha_path.write_text(hasher.hexdigest())
+    etag_path.write_text(updated_at)
 
 
 async def _download_and_process_release(
@@ -155,13 +144,14 @@ async def _download_and_process_release(
         asset_name: str = str(asset.get("name", ""))
         asset_url: str = str(asset.get("browser_download_url", ""))
         asset_size: int = int(str(asset.get("size", 0)))
+        asset_updated_at: str = str(asset.get("updated_at", ""))
 
         if not asset_url:
             continue
 
         dest = dest_dir / asset_name
         try:
-            await _download_asset(client, asset_url, dest, asset_size)
+            await _download_asset(client, asset_url, dest, asset_size, asset_updated_at)
         except Exception:
             logger.error("Failed to download asset %s", asset_name, exc_info=True)
             return False

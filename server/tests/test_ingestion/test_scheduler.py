@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from collections.abc import AsyncGenerator
 from datetime import date
 from pathlib import Path
@@ -18,7 +17,6 @@ from adsb_server.ingestion.scheduler import (
     _download_asset,
     _get_releases,
     _is_batch_already_processed,
-    _sha256_file,
     _tag_to_date,
     check_and_run_new_batches,
     scheduler_loop,
@@ -185,82 +183,83 @@ class TestIsBatchAlreadyProcessed:
 # ---------------------------------------------------------------------------
 
 
-def _write_with_sidecar(dest: Path, content: bytes) -> None:
-    """Write content to dest and create the matching .sha256 sidecar."""
+_UPDATED_AT = "2026-04-01T12:00:00Z"
+
+
+def _write_with_etag(dest: Path, content: bytes, updated_at: str = _UPDATED_AT) -> None:
+    """Write content to dest and create the matching .etag sidecar."""
     dest.write_bytes(content)
-    sha_path = Path(str(dest) + ".sha256")
-    sha_path.write_text(hashlib.sha256(content).hexdigest())
+    etag_path = Path(str(dest) + ".etag")
+    etag_path.write_text(updated_at)
 
 
 class TestDownloadAsset:
-    async def test_skips_when_file_and_sidecar_match(self, tmp_path: Path) -> None:
-        """Skip download when both file and sidecar are present and hash matches."""
+    async def test_skips_when_file_and_etag_match(self, tmp_path: Path) -> None:
+        """Skip download when file, size, and etag all match."""
         dest = tmp_path / "archive.tar.aa"
         content = b"x" * 500
-        _write_with_sidecar(dest, content)
+        _write_with_etag(dest, content)
 
         client = _make_stream_client()
-        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 500)
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 500, _UPDATED_AT)
 
         client.stream.assert_not_called()
         assert dest.read_bytes() == content
 
-    async def test_redownloads_when_sidecar_missing(self, tmp_path: Path) -> None:
-        """Redownload when file exists with correct size but no sidecar is present."""
+    async def test_redownloads_when_etag_missing(self, tmp_path: Path) -> None:
+        """Redownload when file exists with correct size but no etag sidecar."""
         dest = tmp_path / "archive.tar.aa"
-        dest.write_bytes(b"x" * 500)  # no sidecar
+        dest.write_bytes(b"x" * 500)  # no etag sidecar
         content = b"fresh content"
         client = _make_stream_client(content)
 
-        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 500)
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 500, _UPDATED_AT)
 
         client.stream.assert_called_once()
         assert dest.read_bytes() == content
 
-    async def test_redownloads_when_hash_mismatch(self, tmp_path: Path) -> None:
-        """Redownload when sidecar exists but digest does not match the file."""
+    async def test_redownloads_when_updated_at_differs(self, tmp_path: Path) -> None:
+        """Redownload when etag sidecar records a different updated_at than GitHub."""
         dest = tmp_path / "archive.tar.aa"
-        dest.write_bytes(b"corrupted" * 50)
-        sha_path = Path(str(dest) + ".sha256")
-        sha_path.write_text("0" * 64)  # wrong hash
+        _write_with_etag(dest, b"x" * 500, updated_at="2026-03-01T00:00:00Z")
 
-        content = b"correct content"
+        content = b"updated content"
         client = _make_stream_client(content)
 
-        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 450)
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 500, _UPDATED_AT)
 
         client.stream.assert_called_once()
         assert dest.read_bytes() == content
 
-    async def test_creates_sidecar_after_download(self, tmp_path: Path) -> None:
-        """A .sha256 sidecar matching the downloaded content is written."""
+    async def test_creates_etag_after_download(self, tmp_path: Path) -> None:
+        """A .etag sidecar containing the updated_at string is written after download."""
         dest = tmp_path / "archive.tar.aa"
         content = b"tarball bytes"
         client = _make_stream_client(content)
 
-        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 999)
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 999, _UPDATED_AT)
 
-        sha_path = Path(str(dest) + ".sha256")
-        assert sha_path.exists()
-        assert sha_path.read_text().strip() == hashlib.sha256(content).hexdigest()
+        etag_path = Path(str(dest) + ".etag")
+        assert etag_path.exists()
+        assert etag_path.read_text().strip() == _UPDATED_AT
 
     async def test_downloads_when_file_missing(self, tmp_path: Path) -> None:
         dest = tmp_path / "archive.tar.aa"
         content = b"tarball bytes"
         client = _make_stream_client(content)
 
-        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 999)
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 999, _UPDATED_AT)
 
         assert dest.exists()
         assert dest.read_bytes() == content
 
     async def test_redownloads_when_size_mismatch(self, tmp_path: Path) -> None:
         dest = tmp_path / "archive.tar.aa"
-        _write_with_sidecar(dest, b"x" * 10)  # correct sidecar but wrong size
+        _write_with_etag(dest, b"x" * 10)  # correct etag but wrong size vs expected
         content = b"correct content"
         client = _make_stream_client(content)
 
-        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 100)
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 100, _UPDATED_AT)
 
         assert dest.read_bytes() == content
 
@@ -269,18 +268,10 @@ class TestDownloadAsset:
         content = b"data"
         client = _make_stream_client(content)
 
-        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 999)
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 999, _UPDATED_AT)
 
         assert dest.exists()
         assert dest.read_bytes() == content
-
-
-class TestSha256File:
-    def test_matches_hashlib_sha256(self, tmp_path: Path) -> None:
-        content = b"hello world" * 1000
-        p = tmp_path / "file.bin"
-        p.write_bytes(content)
-        assert _sha256_file(p) == hashlib.sha256(content).hexdigest()
 
 
 # ---------------------------------------------------------------------------
