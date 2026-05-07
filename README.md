@@ -51,7 +51,7 @@ cd web && pnpm e2e
 - [x] Step 1: Repo skeleton + tooling
 - [x] Step 2: Schema + Python DB tooling
 - [x] Step 3: Ingestion pipeline (batch + staging)
-- [ ] Step 4: API v1 (flight data)
+- [x] Step 4: API v1 (flight data)
 - [ ] Step 5: Frontend v1 (flight data)
 - [ ] Step 6: Reference data + enrichment (Doc 8643, aircraft metadata, airports, airspace)
 - [ ] Step 7: ERA5 + QNH correction
