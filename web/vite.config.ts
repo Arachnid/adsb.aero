@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: true, // Bind to 0.0.0.0 so the nginx container can reach Vite when running in Docker
     proxy: {
       "/api": "http://localhost:8000",
     },

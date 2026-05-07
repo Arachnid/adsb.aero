@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 import shutil
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path  # noqa: TC003
 
 import asyncpg  # noqa: TC002
@@ -115,6 +115,7 @@ async def _download_and_process_release(
     tag: str,
     batch_date: date,
     cache_dir: Path,
+    keep_traces: bool = False,
 ) -> bool:
     """Download all tar parts for a release and run the batch ingestion.
 
@@ -160,7 +161,8 @@ async def _download_and_process_release(
     try:
         count = await run_batch(conn, dest_dir, batch_date)
         logger.info("Batch %s: %d flights ingested", batch_date_str, count)
-        shutil.rmtree(dest_dir, ignore_errors=True)
+        if not keep_traces:
+            shutil.rmtree(dest_dir, ignore_errors=True)
         return True
     except Exception:
         logger.error("Batch %s failed", batch_date_str, exc_info=True)
@@ -179,14 +181,19 @@ async def _download_and_process_release(
 
 async def check_and_run_new_batches(
     conn: asyncpg.Connection,    cache_dir: Path,
+    lookback_days: int = 0,
+    keep_traces: bool = False,
 ) -> None:
     """
     Query the GitHub API for new adsb.lol releases and process any unprocessed ones.
     Checks current year and previous year (to handle year boundaries).
     Paginates through releases (newest-first) until a processed batch is found,
     then ingests all discovered batches oldest-first.
+
+    If lookback_days > 0, releases older than that many days are ignored.
     """
     today = date.today()
+    cutoff = today - timedelta(days=lookback_days) if lookback_days > 0 else None
     years_to_check = [today.year, today.year - 1]
 
     async with httpx.AsyncClient(
@@ -210,6 +217,10 @@ async def check_and_run_new_batches(
                     if batch_date is None:
                         continue
 
+                    if cutoff is not None and batch_date < cutoff:
+                        stop = True
+                        break
+
                     if await _is_batch_already_processed(conn, batch_date):
                         logger.debug("Batch %s already processed, stopping scan", batch_date)
                         stop = True
@@ -226,7 +237,8 @@ async def check_and_run_new_batches(
             for tag, batch_date in to_process:
                 logger.info("New batch found: %s (tag=%s)", batch_date, tag)
                 ok = await _download_and_process_release(
-                    conn, client, year, tag, batch_date, cache_dir
+                    conn, client, year, tag, batch_date, cache_dir,
+                    keep_traces=keep_traces,
                 )
                 if not ok:
                     logger.error(
@@ -241,6 +253,8 @@ async def check_and_run_new_batches(
 async def scheduler_loop(
     conn: asyncpg.Connection,    cache_dir: Path,
     interval_seconds: int = 1800,
+    lookback_days: int = 0,
+    keep_traces: bool = False,
 ) -> None:
     """
     Loop that calls check_and_run_new_batches every interval_seconds.
@@ -249,7 +263,9 @@ async def scheduler_loop(
     logger.info("Scheduler loop started (interval=%ds)", interval_seconds)
     while True:
         try:
-            await check_and_run_new_batches(conn, cache_dir)
+            await check_and_run_new_batches(
+                conn, cache_dir, lookback_days=lookback_days, keep_traces=keep_traces
+            )
         except Exception:
             logger.error("Error in check_and_run_new_batches", exc_info=True)
         await asyncio.sleep(interval_seconds)

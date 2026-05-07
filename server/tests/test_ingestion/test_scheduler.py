@@ -413,6 +413,30 @@ class TestDownloadAndProcessRelease:
         call_url = mock_dl.call_args[0][1]
         assert "good.tar.aa" in call_url
 
+    async def test_keep_traces_preserves_dir_after_successful_ingest(
+        self, tmp_path: Path
+    ) -> None:
+        dest_dir = tmp_path / "2025-04-01"
+        dest_dir.mkdir()
+        (dest_dir / "2025-04-01.tar.aa").write_bytes(b"x" * 10)
+
+        client = _release_client(_SAMPLE_RELEASE)
+        conn = AsyncMock()
+
+        with (
+            patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()),
+            patch(
+                "adsb_server.ingestion.scheduler.run_batch",
+                new=AsyncMock(return_value=3),
+            ),
+        ):
+            await _download_and_process_release(
+                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path,
+                keep_traces=True,
+            )
+
+        assert dest_dir.exists()
+
     async def test_deletes_download_dir_after_successful_ingest(
         self, tmp_path: Path
     ) -> None:
@@ -675,6 +699,7 @@ class TestCheckAndRunNewBatches:
             tag: str,
             batch_date: date,
             cache_dir: object,
+            keep_traces: bool = False,
         ) -> bool:
             processed_dates.append(batch_date)
             return True
@@ -723,6 +748,7 @@ class TestCheckAndRunNewBatches:
             tag: str,
             batch_date: date,
             cache_dir: object,
+            keep_traces: bool = False,
         ) -> bool:
             processed_dates.append(batch_date)
             return batch_date != date(2025, 4, 2)  # Apr 2 fails
@@ -756,6 +782,32 @@ class TestCheckAndRunNewBatches:
         assert date(2025, 4, 1) in processed_dates
         assert date(2025, 4, 2) in processed_dates
         assert date(2025, 4, 3) not in processed_dates
+
+    async def test_lookback_days_skips_old_batches(self, tmp_path: Path) -> None:
+        """Releases older than lookback_days are not processed."""
+        releases = [{"tag_name": "v2025.04.01-planes-readsb-prod-0"}]
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_releases",
+                new=AsyncMock(return_value=releases),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                new=AsyncMock(),
+            ) as mock_dapr,
+            patch("adsb_server.ingestion.scheduler.date") as mock_date,
+        ):
+            # today=Apr 10, lookback=7 → cutoff=Apr 3 → Apr 1 is before cutoff
+            mock_date.today.return_value = date(2025, 4, 10)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            await check_and_run_new_batches(AsyncMock(), tmp_path, lookback_days=7)
+
+        mock_dapr.assert_not_called()
 
     async def test_checks_two_years(self, tmp_path: Path) -> None:
         get_releases_mock = AsyncMock(return_value=[])
@@ -826,7 +878,9 @@ class TestSchedulerLoop:
     async def test_calls_check_then_sleeps(self, tmp_path: Path) -> None:
         check_count = 0
 
-        async def mock_check(conn: object, cache_dir: object) -> None:
+        async def mock_check(
+            conn: object, cache_dir: object, lookback_days: int = 0, keep_traces: bool = False
+        ) -> None:
             nonlocal check_count
             check_count += 1
 
@@ -852,7 +906,9 @@ class TestSchedulerLoop:
         check_count = 0
         sleep_count = 0
 
-        async def mock_check(conn: object, cache_dir: object) -> None:
+        async def mock_check(
+            conn: object, cache_dir: object, lookback_days: int = 0, keep_traces: bool = False
+        ) -> None:
             nonlocal check_count
             check_count += 1
             if check_count == 1:

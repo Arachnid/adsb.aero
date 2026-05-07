@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     scheduler_cache_dir: Path = Path("/data/cache")
     scheduler_interval_seconds: int = 1800
+    scheduler_lookback_days: int = 0  # 0 = unlimited; set to e.g. 7 in dev
+    scheduler_keep_traces: bool = False  # keep downloaded tarballs after ingestion
 
     @property
     def asyncpg_dsn(self) -> str:

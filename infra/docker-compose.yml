@@ -69,6 +69,32 @@ services:
       - "127.0.0.1:3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
 
+  api:
+    build:
+      context: ../server
+    image: adsb-api:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-adsb}
+      POSTGRES_USER: ${POSTGRES_USER:-adsb}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../web/dist:/srv/web:ro
+    ports:
+      - "127.0.0.1:80:80"
+    depends_on:
+      - api
+
   scheduler:
     build:
       context: ../server
@@ -82,6 +108,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       SCHEDULER_CACHE_DIR: /data/cache
       SCHEDULER_INTERVAL_SECONDS: "43200"
+      SCHEDULER_LOOKBACK_DAYS: "0"
+      SCHEDULER_KEEP_TRACES: "false"
     volumes:
       - scheduler_cache:/data/cache
     depends_on:

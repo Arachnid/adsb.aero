@@ -31,9 +31,15 @@ All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) s
 
 **Compose setup**: All compose files live in `infra/`. Run all `docker compose` commands from that directory. The `.env` file lives at the repo root; `infra/.env` is a symlink to it (create once with `ln -sf ../.env infra/.env` if missing).
 
-**Container names**: The compose project is `infra`, so containers are named `infra-<service>-1` (e.g. `infra-postgres-1`, `infra-scheduler-1`). Use these names for `docker stop`, `docker logs`, `docker exec`, etc. — `docker compose stop <service>` also works when run from `infra/`.
+**Dev stack**: `make dev` (or `cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`). Adds the `vite` service and mounts `infra/nginx/dev.conf`. Browser entry point: `http://localhost`.
 
-**Rebuilding a service**: `docker compose up --build -d <service>` from `infra/`. This rebuilds the image and recreates the container in one step.
+**Prod stack**: `make build-web && make prod` (or `cd infra && docker compose -f docker-compose.yml up -d`). Nginx serves `web/dist` and proxies `/api/` to the api container.
+
+**Container names**: The compose project is `infra`, so containers are named `infra-<service>-1` (e.g. `infra-postgres-1`, `infra-api-1`, `infra-nginx-1`). Use these names for `docker stop`, `docker logs`, `docker exec`, etc. — `docker compose stop <service>` also works when run from `infra/`.
+
+**Rebuilding a service**: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d <service>` from `infra/` (include both `-f` flags when in dev).
+
+**Full dev setup guide**: `docs/dev-setup.md`.
 
 ## Python environment
 

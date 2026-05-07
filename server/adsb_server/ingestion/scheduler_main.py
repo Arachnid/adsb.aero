@@ -24,6 +24,8 @@ async def _main() -> None:
             conn,
             settings.scheduler_cache_dir,
             interval_seconds=settings.scheduler_interval_seconds,
+            lookback_days=settings.scheduler_lookback_days,
+            keep_traces=settings.scheduler_keep_traces,
         )
     finally:
         await conn.close()
