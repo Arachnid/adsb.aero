@@ -104,45 +104,37 @@ _FLIGHT_COLS = f"""
     f.squawk_runs,
     f.raw_point_count,
     f.ingest_batch_date,
-    f.ground_ts,
-    ST_NPoints(f.path_geom) - COALESCE(array_length(f.ground_ts, 1), 0) AS point_count
+    ST_NPoints(f.path_geom) AS point_count
 """
 
 
 def _parse_path_wkt(
-    wkt: str, path_tracks: list[int], ground_ts: frozenset[float]
+    wkt: str, path_tracks: list[int],
 ) -> tuple[GeoJSONLineStringZ, list[float], list[int]]:
-    """Parse a LINESTRINGZM WKT into a typed GeoJSON LineString, timestamps list, and
-    filtered path_tracks, skipping ground points identified by ground_ts.
+    """Parse a LINESTRINGZM WKT into a GeoJSON LineString, timestamps list, and path_tracks.
 
     ST_AsText preserves M (timestamp) values that ST_AsGeoJSON discards.
     Coordinates are rounded to 6 decimal places to match ST_AsGeoJSON precision.
+    path_geom never contains ground points (they are excluded at ingest time).
     """
     inner = wkt[wkt.index("(") + 1 : wkt.rindex(")")]
     coords_3d: list[tuple[float, float, float]] = []
     timestamps: list[float] = []
-    filtered_tracks: list[int] = []
-    for i, point_str in enumerate(inner.split(",")):
+    for point_str in inner.split(","):
         parts = point_str.split()
-        m = float(parts[3])
-        if m in ground_ts:
-            continue  # ground point — omit from API output
         coords_3d.append((round(float(parts[0]), 6), round(float(parts[1]), 6), round(float(parts[2]), 6)))
-        timestamps.append(m)
-        if i < len(path_tracks):
-            filtered_tracks.append(path_tracks[i])
-    return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps, filtered_tracks
+        timestamps.append(float(parts[3]))
+    return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps, list(path_tracks)
 
 
 def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDetail:
-    ground_ts: frozenset[float] = frozenset(row["ground_ts"] or [])
     path = None
     timestamps = None
     filtered_tracks = None
     squawk_runs = None
     if include_path:
         raw_tracks = list(row["path_tracks"])
-        path, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks, ground_ts)
+        path, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks)
         squawk_raw: str | None = row["squawk_runs"]
         squawk_runs = (
             [(float(r[0]), str(r[1])) for r in json.loads(squawk_raw)] if squawk_raw else []

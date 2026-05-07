@@ -6,73 +6,64 @@ import asyncio
 import json
 import logging
 import os
+import pickle
 import time as _time
+import zlib
 from concurrent.futures import ProcessPoolExecutor
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path  # noqa: TC003
 from typing import Any
 
 import asyncpg  # noqa: TC002
 
+from adsb_server.geometry.simplify import simplify_flight
 from adsb_server.geometry.wkt import linestring_zm, point_zm
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import count_traces, stream_tarball
-from adsb_server.ingestion.splitter import build_squawk_runs, split_flights
+from adsb_server.ingestion.splitter import (
+    build_squawk_runs,
+    interpolate_missing_values,
+    split_flights,
+)
 
 logger = logging.getLogger(__name__)
 
 # Traces dispatched to the process pool per asyncio gather cycle.
-# Large enough to keep all workers busy; small enough that the event loop
-# remains responsive and memory stays bounded.
 _CHUNK_SIZE = 256
 
 _UPSERT_FLIGHT_SQL = """
 INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
     start_ts, end_ts, start_point, end_point, path_geom,
-    path_tracks, squawk_runs, raw_point_count, ingest_batch_date,
-    completed, ground_ts)
+    path_tracks, squawk_runs, raw_point_count, ingest_batch_date)
 VALUES ($1,$2,$3,$4,$5,$6,
     ST_GeomFromText($7,4326), ST_GeomFromText($8,4326), ST_GeomFromText($9,4326),
-    $10, $11::jsonb, $12, $13, $14, $15)
+    $10, $11::jsonb, $12, $13)
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
     end_ts=EXCLUDED.end_ts, end_point=EXCLUDED.end_point,
     path_geom=EXCLUDED.path_geom, path_tracks=EXCLUDED.path_tracks,
     squawk_runs=EXCLUDED.squawk_runs, raw_point_count=EXCLUDED.raw_point_count,
-    ingest_batch_date=EXCLUDED.ingest_batch_date,
-    completed=EXCLUDED.completed, ground_ts=EXCLUDED.ground_ts
+    ingest_batch_date=EXCLUDED.ingest_batch_date
 """
-
-
-def _parse_linestring_zm(wkt: str) -> list[tuple[float, float, float, float]]:
-    """Parse a LINESTRING ZM WKT string into (lon, lat, alt, ts) tuples."""
-    inner = wkt.split("(", 1)[1].rstrip(")")
-    result: list[tuple[float, float, float, float]] = []
-    for point_str in inner.split(","):
-        x, y, z, m = point_str.split()
-        result.append((float(x), float(y), float(z), float(m)))
-    return result
-
-
-def _squawk_at_ts(squawk_runs: list[tuple[float, str]], ts: float) -> str | None:
-    """Return the squawk code in effect at ts via forward-fill over sorted squawk_runs."""
-    result: str | None = None
-    for run_ts, code in squawk_runs:
-        if run_ts <= ts:
-            result = code
-        else:
-            break
-    return result
-
 
 _FlightParams = tuple[
     str, str | None, str | None, str | None,
     datetime, datetime,
     str, str, str,
     list[int], str, int, date,
-    bool, list[float],
 ]
+
+
+def _serialize_staging(flights: dict[str, RawFlight]) -> bytes:
+    """Pickle and zlib-compress a mapping of icao24 → RawFlight."""
+    return zlib.compress(pickle.dumps(flights), level=6)
+
+
+def _deserialize_staging(blob: bytes) -> dict[str, RawFlight]:
+    """Decompress and unpickle a staging blob back into a mapping of icao24 → RawFlight."""
+    result: dict[str, RawFlight] = pickle.loads(zlib.decompress(blob))
+    return result
 
 
 def _flight_to_params(
@@ -82,13 +73,6 @@ def _flight_to_params(
     """Convert a FinalizedFlight into the parameter tuple for the UPSERT SQL."""
     start_v = flight.vertices[0]
     end_v = flight.vertices[-1]
-
-    start_wkt = point_zm(start_v[0], start_v[1], start_v[2], start_v[3])
-    end_wkt = point_zm(end_v[0], end_v[1], end_v[2], end_v[3])
-    path_wkt = linestring_zm(flight.vertices)
-
-    squawk_runs_json = json.dumps(flight.squawk_runs)
-
     return (
         flight.icao24,
         flight.callsign,
@@ -96,56 +80,48 @@ def _flight_to_params(
         flight.emitter_category,
         flight.start_ts,
         flight.end_ts,
-        start_wkt,
-        end_wkt,
-        path_wkt,
+        point_zm(*start_v),
+        point_zm(*end_v),
+        linestring_zm(flight.vertices),
         flight.path_tracks,
-        squawk_runs_json,
+        json.dumps(flight.squawk_runs),
         flight.raw_point_count,
         batch_date,
-        True,
-        [],
     )
 
 
-def _raw_flight_to_params(
+def _in_progress_flight_to_params(
     flight: RawFlight,
     batch_date: date,
 ) -> _FlightParams | None:
-    """Convert an in-progress RawFlight into the parameter tuple for the UPSERT SQL.
+    """
+    Build DB params for an in-progress flight using a simplified path.
 
+    Applies interpolation and RDP simplification to the airborne subset so the
+    display path stored in flights is always clean.  Raw points are preserved
+    separately in the staging blob for idempotent reconstruction next day.
     Returns None if fewer than 2 airborne points (cannot form valid geometry).
-
-    path_geom stores ALL points: airborne with their actual altitude, ground points
-    with Z=0 as a sentinel (actual lat/lon preserved). ground_ts records the
-    timestamps of ground points so reconstruction can set alt_baro=None without
-    confusing a genuine 0 ft MSL airborne reading for a ground sentinel.
-    The API filters Z=0 points before serving path data.
     """
     airborne = [p for p in flight.points if p.alt_baro is not None]
     if len(airborne) < 2:
         return None
 
-    start_wkt = point_zm(airborne[0].lon, airborne[0].lat, airborne[0].alt_baro, airborne[0].ts)  # type: ignore[arg-type]
-    end_wkt = point_zm(airborne[-1].lon, airborne[-1].lat, airborne[-1].alt_baro, airborne[-1].ts)  # type: ignore[arg-type]
+    interp = interpolate_missing_values(airborne)
+    kept = simplify_flight(interp)
+    if len(kept) < 2:
+        kept = [0, len(interp) - 1]
 
-    all_vertices: list[tuple[float, float, float, float]] = [
-        (p.lon, p.lat, p.alt_baro if p.alt_baro is not None else 0.0, p.ts)
-        for p in flight.points
-    ]
-    path_wkt = linestring_zm(all_vertices)
+    vertices: list[tuple[float, float, float, float]] = []
+    path_tracks: list[int] = []
+    for i in kept:
+        p = interp[i]
+        vertices.append((p.lon, p.lat, p.alt_baro or 0.0, p.ts))
+        path_tracks.append(round(p.track) % 360 if p.track is not None else 0)
 
-    path_tracks: list[int] = [
-        round(p.track) % 360 if p.track is not None else 0
-        for p in flight.points
-    ]
-
-    start_ts = datetime.fromtimestamp(airborne[0].ts, tz=UTC)
-    end_ts = datetime.fromtimestamp(airborne[-1].ts, tz=UTC)
-
-    squawk_runs_json = json.dumps(build_squawk_runs(airborne))
-
-    ground_ts: list[float] = [p.ts for p in flight.points if p.alt_baro is None]
+    start_v = vertices[0]
+    end_v = vertices[-1]
+    start_ts = datetime.fromtimestamp(start_v[3], tz=UTC)
+    end_ts = datetime.fromtimestamp(end_v[3], tz=UTC)
 
     return (
         flight.icao24,
@@ -154,15 +130,13 @@ def _raw_flight_to_params(
         flight.emitter_category,
         start_ts,
         end_ts,
-        start_wkt,
-        end_wkt,
-        path_wkt,
+        point_zm(*start_v),
+        point_zm(*end_v),
+        linestring_zm(vertices),
         path_tracks,
-        squawk_runs_json,
+        json.dumps(build_squawk_runs([interp[i] for i in kept])),
         len(flight.points),
         batch_date,
-        False,
-        ground_ts,
     )
 
 
@@ -185,20 +159,20 @@ async def run_batch(
     """
     Process a single day's tarball and write flights to the database.
 
-    Trace processing (split + simplify) is parallelised across a
-    ProcessPoolExecutor; DB writes are batched with executemany.
+    Staging design for idempotent re-processing
+    --------------------------------------------
+    At the start, raw in-progress points from the previous day are loaded from
+    flight_staging.  At the end, the current day's in-progress points are written
+    there.  This lets any day be re-processed without creating duplicate flights:
+    the upsert key (icao24, start_ts) stays stable because we reconstruct the
+    exact same raw point sequence from the blob.
 
-    Args:
-        conn: asyncpg connection
-        tarball_path: path to a .tar.gz file or directory containing .tar.XX parts
-        batch_date: the date this batch corresponds to
-        bbox: optional (min_lon, min_lat, max_lon, max_lat) filter
-        workers: worker processes for CPU work (default: os.cpu_count())
-
-    Returns:
-        Number of flights finalized.
+    Stale flight deletion
+    ---------------------
+    Flights with ingest_batch_date == batch_date that existed before this run but
+    were not touched during it are deleted at the end.  This handles the case where
+    re-processing a day produces a different set of flights than the original run.
     """
-    # Mark ingest_batches row as 'running'
     await conn.execute(
         """
         INSERT INTO ingest_batches (batch_date, status, started_at, attempts, last_attempt_at)
@@ -212,41 +186,30 @@ async def run_batch(
         batch_date,
     )
 
-    # Load all in-progress flights from DB
-    staging_rows = await conn.fetch(
-        """
-        SELECT icao24, callsign, icao_type, emitter_category, squawk_runs,
-               ST_AsText(path_geom) AS path_wkt, ground_ts
-        FROM flights WHERE completed = false
-        """
+    # Load in-progress flights from the previous day's staging blob.
+    prev_date = batch_date - timedelta(days=1)
+    staging_row = await conn.fetchrow(
+        "SELECT staging_data FROM flight_staging WHERE batch_date = $1",
+        prev_date,
     )
+    staging: dict[str, RawFlight] = {}
+    if staging_row is not None:
+        staging = _deserialize_staging(bytes(staging_row["staging_data"]))
+        logger.info(
+            "Loaded %d in-progress flights from staging (batch_date=%s)",
+            len(staging), prev_date,
+        )
 
-    # icao24 -> (icao_type, points); icao_type needed to finalize orphaned entries
-    staging: dict[str, tuple[str | None, list[RawPoint]]] = {}
-    for row in staging_rows:
-        icao24: str = row["icao24"]
-        icao_type: str | None = row["icao_type"]
-        callsign: str | None = row["callsign"]
-        emitter_category: str | None = row["emitter_category"]
-        runs: list[tuple[float, str]] = [
-            (float(r[0]), str(r[1])) for r in json.loads(row["squawk_runs"])
-        ]
-        ground_ts_set: frozenset[float] = frozenset(row["ground_ts"] or [])
-        pts: list[RawPoint] = [
-            RawPoint(
-                ts=m, lat=y, lon=x,
-                alt_baro=None if m in ground_ts_set else z,
-                track=None,
-                squawk=_squawk_at_ts(runs, m) if m not in ground_ts_set else None,
-                new_leg=False, callsign=callsign,
-                emitter_category=emitter_category,
-            )
-            for x, y, z, m in _parse_linestring_zm(row["path_wkt"])
-        ]
-        if icao24 in staging:
-            staging[icao24] = (staging[icao24][0], staging[icao24][1] + pts)
-        else:
-            staging[icao24] = (icao_type, pts)
+    # Record flights already attributed to this batch_date so we can delete
+    # any that are not touched (re-run idempotency).
+    existing_key_rows = await conn.fetch(
+        "SELECT icao24, start_ts FROM flights WHERE ingest_batch_date = $1",
+        batch_date,
+    )
+    existing_keys: set[tuple[str, datetime]] = {
+        (r["icao24"], r["start_ts"]) for r in existing_key_rows
+    }
+    upserted_keys: set[tuple[str, datetime]] = set()
 
     cutoff_dt = datetime.combine(batch_date, time.max, tzinfo=UTC)
     cutoff_ts = cutoff_dt.timestamp()
@@ -264,6 +227,7 @@ async def run_batch(
     traces_done = 0
     t_start = _time.monotonic()
     pending: list[tuple[TraceHeader, list[RawPoint]]] = []
+    in_progress_flights: dict[str, RawFlight] = {}
 
     with ProcessPoolExecutor(max_workers=n_workers) as pool:
 
@@ -276,7 +240,6 @@ async def run_batch(
                 loop.run_in_executor(pool, _process_trace, h, pts, cutoff_ts)
                 for h, pts in pending
             ]
-            # return_exceptions=True keeps one bad trace from aborting the chunk
             results: list[Any] = list(
                 await asyncio.gather(*futures, return_exceptions=True)
             )
@@ -294,13 +257,16 @@ async def run_batch(
                 for flight in finalized:
                     params_batch.append(_flight_to_params(flight, batch_date))
                 if in_progress is not None:
-                    raw_params = _raw_flight_to_params(in_progress, batch_date)
+                    in_progress_flights[in_progress.icao24] = in_progress
+                    raw_params = _in_progress_flight_to_params(in_progress, batch_date)
                     if raw_params is not None:
                         params_batch.append(raw_params)
 
             if params_batch:
                 try:
                     await conn.executemany(_UPSERT_FLIGHT_SQL, params_batch)
+                    for p in params_batch:
+                        upserted_keys.add((p[0], p[4]))  # (icao24, start_ts)
                     flight_count += len(params_batch)
                 except Exception:
                     logger.exception(
@@ -327,7 +293,6 @@ async def run_batch(
         for trace_header, new_points in stream_tarball(tarball_path):
             icao24 = trace_header.icao24
 
-            # Apply bbox filter
             if bbox is not None:
                 min_lon, min_lat, max_lon, max_lat = bbox
                 new_points = [
@@ -338,11 +303,9 @@ async def run_batch(
                 if not new_points:
                     continue
 
-            # Merge with staging points
             staging_entry = staging.pop(icao24, None)
             if staging_entry is not None:
-                existing_pts = staging_entry[1]
-                merged = existing_pts + new_points
+                merged = staging_entry.points + new_points
                 merged.sort(key=lambda p: p.ts)
                 deduped: list[RawPoint] = []
                 last_ts: float | None = None
@@ -361,20 +324,55 @@ async def run_batch(
             if len(pending) >= _CHUNK_SIZE:
                 await _flush()
 
-        await _flush()  # drain remaining
+        await _flush()
 
-        # Finalize staging entries not seen in this tarball. Their last point is
-        # older than the gap threshold relative to this batch's cutoff, so
-        # split_flights will finalize rather than carry them forward again.
-        for orphan_icao24, (orphan_icao_type, orphan_pts) in staging.items():
-            orphan_pts.sort(key=lambda p: p.ts)
-            header = TraceHeader(icao24=orphan_icao24, icao_type=orphan_icao_type)
+        # Finalize staging entries not seen in this tarball (orphans).
+        # Their last point is older than the gap threshold relative to this
+        # batch's cutoff, so split_flights will always finalize them.
+        for orphan_icao24, orphan_flight in staging.items():
+            orphan_pts = sorted(orphan_flight.points, key=lambda p: p.ts)
+            header = TraceHeader(icao24=orphan_icao24, icao_type=orphan_flight.icao_type)
             pending.append((header, orphan_pts))
             if len(pending) >= _CHUNK_SIZE:
                 await _flush()
-        await _flush()  # drain orphans
+        await _flush()
 
-    # Mark batch as succeeded
+    # Write current in-progress flights to the staging table.
+    if in_progress_flights:
+        blob = _serialize_staging(in_progress_flights)
+        await conn.execute(
+            """
+            INSERT INTO flight_staging (batch_date, staging_data)
+            VALUES ($1, $2)
+            ON CONFLICT (batch_date) DO UPDATE SET staging_data = EXCLUDED.staging_data
+            """,
+            batch_date,
+            blob,
+        )
+        logger.info(
+            "Wrote %d in-progress flights to staging for batch_date=%s",
+            len(in_progress_flights), batch_date,
+        )
+
+    # Delete flights that existed before this run but were not written by it.
+    stale = existing_keys - upserted_keys
+    if stale:
+        await conn.execute(
+            """
+            DELETE FROM flights f
+            USING (
+                SELECT unnest($1::text[]) AS icao24,
+                       unnest($2::timestamptz[]) AS start_ts
+            ) x
+            WHERE f.icao24 = x.icao24 AND f.start_ts = x.start_ts
+              AND f.ingest_batch_date = $3
+            """,
+            [k[0] for k in stale],
+            [k[1] for k in stale],
+            batch_date,
+        )
+        logger.info("Deleted %d stale flights for batch_date=%s", len(stale), batch_date)
+
     await conn.execute(
         """
         UPDATE ingest_batches

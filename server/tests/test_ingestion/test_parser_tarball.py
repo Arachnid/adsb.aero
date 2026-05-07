@@ -99,6 +99,39 @@ class TestStreamTarballFile:
         assert results == []
 
 
+def _make_two_part_archive(
+    tmp_path: Path,
+    icaos: list[str],
+    split_after_member: int,
+) -> None:
+    """
+    Write an uncompressed tar containing one trace per icao, split into
+    archive.tar.aa (first `split_after_member` members) and archive.tar.ab (rest).
+
+    The split is placed at the exact byte boundary between members, which is the
+    worst-case scenario for the chained-stream reader: tar.aa ends with a complete
+    member and tar.ab starts with the next member's header.
+    """
+    traces = {icao: _make_trace_bytes(icao=icao) for icao in icaos}
+
+    raw_buf = io.BytesIO()
+    with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
+        for icao in icaos:
+            ti = tarfile.TarInfo(name=f"traces/{icao[:2]}/trace_full_{icao}.json.gz")
+            ti.size = len(traces[icao])
+            tf.addfile(ti, io.BytesIO(traces[icao]))
+    raw_bytes = raw_buf.getvalue()
+
+    # Locate the byte offset of the (split_after_member+1)-th member's header.
+    buf = io.BytesIO(raw_bytes)
+    with tarfile.open(fileobj=buf, mode="r:") as tf:
+        members = list(tf.getmembers())
+    split_at = members[split_after_member].offset
+
+    (tmp_path / "archive.tar.aa").write_bytes(raw_bytes[:split_at])
+    (tmp_path / "archive.tar.ab").write_bytes(raw_bytes[split_at:])
+
+
 class TestStreamTarballDirectory:
     def test_stream_tarball_dir_yields_aircraft(self, tmp_path: Path) -> None:
         """stream_tarball on a directory of tar parts yields trace data."""
@@ -115,7 +148,7 @@ class TestStreamTarballDirectory:
             tf.addfile(ti, io.BytesIO(trace_bytes))
         raw_bytes = raw_buf.getvalue()
 
-        # Split at midpoint
+        # Split at midpoint — tests chaining across the middle of a member
         mid = len(raw_bytes) // 2
         part_aa = tmp_path / "archive.tar.aa"
         part_ab = tmp_path / "archive.tar.ab"
@@ -155,6 +188,29 @@ class TestStreamTarballDirectory:
         assert len(results) == 2
         icaos = {h.icao24 for h, _ in results}
         assert icaos == {"aabbcc", "ddeeff"}
+
+    def test_stream_tarball_dir_split_at_member_boundary(self, tmp_path: Path) -> None:
+        """Split exactly between two members.
+
+        tar.aa contains the first member in full; tar.ab starts with the second
+        member's header. This is the failure scenario where a naive reader might
+        stop at the end of tar.aa rather than continue into tar.ab.
+        """
+        _make_two_part_archive(tmp_path, ["aabbcc", "ddeeff"], split_after_member=0)
+
+        results = list(stream_tarball(tmp_path))
+        assert len(results) == 2
+        assert {h.icao24 for h, _ in results} == {"aabbcc", "ddeeff"}
+
+    def test_stream_tarball_dir_many_members_across_parts(self, tmp_path: Path) -> None:
+        """All members are yielded when the split falls between members mid-archive."""
+        icaos = [f"aa{i:04x}" for i in range(10)]
+        _make_two_part_archive(tmp_path, icaos, split_after_member=4)
+
+        results = list(stream_tarball(tmp_path))
+        assert len(results) == 10
+        assert {h.icao24 for h, _ in results} == set(icaos)
+
 
 
 class TestIsTarPart:

@@ -9,14 +9,13 @@ import gzip
 import io
 import json
 import tarfile
-from datetime import UTC, date
+from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import asyncpg
 
 
@@ -58,9 +57,12 @@ def _make_tarball_dir(tmp_path: Path, aircraft: list[str]) -> Path:
     return tmp_path
 
 
+
+
 @pytest.mark.asyncio
 async def test_run_batch_creates_flights(
-    conn: asyncpg.Connection,    tmp_path: Path,
+    conn: asyncpg.Connection,
+    tmp_path: Path,
 ) -> None:
     """run_batch writes flights to the DB and returns the count."""
     from adsb_server.ingestion.batch import run_batch
@@ -79,7 +81,8 @@ async def test_run_batch_creates_flights(
 
 @pytest.mark.asyncio
 async def test_run_batch_marks_ingest_batch_succeeded(
-    conn: asyncpg.Connection,    tmp_path: Path,
+    conn: asyncpg.Connection,
+    tmp_path: Path,
 ) -> None:
     """run_batch records status='succeeded' in ingest_batches."""
     from adsb_server.ingestion.batch import run_batch
@@ -100,16 +103,15 @@ async def test_run_batch_marks_ingest_batch_succeeded(
 
 @pytest.mark.asyncio
 async def test_run_batch_with_bbox_filter(
-    conn: asyncpg.Connection,    tmp_path: Path,
+    conn: asyncpg.Connection,
+    tmp_path: Path,
 ) -> None:
     """run_batch with bbox filter only processes points inside the box."""
     from adsb_server.ingestion.batch import run_batch
 
-    # Aircraft at 51.5-51.7 lat, -0.3 to -0.1 lon — inside UK bbox
     tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
     batch_date = date(2021, 3, 1)
 
-    # Tight bbox that includes the aircraft
     uk_bbox = (-1.0, 51.0, 0.0, 52.0)
     count = await run_batch(conn, tarball_dir, batch_date, bbox=uk_bbox)
     assert count == 1
@@ -117,12 +119,12 @@ async def test_run_batch_with_bbox_filter(
 
 @pytest.mark.asyncio
 async def test_run_batch_bbox_excludes_outside_aircraft(
-    conn: asyncpg.Connection,    tmp_path: Path,
+    conn: asyncpg.Connection,
+    tmp_path: Path,
 ) -> None:
     """run_batch with bbox excludes aircraft whose points are all outside."""
     from adsb_server.ingestion.batch import run_batch
 
-    # Aircraft at UK coords, but bbox is in US
     tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
     batch_date = date(2021, 4, 1)
 
@@ -133,7 +135,8 @@ async def test_run_batch_bbox_excludes_outside_aircraft(
 
 @pytest.mark.asyncio
 async def test_run_batch_idempotent_upsert(
-    conn: asyncpg.Connection,    tmp_path: Path,
+    conn: asyncpg.Connection,
+    tmp_path: Path,
 ) -> None:
     """Running the same batch twice does not duplicate flights."""
     from adsb_server.ingestion.batch import run_batch
@@ -151,12 +154,13 @@ async def test_run_batch_idempotent_upsert(
 
 
 @pytest.mark.asyncio
-async def test_run_batch_in_progress_roundtrip(
-    conn: asyncpg.Connection,    tmp_path: Path,
+async def test_run_batch_in_progress_written_to_staging(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
 ) -> None:
     """
-    In-progress flights are stored in flights with completed=false;
-    a subsequent batch past the cutoff finalizes them.
+    In-progress flights are written to flight_staging and visible in the flights
+    table with a simplified path (no ground points).
     """
     from adsb_server.ingestion.batch import run_batch
 
@@ -180,52 +184,56 @@ async def test_run_batch_in_progress_roundtrip(
 
     await run_batch(conn, tmp_path, batch_date)
 
-    # Flight ends within the airborne in-progress window → stored as completed=false
-    row = await conn.fetchrow(
-        "SELECT completed FROM flights WHERE icao24 = 'ip0001'"
-    )
+    # Flight is visible in the flights table with a simplified path
+    row = await conn.fetchrow("SELECT icao24 FROM flights WHERE icao24 = 'ip0001'")
     assert row is not None
-    assert row["completed"] is False
+
+    # Raw points written to staging for next day's use
+    staging_row = await conn.fetchrow(
+        "SELECT staging_data FROM flight_staging WHERE batch_date = $1", batch_date
+    )
+    assert staging_row is not None
+
+    from adsb_server.ingestion.batch import _deserialize_staging
+    staging = _deserialize_staging(bytes(staging_row["staging_data"]))
+    assert "ip0001" in staging
 
 
 @pytest.mark.asyncio
-async def test_run_batch_merges_in_progress(
+async def test_run_batch_merges_in_progress_from_staging(
     conn: asyncpg.Connection,
     tmp_path: Path,
 ) -> None:
     """
-    Pre-existing in-progress points in flights are merged with new tarball points.
-    The combined data produces a single finalized flight.
+    In-progress points from the previous day's staging blob are merged with new
+    tarball points.  The combined data produces a single finalized flight.
     """
-    from datetime import datetime
+    from adsb_server.ingestion.batch import _serialize_staging, run_batch
+    from adsb_server.ingestion.models import RawFlight, RawPoint
 
-    from adsb_server.ingestion.batch import run_batch
+    batch_date_1 = date(2021, 7, 1)
+    batch_date_2 = date(2021, 7, 2)
 
-    # Insert an in-progress flight for "cc1122" with 2 points from 1000.0 to 1030.0
-    start_ts = datetime.fromtimestamp(1000.0, tz=UTC)
-    end_ts = datetime.fromtimestamp(1030.0, tz=UTC)
+    # Build a staging blob as if batch_date_1 produced an in-progress flight
+    prev_pts = [
+        RawPoint(ts=1000.0, lat=51.5, lon=-0.1, alt_baro=35000.0,
+                 track=90.0, squawk=None, new_leg=False,
+                 callsign=None, emitter_category=None),
+        RawPoint(ts=1030.0, lat=51.6, lon=-0.2, alt_baro=35100.0,
+                 track=91.0, squawk=None, new_leg=False,
+                 callsign=None, emitter_category=None),
+    ]
+    staging_flight = RawFlight(
+        icao24="cc1122", callsign=None, icao_type="B738",
+        emitter_category=None, points=prev_pts,
+    )
+    blob = _serialize_staging({"cc1122": staging_flight})
     await conn.execute(
-        """
-        INSERT INTO flights (
-            icao24, start_ts, end_ts,
-            start_point, end_point, path_geom,
-            path_tracks, squawk_runs, raw_point_count,
-            ingest_batch_date, completed
-        ) VALUES (
-            $1, $2, $3,
-            ST_GeomFromText('POINT ZM (-0.1 51.5 35000 1000)', 4326),
-            ST_GeomFromText('POINT ZM (-0.2 51.6 35100 1030)', 4326),
-            ST_GeomFromText('LINESTRING ZM (-0.1 51.5 35000 1000,-0.2 51.6 35100 1030)', 4326),
-            ARRAY[90, 91], '[]'::jsonb, 2,
-            '2021-01-01', false
-        )
-        """,
-        "cc1122",
-        start_ts,
-        end_ts,
+        "INSERT INTO flight_staging (batch_date, staging_data) VALUES ($1, $2)",
+        batch_date_1, blob,
     )
 
-    # Tarball continues from ts=1060.0 to 1090.0
+    # Tarball for batch_date_2 continues the flight, placed well before the cutoff
     entries: list[list[object]] = [
         [0.0, 51.7, -0.3, 35200.0, 460.0, 92.0, 0, None, None],
         [30.0, 51.8, -0.4, 35300.0, 465.0, 93.0, 0, None, None],
@@ -238,17 +246,11 @@ async def test_run_batch_merges_in_progress(
         tf.addfile(ti, io.BytesIO(trace_bytes))
     (tmp_path / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    # Batch date well in the future so all points are finalized
-    batch_date = date(2099, 1, 1)
-    count = await run_batch(conn, tmp_path, batch_date)
-    assert count == 1  # one merged flight
+    count = await run_batch(conn, tmp_path, batch_date_2)
+    assert count == 1
 
-    # The row should now be completed
-    row = await conn.fetchrow(
-        "SELECT completed FROM flights WHERE icao24 = 'cc1122'"
-    )
+    row = await conn.fetchrow("SELECT icao24 FROM flights WHERE icao24 = 'cc1122'")
     assert row is not None
-    assert row["completed"] is True
 
 
 @pytest.mark.asyncio
@@ -260,7 +262,7 @@ async def test_run_batch_serialization_roundtrip(
     from adsb_server.ingestion.batch import run_batch
 
     tarball_dir = _make_tarball_dir(tmp_path, ["ff1122"])
-    batch_date = date(2021, 7, 1)
+    batch_date = date(2021, 8, 1)
 
     count = await run_batch(conn, tarball_dir, batch_date)
     assert count == 1
@@ -270,56 +272,8 @@ async def test_run_batch_serialization_roundtrip(
     )
     assert row is not None
     assert isinstance(row["path_tracks"], list)
-    import json as _json
-    runs = _json.loads(row["squawk_runs"])
+    runs = json.loads(row["squawk_runs"])
     assert isinstance(runs, list)
-
-
-@pytest.mark.asyncio
-async def test_in_progress_and_completed_visible_together(
-    conn: asyncpg.Connection,
-    tmp_path: Path,
-) -> None:
-    """completed=false and completed=true rows both appear in unfiltered flights queries."""
-    from adsb_server.ingestion.batch import run_batch
-
-    # Batch 1: one aircraft well before cutoff (finalised), one near cutoff (in-progress)
-    batch_date = date(2021, 8, 1)
-    cutoff_ts = 1627776000 + 86399  # end of 2021-08-01
-
-    far_entries: list[list[object]] = [
-        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
-        [60.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, None],
-        [120.0, 51.7, -0.3, 35200.0, 92.0, 0.0, 0, None, None],
-    ]
-    near_entries: list[list[object]] = [
-        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
-        [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, None],
-    ]
-
-    raw_buf = io.BytesIO()
-    with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
-        # "aa0001" ends at ts=100 — well before cutoff
-        b = _make_trace_bytes("aa0001", base_ts=100.0, entries=far_entries)
-        ti = tarfile.TarInfo(name="traces/aa/trace_full_aa0001.json.gz")
-        ti.size = len(b)
-        tf.addfile(ti, io.BytesIO(b))
-        # "aa0002" ends near cutoff
-        b = _make_trace_bytes("aa0002", base_ts=float(cutoff_ts - 30), entries=near_entries)
-        ti = tarfile.TarInfo(name="traces/aa/trace_full_aa0002.json.gz")
-        ti.size = len(b)
-        tf.addfile(ti, io.BytesIO(b))
-    (tmp_path / "archive.tar.aa").write_bytes(raw_buf.getvalue())
-
-    await run_batch(conn, tmp_path, batch_date)
-
-    rows = await conn.fetch(
-        "SELECT icao24, completed FROM flights WHERE icao24 = ANY($1)",
-        ["aa0001", "aa0002"],
-    )
-    by_icao = {r["icao24"]: r["completed"] for r in rows}
-    assert by_icao.get("aa0001") is True
-    assert by_icao.get("aa0002") is False
 
 
 @pytest.mark.asyncio
@@ -328,8 +282,8 @@ async def test_run_batch_two_batches_finalizes_in_progress(
     tmp_path: Path,
 ) -> None:
     """
-    A flight left in-progress by batch 1 is completed=false in the DB.
-    Batch 2, with a later date, picks it up and finalises it as completed=true.
+    A flight left in-progress by batch 1 is in staging.
+    Batch 2, with a later date, picks it up from staging and finalises it.
     """
     from adsb_server.ingestion.batch import run_batch
 
@@ -341,7 +295,6 @@ async def test_run_batch_two_batches_finalizes_in_progress(
         [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, None],
     ]
 
-    # --- Batch 1 ---
     tmp1 = tmp_path / "batch1"
     tmp1.mkdir()
     raw_buf = io.BytesIO()
@@ -354,11 +307,13 @@ async def test_run_batch_two_batches_finalizes_in_progress(
 
     await run_batch(conn, tmp1, batch_date_1)
 
-    row = await conn.fetchrow("SELECT completed FROM flights WHERE icao24 = 'bb0001'")
-    assert row is not None
-    assert row["completed"] is False, "should be in-progress after batch 1"
+    # Should be in staging after batch 1
+    staging_row = await conn.fetchrow(
+        "SELECT staging_data FROM flight_staging WHERE batch_date = $1", batch_date_1
+    )
+    assert staging_row is not None, "in-progress flight should be in staging after batch 1"
 
-    # --- Batch 2: same points but well before the new batch's cutoff ---
+    # Batch 2: continuation well before the new cutoff
     batch_date_2 = date(2021, 9, 2)
     tmp2 = tmp_path / "batch2"
     tmp2.mkdir()
@@ -376,30 +331,27 @@ async def test_run_batch_two_batches_finalizes_in_progress(
     (tmp2 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
     count = await run_batch(conn, tmp2, batch_date_2)
-    assert count >= 1, "at least the merged flight should be finalised"
+    assert count >= 1
 
-    row = await conn.fetchrow("SELECT completed FROM flights WHERE icao24 = 'bb0001'")
+    # The merged flight exists in flights
+    row = await conn.fetchrow("SELECT icao24 FROM flights WHERE icao24 = 'bb0001'")
     assert row is not None
-    assert row["completed"] is True, "should be finalised after batch 2"
 
 
 @pytest.mark.asyncio
-async def test_squawk_reconstructed_from_in_progress(
+async def test_squawk_reconstructed_from_staging(
     conn: asyncpg.Connection,
     tmp_path: Path,
 ) -> None:
     """
-    Squawk codes observed in batch 1 are stored as squawk_runs on the in-progress row
-    and reconstructed when batch 2 loads it, so the finalised squawk_runs span both batches.
+    Squawk codes from batch 1 are preserved in the staging blob and reconstructed
+    when batch 2 loads it, so the finalised squawk_runs span both batches.
     """
-    import json as _json
-
     from adsb_server.ingestion.batch import run_batch
 
     batch_date_1 = date(2021, 10, 1)
     cutoff_ts_1 = 1633046400 + 86399  # end of 2021-10-01
 
-    # Points near cutoff with a distinctive squawk
     squawk_entries: list[list[object]] = [
         [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, {"squawk": "7700"}],
         [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, {"squawk": "7700"}],
@@ -417,16 +369,18 @@ async def test_squawk_reconstructed_from_in_progress(
 
     await run_batch(conn, tmp1, batch_date_1)
 
-    # In-progress row should have the 7700 squawk stored
-    row = await conn.fetchrow(
-        "SELECT completed, squawk_runs FROM flights WHERE icao24 = 'cc0001'"
+    # Staging should contain the squawk
+    from adsb_server.ingestion.batch import _deserialize_staging
+    staging_row = await conn.fetchrow(
+        "SELECT staging_data FROM flight_staging WHERE batch_date = $1", batch_date_1
     )
-    assert row is not None
-    assert row["completed"] is False
-    runs_1 = _json.loads(row["squawk_runs"])
-    assert any(r[1] == "7700" for r in runs_1), "7700 should be in squawk_runs after batch 1"
+    assert staging_row is not None
+    staging = _deserialize_staging(bytes(staging_row["staging_data"]))
+    assert "cc0001" in staging
+    squawks_in_staging = [p.squawk for p in staging["cc0001"].points if p.squawk is not None]
+    assert "7700" in squawks_in_staging, "7700 squawk should be in staging after batch 1"
 
-    # Batch 2: continuation well before new cutoff, different squawk
+    # Batch 2: continuation with different squawk
     batch_date_2 = date(2021, 10, 2)
     cont_entries: list[list[object]] = [
         [0.0,  51.7, -0.3, 35200.0, 92.0, 0.0, 0, None, {"squawk": "2000"}],
@@ -446,11 +400,10 @@ async def test_squawk_reconstructed_from_in_progress(
     await run_batch(conn, tmp2, batch_date_2)
 
     row = await conn.fetchrow(
-        "SELECT completed, squawk_runs FROM flights WHERE icao24 = 'cc0001'"
+        "SELECT squawk_runs FROM flights WHERE icao24 = 'cc0001'"
     )
     assert row is not None
-    assert row["completed"] is True
-    runs_2 = _json.loads(row["squawk_runs"])
+    runs_2 = json.loads(row["squawk_runs"])
     squawk_codes = {r[1] for r in runs_2}
     assert "7700" in squawk_codes, "7700 from batch 1 should survive into finalised squawk_runs"
     assert "2000" in squawk_codes, "2000 from batch 2 should appear in finalised squawk_runs"
@@ -462,8 +415,8 @@ async def test_orphaned_in_progress_finalized_by_next_batch(
     tmp_path: Path,
 ) -> None:
     """
-    A flight left in-progress by batch 1 that does NOT appear in batch 2's tarball
-    should still be finalized by batch 2 (gap exceeds threshold relative to cutoff).
+    A flight left in staging by batch 1 that does NOT appear in batch 2's tarball
+    is finalized as an orphan (gap exceeds threshold relative to batch 2's cutoff).
     """
     from adsb_server.ingestion.batch import run_batch
 
@@ -487,22 +440,21 @@ async def test_orphaned_in_progress_finalized_by_next_batch(
 
     await run_batch(conn, tmp1, batch_date_1)
 
-    row = await conn.fetchrow("SELECT completed FROM flights WHERE icao24 = 'dd0001'")
-    assert row is not None
-    assert row["completed"] is False, "should be in-progress after batch 1"
+    staging_row = await conn.fetchrow(
+        "SELECT staging_data FROM flight_staging WHERE batch_date = $1", batch_date_1
+    )
+    assert staging_row is not None, "dd0001 should be in staging after batch 1"
 
-    # Batch 2: dd0001 is absent from the tarball entirely
+    # Batch 2: dd0001 absent from tarball
     batch_date_2 = date(2021, 11, 2)
     tmp2 = tmp_path / "batch2"
     tmp2.mkdir()
-    # Use a different aircraft so the tarball is non-empty but dd0001 is absent
     tarball_dir = _make_tarball_dir(tmp2, ["ee0002"])
 
     await run_batch(conn, tarball_dir, batch_date_2)
 
-    row = await conn.fetchrow("SELECT completed FROM flights WHERE icao24 = 'dd0001'")
-    assert row is not None
-    assert row["completed"] is True, "orphaned in-progress should be finalized by next batch"
+    row = await conn.fetchrow("SELECT icao24 FROM flights WHERE icao24 = 'dd0001'")
+    assert row is not None, "orphaned in-progress should be finalized by next batch"
 
 
 @pytest.mark.asyncio
@@ -511,20 +463,18 @@ async def test_ground_points_preserved_across_batch_boundary(
     tmp_path: Path,
 ) -> None:
     """
-    An in-progress flight that contains a ground phase (alt_baro=None) stores those
-    timestamps in ground_ts. The next batch reconstructs them so the ground gap does
-    not appear as a spurious >1h air gap that would wrongly split the flight.
+    An in-progress flight with a ground phase stores the ground points in the staging
+    blob.  The next batch reconstructs them correctly so the ground gap does not appear
+    as a spurious >1h air gap that would wrongly split the flight.
     """
     from adsb_server.ingestion.batch import run_batch
 
     batch_date_1 = date(2021, 12, 1)
     cutoff_ts_1 = 1638316800 + 86399  # end of 2021-12-01
 
-    # Three airborne pts, then one ground pt, then one more airborne pt — all near
-    # the cutoff so the whole sequence is stored as in-progress.
-    # The gap between the last airborne pt before landing and the airborne pt after
-    # takeoff is 4000 s (> AIR_GAP_THRESHOLD of 3600 s), but it's bridged by a
-    # ground pt so it must NOT cause a split on reconstruction.
+    # Airborne → ground → airborne; gap between last airborne and re-takeoff is 4000 s
+    # (> AIR_GAP_THRESHOLD of 3600 s).  The ground point bridges the gap so split must
+    # not fire.
     base = float(cutoff_ts_1 - 4060)
     entries: list[list[object]] = [
         [0.0,    51.5, -0.1, 35000.0, 450.0, 90.0, 0, None, None],  # airborne
@@ -545,12 +495,17 @@ async def test_ground_points_preserved_across_batch_boundary(
 
     await run_batch(conn, tmp1, batch_date_1)
 
-    row = await conn.fetchrow(
-        "SELECT completed, ground_ts FROM flights WHERE icao24 = 'ff0001'"
+    staging_row = await conn.fetchrow(
+        "SELECT staging_data FROM flight_staging WHERE batch_date = $1", batch_date_1
     )
-    assert row is not None
-    assert row["completed"] is False, "should be in-progress after batch 1"
-    assert len(row["ground_ts"]) == 1, "one ground timestamp should be stored"
+    assert staging_row is not None, "ff0001 should be in staging after batch 1"
+
+    # Verify ground point is in the blob (alt_baro=None)
+    from adsb_server.ingestion.batch import _deserialize_staging
+    staging = _deserialize_staging(bytes(staging_row["staging_data"]))
+    assert "ff0001" in staging
+    ground_count = sum(1 for p in staging["ff0001"].points if p.alt_baro is None)
+    assert ground_count == 1, "ground point should be preserved in staging blob"
 
     # Batch 2: ff0001 absent — processed as orphan.  Must produce ONE finalized
     # flight, not two (which would happen if the ground gap were misread as air gap).
@@ -562,7 +517,73 @@ async def test_ground_points_preserved_across_batch_boundary(
     await run_batch(conn, tarball_dir, batch_date_2)
 
     rows = await conn.fetch(
-        "SELECT completed, raw_point_count FROM flights WHERE icao24 = 'ff0001'"
+        "SELECT icao24 FROM flights WHERE icao24 = 'ff0001'"
     )
-    completed_rows = [r for r in rows if r["completed"]]
-    assert len(completed_rows) == 1, "ground gap must not produce a spurious split"
+    assert len(rows) == 1, "ground gap must not produce a spurious split"
+
+
+@pytest.mark.asyncio
+async def test_stale_flights_deleted_on_rerun(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+) -> None:
+    """
+    Re-running a batch deletes flights from ingest_batch_date=N that were not
+    touched by the re-run, so the resulting DB state matches a fresh run.
+    """
+    from adsb_server.ingestion.batch import run_batch
+
+    batch_date = date(2021, 1, 15)
+
+    # First run: two aircraft
+    tarball_dir = _make_tarball_dir(tmp_path, ["aa1111", "bb2222"])
+    await run_batch(conn, tarball_dir, batch_date)
+
+    rows = await conn.fetch(
+        "SELECT icao24 FROM flights WHERE ingest_batch_date = $1", batch_date
+    )
+    assert {r["icao24"] for r in rows} == {"aa1111", "bb2222"}
+
+    # Second run: only one aircraft (simulate the tarball changing)
+    tmp2 = tmp_path / "rerun"
+    tmp2.mkdir()
+    tarball_dir2 = _make_tarball_dir(tmp2, ["aa1111"])
+    await run_batch(conn, tarball_dir2, batch_date)
+
+    rows = await conn.fetch(
+        "SELECT icao24 FROM flights WHERE ingest_batch_date = $1", batch_date
+    )
+    assert {r["icao24"] for r in rows} == {"aa1111"}, "bb2222 should have been deleted as stale"
+
+
+@pytest.mark.asyncio
+async def test_staging_serialization_roundtrip() -> None:
+    """_serialize_staging / _deserialize_staging are inverses."""
+    from adsb_server.ingestion.batch import _deserialize_staging, _serialize_staging
+    from adsb_server.ingestion.models import RawFlight, RawPoint
+
+    pts = [
+        RawPoint(ts=1000.0, lat=51.5, lon=-0.1, alt_baro=35000.0,
+                 track=90.0, squawk="7700", new_leg=False,
+                 callsign="BAW1", emitter_category="A3"),
+        RawPoint(ts=1060.0, lat=51.6, lon=-0.2, alt_baro=None,
+                 track=None, squawk=None, new_leg=False,
+                 callsign="BAW1", emitter_category="A3"),
+    ]
+    flight = RawFlight(
+        icao24="aabbcc", callsign="BAW1", icao_type="B738",
+        emitter_category="A3", points=pts,
+    )
+    blob = _serialize_staging({"aabbcc": flight})
+    result = _deserialize_staging(blob)
+
+    assert "aabbcc" in result
+    rf = result["aabbcc"]
+    assert rf.icao24 == "aabbcc"
+    assert rf.icao_type == "B738"
+    assert len(rf.points) == 2
+    assert rf.points[0].ts == 1000.0
+    assert rf.points[0].alt_baro == 35000.0
+    assert rf.points[0].squawk == "7700"
+    assert rf.points[1].alt_baro is None
+    assert rf.points[1].squawk is None

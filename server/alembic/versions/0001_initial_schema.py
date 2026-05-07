@@ -46,8 +46,6 @@ def upgrade() -> None:
             squawk_runs       JSONB                         NOT NULL DEFAULT '[]',
             raw_point_count   INTEGER                       NOT NULL DEFAULT 0,
             ingest_batch_date DATE                          NOT NULL,
-            completed         BOOLEAN                       NOT NULL DEFAULT TRUE,
-            ground_ts         DOUBLE PRECISION[]            NOT NULL DEFAULT '{}',
             PRIMARY KEY (icao24, start_ts)
         ) PARTITION BY RANGE (start_ts)
         """)
@@ -87,6 +85,23 @@ def upgrade() -> None:
     op.execute(sa.text("CREATE INDEX flights_alt_max ON flights ((ST_ZMax(path_geom::box3d)))"))
 
     # ------------------------------------------------------------------
+    # flight_staging — raw in-progress points for idempotent re-processing
+    #
+    # One row per batch_date: a zlib-compressed JSON blob containing all
+    # RawFlight objects that were still in-progress at end-of-day.  The
+    # next day's batch reads batch_date-1's blob to reconstruct those
+    # flights, so any day can be re-processed without creating duplicates.
+    # ------------------------------------------------------------------
+    op.execute(
+        sa.text("""
+        CREATE TABLE flight_staging (
+            batch_date   DATE  PRIMARY KEY,
+            staging_data BYTEA NOT NULL
+        )
+        """)
+    )
+
+    # ------------------------------------------------------------------
     # ingest_batches — per-release job state for the scheduler
     # ------------------------------------------------------------------
     op.execute(
@@ -108,6 +123,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(sa.text("DROP TABLE IF EXISTS ingest_batches"))
+    op.execute(sa.text("DROP TABLE IF EXISTS flight_staging"))
     op.execute(sa.text("DROP TABLE IF EXISTS flights"))
     op.execute(sa.text("DROP EXTENSION IF EXISTS pg_partman"))
     op.execute(sa.text("DROP SCHEMA IF EXISTS partman CASCADE"))

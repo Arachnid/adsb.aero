@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+from collections.abc import AsyncGenerator
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,14 +18,14 @@ from adsb_server.ingestion.scheduler import (
     _download_asset,
     _get_releases,
     _is_batch_already_processed,
+    _sha256_file,
     _tag_to_date,
     check_and_run_new_batches,
     scheduler_loop,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-    from pathlib import Path
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -182,17 +185,64 @@ class TestIsBatchAlreadyProcessed:
 # ---------------------------------------------------------------------------
 
 
+def _write_with_sidecar(dest: Path, content: bytes) -> None:
+    """Write content to dest and create the matching .sha256 sidecar."""
+    dest.write_bytes(content)
+    sha_path = Path(str(dest) + ".sha256")
+    sha_path.write_text(hashlib.sha256(content).hexdigest())
+
+
 class TestDownloadAsset:
-    async def test_skips_when_file_exists_with_correct_size(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_skips_when_file_and_sidecar_match(self, tmp_path: Path) -> None:
+        """Skip download when both file and sidecar are present and hash matches."""
         dest = tmp_path / "archive.tar.aa"
-        dest.write_bytes(b"x" * 500)
+        content = b"x" * 500
+        _write_with_sidecar(dest, content)
 
         client = _make_stream_client()
         await _download_asset(client, "https://example.com/archive.tar.aa", dest, 500)
 
         client.stream.assert_not_called()
+        assert dest.read_bytes() == content
+
+    async def test_redownloads_when_sidecar_missing(self, tmp_path: Path) -> None:
+        """Redownload when file exists with correct size but no sidecar is present."""
+        dest = tmp_path / "archive.tar.aa"
+        dest.write_bytes(b"x" * 500)  # no sidecar
+        content = b"fresh content"
+        client = _make_stream_client(content)
+
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 500)
+
+        client.stream.assert_called_once()
+        assert dest.read_bytes() == content
+
+    async def test_redownloads_when_hash_mismatch(self, tmp_path: Path) -> None:
+        """Redownload when sidecar exists but digest does not match the file."""
+        dest = tmp_path / "archive.tar.aa"
+        dest.write_bytes(b"corrupted" * 50)
+        sha_path = Path(str(dest) + ".sha256")
+        sha_path.write_text("0" * 64)  # wrong hash
+
+        content = b"correct content"
+        client = _make_stream_client(content)
+
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 450)
+
+        client.stream.assert_called_once()
+        assert dest.read_bytes() == content
+
+    async def test_creates_sidecar_after_download(self, tmp_path: Path) -> None:
+        """A .sha256 sidecar matching the downloaded content is written."""
+        dest = tmp_path / "archive.tar.aa"
+        content = b"tarball bytes"
+        client = _make_stream_client(content)
+
+        await _download_asset(client, "https://example.com/archive.tar.aa", dest, 999)
+
+        sha_path = Path(str(dest) + ".sha256")
+        assert sha_path.exists()
+        assert sha_path.read_text().strip() == hashlib.sha256(content).hexdigest()
 
     async def test_downloads_when_file_missing(self, tmp_path: Path) -> None:
         dest = tmp_path / "archive.tar.aa"
@@ -206,7 +256,7 @@ class TestDownloadAsset:
 
     async def test_redownloads_when_size_mismatch(self, tmp_path: Path) -> None:
         dest = tmp_path / "archive.tar.aa"
-        dest.write_bytes(b"x" * 10)  # wrong size
+        _write_with_sidecar(dest, b"x" * 10)  # correct sidecar but wrong size
         content = b"correct content"
         client = _make_stream_client(content)
 
@@ -223,6 +273,14 @@ class TestDownloadAsset:
 
         assert dest.exists()
         assert dest.read_bytes() == content
+
+
+class TestSha256File:
+    def test_matches_hashlib_sha256(self, tmp_path: Path) -> None:
+        content = b"hello world" * 1000
+        p = tmp_path / "file.bin"
+        p.write_bytes(content)
+        assert _sha256_file(p) == hashlib.sha256(content).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -269,14 +327,15 @@ class TestDownloadAndProcessRelease:
                 new=AsyncMock(return_value=3),
             ) as mock_rb,
         ):
-            await _download_and_process_release(
+            result = await _download_and_process_release(
                 conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
             )
 
+        assert result is True
         mock_dl.assert_called_once()
         mock_rb.assert_called_once()
 
-    async def test_release_fetch_failure_returns_early(
+    async def test_release_fetch_failure_returns_false(
         self, tmp_path: Path
     ) -> None:
         client = MagicMock()
@@ -286,26 +345,28 @@ class TestDownloadAndProcessRelease:
         with patch(
             "adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()
         ) as mock_rb:
-            await _download_and_process_release(
+            result = await _download_and_process_release(
                 conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
             )
 
+        assert result is False
         mock_rb.assert_not_called()
 
-    async def test_empty_assets_returns_early(self, tmp_path: Path) -> None:
+    async def test_empty_assets_returns_true(self, tmp_path: Path) -> None:
         client = _release_client({"assets": []})
         conn = AsyncMock()
 
         with patch(
             "adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()
         ) as mock_rb:
-            await _download_and_process_release(
+            result = await _download_and_process_release(
                 conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
             )
 
+        assert result is True
         mock_rb.assert_not_called()
 
-    async def test_asset_download_failure_returns_early(
+    async def test_asset_download_failure_returns_false(
         self, tmp_path: Path
     ) -> None:
         client = _release_client(_SAMPLE_RELEASE)
@@ -320,10 +381,11 @@ class TestDownloadAndProcessRelease:
                 "adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()
             ) as mock_rb,
         ):
-            await _download_and_process_release(
+            result = await _download_and_process_release(
                 conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
             )
 
+        assert result is False
         mock_dl.assert_called_once()
         mock_rb.assert_not_called()
 
@@ -622,8 +684,9 @@ class TestCheckAndRunNewBatches:
             tag: str,
             batch_date: date,
             cache_dir: object,
-        ) -> None:
+        ) -> bool:
             processed_dates.append(batch_date)
+            return True
 
         async def mock_get_releases(
             client: object, year: int, page: int = 1
@@ -652,6 +715,56 @@ class TestCheckAndRunNewBatches:
 
         assert len(processed_dates) == 3
         assert processed_dates == sorted(processed_dates)
+
+    async def test_stops_processing_on_batch_failure(self, tmp_path: Path) -> None:
+        """If a batch fails, subsequent days are not processed."""
+        releases: list[dict[str, object]] = [
+            {"tag_name": "v2025.04.03-planes-readsb-prod-0"},
+            {"tag_name": "v2025.04.02-planes-readsb-prod-0"},
+            {"tag_name": "v2025.04.01-planes-readsb-prod-0"},
+        ]
+        processed_dates: list[date] = []
+
+        async def mock_dapr(
+            conn: object,
+            client: object,
+            year: int,
+            tag: str,
+            batch_date: date,
+            cache_dir: object,
+        ) -> bool:
+            processed_dates.append(batch_date)
+            return batch_date != date(2025, 4, 2)  # Apr 2 fails
+
+        async def mock_get_releases(
+            client: object, year: int, page: int = 1
+        ) -> list[dict[str, object]]:
+            return releases if year == 2025 and page == 1 else []
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_releases",
+                side_effect=mock_get_releases,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._is_batch_already_processed",
+                new=AsyncMock(return_value=False),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                side_effect=mock_dapr,
+            ),
+        ):
+            await check_and_run_new_batches(AsyncMock(), tmp_path)
+
+        # Apr 1 and Apr 2 processed (Apr 2 fails); Apr 3 must not be attempted
+        assert date(2025, 4, 1) in processed_dates
+        assert date(2025, 4, 2) in processed_dates
+        assert date(2025, 4, 3) not in processed_dates
 
     async def test_checks_two_years(self, tmp_path: Path) -> None:
         get_releases_mock = AsyncMock(return_value=[])
