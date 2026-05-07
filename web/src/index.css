@@ -2,10 +2,118 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== Design tokens ===== */
+:root {
+  --bg-0: #0b0f14;
+  --bg-1: #11171f;
+  --bg-2: #161e29;
+  --bg-3: #1c2533;
+  --line-1: #1f2a38;
+  --line-2: #2a3849;
+  --line-3: #3a4a5e;
+  --fg-0: #e7eef7;
+  --fg-1: #b6c2d1;
+  --fg-2: #7d8a9b;
+  --fg-3: #56657a;
+  --accent: #6ea8ff;
+  --accent-2: #4d8df0;
+  --accent-soft: rgba(110, 168, 255, 0.12);
+  --warn: #f0a04d;
+  --danger: #e26464;
+  --ok: #6ed3a3;
+  --magenta: #d066c8;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 10px;
+}
+
+[data-theme="light"] {
+  --bg-0: #f5f7fb;
+  --bg-1: #ffffff;
+  --bg-2: #f8fafc;
+  --bg-3: #eef2f7;
+  --line-1: #e2e8f0;
+  --line-2: #cbd5e1;
+  --line-3: #94a3b8;
+  --fg-0: #0f172a;
+  --fg-1: #334155;
+  --fg-2: #64748b;
+  --fg-3: #94a3b8;
+  --accent: #2563eb;
+  --accent-2: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --shadow-2: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+/* ===== Base ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
   padding: 0;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--fg-0);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* ===== MapLibre overrides ===== */
+.maplibregl-ctrl-attrib {
+  background: color-mix(in oklab, var(--bg-1) 88%, transparent) !important;
+  color: var(--fg-2) !important;
+  font-size: 9.5px !important;
+  border-radius: 3px !important;
+  padding: 2px 6px !important;
+  border: 1px solid var(--line-1) !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--accent) !important;
+}
+.maplibregl-ctrl-group {
+  background: var(--bg-1) !important;
+  border: 1px solid var(--line-1) !important;
+  border-radius: var(--radius-2) !important;
+  box-shadow: var(--shadow-1) !important;
+}
+.maplibregl-ctrl-group button {
+  color: var(--fg-1) !important;
+}
+.maplibregl-ctrl-group button:hover {
+  background: var(--bg-2) !important;
+}
+
+/* ===== Scrollbar ===== */
+.sb-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.sb-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sb-scroll::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 3px;
+}
+.sb-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--line-3);
 }
