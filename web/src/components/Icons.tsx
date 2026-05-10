@@ -3,8 +3,8 @@ interface IconProps {
   className?: string;
 }
 
-function icon(path: string, viewBox = "0 0 24 24") {
-  return function SvgIcon({ size = 16, className }: IconProps) {
+function icon(path: string, viewBox = "0 0 24 24"): ({ size, className }: IconProps) => React.ReactElement {
+  return function SvgIcon({ size = 16, className }: IconProps): React.ReactElement {
     return (
       <svg
         width={size}
@@ -45,7 +45,12 @@ export const Pin = icon(
 export const Polygon = icon("M3 3h4v4H3zM17 3h4v4h-4zM3 17h4v4H3zM17 17h4v4h-4zM5 5l14 0M5 19l14 0M5 5l0 14M19 5l0 14");
 export const Plus = icon("M12 5v14M5 12h14");
 export const Play = icon("M5 3l14 9-14 9V3z", "0 0 24 24");
-export const Satellite = ({ size = 16, className }: IconProps) => (
+export const X = icon("M18 6L6 18M6 6l12 12");
+export const Text = icon("M4 6h16M4 10h12M4 14h8");
+export const Circle = icon("M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z");
+export const Braces = icon("M8 3H7a2 2 0 00-2 2v5a2 2 0 01-2 2 2 2 0 012 2v5a2 2 0 002 2h1M16 3h1a2 2 0 012 2v5a2 2 0 002 2 2 2 0 00-2 2v5a2 2 0 01-2 2h-1");
+export const Viewport = icon("M6 2H2v4M22 6V2h-4M6 22H2v-4M22 18v4h-4");
+export const Satellite = ({ size = 16, className }: IconProps): React.ReactElement => (
   <svg
     width={size}
     height={size}

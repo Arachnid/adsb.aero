@@ -3,6 +3,7 @@ interface SidebarProps {
   collapsed: boolean;
   title: string;
   meta?: string;
+  toolbar?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
 }
@@ -12,6 +13,7 @@ export function Sidebar({
   collapsed,
   title,
   meta,
+  toolbar,
   footer,
   children,
 }: SidebarProps): React.ReactElement {
@@ -77,6 +79,12 @@ export function Sidebar({
       <div className="sb-scroll" style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}>
         {children}
       </div>
+
+      {toolbar !== undefined && (
+        <div style={{ flexShrink: 0, padding: "0 12px 10px", position: "relative" }}>
+          {toolbar}
+        </div>
+      )}
 
       {footer !== undefined && (
         <div
