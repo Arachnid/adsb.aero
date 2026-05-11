@@ -16,9 +16,9 @@ from adsb_server.query.models import (
     NotPredicate,
     OrPredicate,
     Predicate,
-    SpatialPredicateValue,
+    SpatioTemporalAltitudeValue,
+    SpatioTemporalValue,
     StartsWithin,
-    TimeRange,
     TrajectoryDisjoint,
     TrajectoryIntersects,
     TrajectoryWithin,
@@ -47,18 +47,22 @@ def _compile_geometry_sql(geom: AnyGeometry, params: list[Any]) -> str:
 
 
 def _compile_spatial_path(
-    spatial_fn: str, v: SpatialPredicateValue, params: list[Any]
+    spatial_fn: str, v: SpatioTemporalAltitudeValue, params: list[Any]
 ) -> str:
-    """Compile a spatial path predicate (intersects/within/disjoint) with optional altitude."""
-    geom_sql = _compile_geometry_sql(v.geometry, params)
-    sql = f"{spatial_fn}(path_geom, {geom_sql})"
+    """Compile a trajectory predicate (intersects/within/disjoint) with optional geometry, altitude, and time."""
+    parts: list[str] = []
+    if v.geometry is not None:
+        geom_sql = _compile_geometry_sql(v.geometry, params)
+        parts.append(f"{spatial_fn}(path_geom, {geom_sql})")
     if v.altitude_min_ft is not None:
-        alt_min = _p(params, v.altitude_min_ft)
-        sql += f" AND ST_ZMax(path_geom::box3d) >= {alt_min}"
+        parts.append(f"ST_ZMax(path_geom::box3d) >= {_p(params, v.altitude_min_ft)}")
     if v.altitude_max_ft is not None:
-        alt_max = _p(params, v.altitude_max_ft)
-        sql += f" AND ST_ZMin(path_geom::box3d) <= {alt_max}"
-    return sql
+        parts.append(f"ST_ZMin(path_geom::box3d) <= {_p(params, v.altitude_max_ft)}")
+    if v.time_from is not None:
+        parts.append(f"end_ts >= {_p(params, v.time_from)}")
+    if v.time_to is not None:
+        parts.append(f"start_ts < {_p(params, v.time_to)}")
+    return " AND ".join(parts) if parts else "TRUE"
 
 
 def _compile_point_within(col: str, val: AnyGeometry, params: list[Any]) -> str:
@@ -76,16 +80,6 @@ def _compile_point_within(col: str, val: AnyGeometry, params: list[Any]) -> str:
     return f"ST_Within({col}, ST_SetSRID(ST_GeomFromGeoJSON({geom_p}), 4326))"
 
 
-def _compile_time_window(col: str, val: TimeRange, params: list[Any]) -> str:
-    """Compile a temporal 'within' check on a timestamp column."""
-    parts: list[str] = []
-    if val.from_ is not None:
-        parts.append(f"{col} >= {_p(params, val.from_)}")
-    if val.to is not None:
-        parts.append(f"{col} < {_p(params, val.to)}")
-    return " AND ".join(parts) if parts else "TRUE"
-
-
 def compile_predicate(pred: Predicate, params: list[Any]) -> str:
     """Compile a Predicate into a SQL fragment, appending bind params."""
     if isinstance(pred, TrajectoryIntersects):
@@ -98,16 +92,26 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> str:
         return _compile_spatial_path("ST_Disjoint", pred.trajectory_disjoint, params)
 
     if isinstance(pred, StartsWithin):
-        val = pred.starts_within
-        if isinstance(val, TimeRange):
-            return _compile_time_window("start_ts", val, params)
-        return _compile_point_within("start_point", val, params)
+        v = pred.starts_within
+        parts_s: list[str] = []
+        if v.geometry is not None:
+            parts_s.append(_compile_point_within("start_point", v.geometry, params))
+        if v.time_from is not None:
+            parts_s.append(f"start_ts >= {_p(params, v.time_from)}")
+        if v.time_to is not None:
+            parts_s.append(f"start_ts < {_p(params, v.time_to)}")
+        return " AND ".join(parts_s) if parts_s else "TRUE"
 
     if isinstance(pred, EndsWithin):
-        val = pred.ends_within
-        if isinstance(val, TimeRange):
-            return _compile_time_window("end_ts", val, params)
-        return _compile_point_within("end_point", val, params)
+        v = pred.ends_within
+        parts_e: list[str] = []
+        if v.geometry is not None:
+            parts_e.append(_compile_point_within("end_point", v.geometry, params))
+        if v.time_from is not None:
+            parts_e.append(f"end_ts >= {_p(params, v.time_from)}")
+        if v.time_to is not None:
+            parts_e.append(f"end_ts < {_p(params, v.time_to)}")
+        return " AND ".join(parts_e) if parts_e else "TRUE"
 
     if isinstance(pred, IcaoType):
         types = _p(params, pred.icao_type)

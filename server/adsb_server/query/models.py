@@ -7,7 +7,7 @@ import json
 from datetime import date, datetime
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -246,37 +246,48 @@ Geometry = Annotated[AnyGeometry, Field(discriminator="type")]
 GeoJSONGeometryCollection.model_rebuild()
 
 
-class TimeRange(BaseModel):
-    """Time window for filtering by departure or arrival time."""
-
-    type: Literal["TimeRange"]
-    from_: datetime | None = Field(
-        default=None, alias="from",
-        description="Inclusive lower bound (ISO 8601 UTC). Omit for open-ended.",
-    )
-    to: datetime | None = Field(
-        default=None,
-        description="Exclusive upper bound (ISO 8601 UTC). Omit for open-ended.",
-    )
-
-    model_config = {"populate_by_name": True}
-
-
-# Union for starts_within / ends_within: any geometry or a time window.
-AnyStartEndValue = Union[AnyGeometry, TimeRange]
-StartEndValue = Annotated[AnyStartEndValue, Field(discriminator="type")]
-
-
 # ---------------------------------------------------------------------------
 # DSL predicate models — leaf types first
 # ---------------------------------------------------------------------------
 
 
-class SpatialPredicateValue(BaseModel):
-    """Geometry filter with optional altitude bounds for spatial trajectory predicates."""
+class SpatioTemporalValue(BaseModel):
+    """Spatial and/or temporal filter without altitude — used by starts_within / ends_within.
 
-    geometry: Geometry = Field(
-        description="GeoJSON geometry or Circle extension object to test against the flight path."
+    At least one of geometry, time_from, or time_to must be provided.
+    """
+
+    geometry: Geometry | None = Field(
+        default=None,
+        description="GeoJSON geometry or Circle to test the departure/arrival point against. "
+        "Omit for a time-only filter.",
+    )
+    time_from: datetime | None = Field(
+        default=None,
+        description="Inclusive lower bound on start_ts (starts_within) or end_ts (ends_within).",
+    )
+    time_to: datetime | None = Field(
+        default=None,
+        description="Exclusive upper bound on start_ts or end_ts.",
+    )
+
+    @model_validator(mode="after")
+    def _require_at_least_one(self) -> "SpatioTemporalValue":
+        if self.geometry is None and self.time_from is None and self.time_to is None:
+            raise ValueError("at least one of geometry, time_from, or time_to must be set")
+        return self
+
+
+class SpatioTemporalAltitudeValue(BaseModel):
+    """Spatial, altitude, and/or temporal filter — used by trajectory_intersects / within / disjoint.
+
+    At least one constraint must be provided.
+    """
+
+    geometry: Geometry | None = Field(
+        default=None,
+        description="GeoJSON geometry or Circle to test the flight path against. "
+        "Omit for a time- or altitude-only filter.",
     )
     altitude_min_ft: float | None = Field(
         default=None,
@@ -288,49 +299,61 @@ class SpatialPredicateValue(BaseModel):
         description="Maximum altitude bound in feet (inclusive). "
         "Compared against the bounding box of the simplified path — an approximation.",
     )
+    time_from: datetime | None = Field(
+        default=None,
+        description="Inclusive lower bound: the flight must still be active at this time "
+        "(end_ts >= time_from).",
+    )
+    time_to: datetime | None = Field(
+        default=None,
+        description="Exclusive upper bound: the flight must have started by this time "
+        "(start_ts < time_to).",
+    )
+
+    @model_validator(mode="after")
+    def _require_at_least_one(self) -> "SpatioTemporalAltitudeValue":
+        if (
+            self.geometry is None
+            and self.altitude_min_ft is None
+            and self.altitude_max_ft is None
+            and self.time_from is None
+            and self.time_to is None
+        ):
+            raise ValueError("at least one constraint must be set")
+        return self
 
 
 class TrajectoryIntersects(BaseModel):
-    """Flights whose simplified path crosses the given geometry."""
+    """Flights whose simplified path crosses the given geometry and/or were active during the given time window."""
 
-    trajectory_intersects: SpatialPredicateValue
+    trajectory_intersects: SpatioTemporalAltitudeValue
 
 
 class TrajectoryWithin(BaseModel):
-    """Flights whose entire simplified path lies within the given geometry."""
+    """Flights whose entire simplified path lies within the given geometry and/or were active during the given time window."""
 
-    trajectory_within: SpatialPredicateValue
+    trajectory_within: SpatioTemporalAltitudeValue
 
 
 class TrajectoryDisjoint(BaseModel):
-    """Flights whose simplified path does not intersect the given geometry."""
+    """Flights whose simplified path does not intersect the given geometry and/or were active during the given time window."""
 
-    trajectory_disjoint: SpatialPredicateValue
+    trajectory_disjoint: SpatioTemporalAltitudeValue
 
 
 class StartsWithin(BaseModel):
-    """Flights whose departure point or time falls within the given geometry or time window.
+    """Flights whose departure point falls within the given geometry and/or departs within the given time window."""
 
-    Pass a GeoJSON/Circle geometry to filter by departure position, or
-    `{"type": "TimeRange", "from": "...", "to": "..."}` to filter by `start_ts`.
-    """
-
-    starts_within: StartEndValue = Field(
-        description="GeoJSON/Circle geometry for a spatial check on the first position, "
-        "or a TimeRange for a temporal check on `start_ts`."
+    starts_within: SpatioTemporalValue = Field(
+        description="Spatial and/or temporal constraints on the departure point and time."
     )
 
 
 class EndsWithin(BaseModel):
-    """Flights whose arrival point or time falls within the given geometry or time window.
+    """Flights whose arrival point falls within the given geometry and/or arrives within the given time window."""
 
-    Pass a GeoJSON/Circle geometry to filter by arrival position, or
-    `{"type": "TimeRange", "from": "...", "to": "..."}` to filter by `end_ts`.
-    """
-
-    ends_within: StartEndValue = Field(
-        description="GeoJSON/Circle geometry for a spatial check on the last position, "
-        "or a TimeRange for a temporal check on `end_ts`."
+    ends_within: SpatioTemporalValue = Field(
+        description="Spatial and/or temporal constraints on the arrival point and time."
     )
 
 

@@ -49,6 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="adsb.aero API",
     version="0.1.0",
+    openapi_url="/api/openapi.json",
     description=(
         "Historical ADS-B flight trajectory API. "
         "Query flights by geometry, time, aircraft type, callsign, and more. "
@@ -69,7 +70,7 @@ router = APIRouter(prefix="/api/v1")
 @app.get("/api/docs", include_in_schema=False)
 async def scalar_docs() -> HTMLResponse:
     return get_scalar_api_reference(
-        openapi_url="/openapi.json",
+        openapi_url="/api/openapi.json",
         title="adsb.aero API",
     )
 
@@ -203,7 +204,7 @@ async def query_flights(
                         "match": {
                             "and": [
                                 {"icao_type": ["B738", "B737", "B737M"]},
-                                {"ends_within": {"type": "Circle", "coordinates": [-0.4543, 51.4775], "radius": 8000}},
+                                {"ends_within": {"geometry": {"type": "Circle", "coordinates": [-0.4543, 51.4775], "radius": 8000}}},
                             ]
                         },
                         "limit": 50,
@@ -211,21 +212,18 @@ async def query_flights(
                     },
                 },
                 "area_and_altitude": {
-                    "summary": "High-altitude flights over the UK",
+                    "summary": "High-altitude flights over the UK on a given day",
                     "value": {
                         "match": {
-                            "and": [
-                                {
-                                    "trajectory_intersects": {
-                                        "geometry": {
-                                            "type": "Polygon",
-                                            "coordinates": [[[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]],
-                                        },
-                                        "altitude_min_ft": 35000,
-                                    }
+                            "trajectory_intersects": {
+                                "geometry": {
+                                    "type": "Polygon",
+                                    "coordinates": [[[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]],
                                 },
-                                {"starts_within": {"type": "TimeRange", "from": "2026-03-30T00:00:00Z", "to": "2026-03-31T00:00:00Z"}},
-                            ]
+                                "altitude_min_ft": 35000,
+                                "time_from": "2026-03-30T00:00:00Z",
+                                "time_to": "2026-03-31T00:00:00Z",
+                            }
                         },
                         "limit": 100,
                         "include_path": False,
@@ -240,9 +238,15 @@ async def query_flights(
                     "value": {"match": {"duration": {"max_s": 3600}}, "limit": 50, "include_path": False},
                 },
                 "departing_from": {
-                    "summary": "Departures from Charles de Gaulle area",
+                    "summary": "Departures from Charles de Gaulle in a time window",
                     "value": {
-                        "match": {"starts_within": {"type": "Circle", "coordinates": [2.5479, 49.0097], "radius": 10000}},
+                        "match": {
+                            "starts_within": {
+                                "geometry": {"type": "Circle", "coordinates": [2.5479, 49.0097], "radius": 10000},
+                                "time_from": "2026-03-30T06:00:00Z",
+                                "time_to": "2026-03-30T12:00:00Z",
+                            }
+                        },
                         "limit": 50,
                         "include_path": False,
                     },

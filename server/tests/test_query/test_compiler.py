@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from adsb_server.query.compiler import _compile_time_window, compile_predicate
+from datetime import datetime
+
+from adsb_server.query.compiler import compile_predicate
 from adsb_server.query.models import (
     AndPredicate,
     Duration,
@@ -18,9 +20,9 @@ from adsb_server.query.models import (
     IcaoType,
     NotPredicate,
     OrPredicate,
-    SpatialPredicateValue,
+    SpatioTemporalAltitudeValue,
+    SpatioTemporalValue,
     StartsWithin,
-    TimeRange,
     TrajectoryDisjoint,
     TrajectoryIntersects,
     TrajectoryWithin,
@@ -34,6 +36,21 @@ _CIRCLE = {"type": "Circle", "coordinates": [-1.0, 52.0], "radius": 50000}
 
 
 # ---------------------------------------------------------------------------
+# Value model validators
+# ---------------------------------------------------------------------------
+
+
+class TestValueValidators:
+    def test_spatio_temporal_value_empty_raises(self) -> None:
+        with pytest.raises(ValueError, match="at least one"):
+            SpatioTemporalValue()
+
+    def test_spatio_temporal_altitude_value_empty_raises(self) -> None:
+        with pytest.raises(ValueError, match="at least one"):
+            SpatioTemporalAltitudeValue()
+
+
+# ---------------------------------------------------------------------------
 # _compile_geometry_sql — Circle vs GeoJSON
 # ---------------------------------------------------------------------------
 
@@ -42,7 +59,7 @@ class TestCircleGeometry:
     def test_circle_path_predicate_uses_st_buffer(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
-            trajectory_intersects=SpatialPredicateValue(geometry=_CIRCLE)
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_CIRCLE)
         )
         sql = compile_predicate(pred, params)
         assert "ST_Buffer" in sql
@@ -52,7 +69,7 @@ class TestCircleGeometry:
     def test_polygon_path_predicate_uses_geomfromgeojson(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
-            trajectory_intersects=SpatialPredicateValue(geometry=_POLYGON)
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON)
         )
         sql = compile_predicate(pred, params)
         assert "ST_GeomFromGeoJSON" in sql
@@ -69,7 +86,7 @@ class TestAltitudeBounds:
     def test_altitude_min_ft_adds_zmax_check(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
-            trajectory_intersects=SpatialPredicateValue(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, altitude_min_ft=10000
             )
         )
@@ -80,7 +97,7 @@ class TestAltitudeBounds:
     def test_altitude_max_ft_adds_zmin_check(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
-            trajectory_intersects=SpatialPredicateValue(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, altitude_max_ft=40000
             )
         )
@@ -91,7 +108,7 @@ class TestAltitudeBounds:
     def test_both_altitude_bounds(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
-            trajectory_intersects=SpatialPredicateValue(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, altitude_min_ft=10000, altitude_max_ft=40000
             )
         )
@@ -103,11 +120,61 @@ class TestAltitudeBounds:
     def test_no_altitude_bounds_no_extra_conditions(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
-            trajectory_intersects=SpatialPredicateValue(geometry=_POLYGON)
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON)
         )
         sql = compile_predicate(pred, params)
         assert "ST_ZMax" not in sql
         assert "ST_ZMin" not in sql
+
+    def test_altitude_min_only_no_geometry(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(altitude_min_ft=35000)
+        )
+        sql = compile_predicate(pred, params)
+        assert "ST_ZMax(path_geom::box3d)" in sql
+        assert "ST_Intersects" not in sql
+        assert len(params) == 1
+
+    def test_altitude_max_only_no_geometry(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(altitude_max_ft=10000)
+        )
+        sql = compile_predicate(pred, params)
+        assert "ST_ZMin(path_geom::box3d)" in sql
+        assert "ST_Intersects" not in sql
+        assert len(params) == 1
+
+    def test_altitude_and_time_no_geometry(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                altitude_min_ft=35000, time_from=_T1, time_to=_T2
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "ST_ZMax" in sql
+        assert "end_ts >=" in sql
+        assert "start_ts <" in sql
+        assert "ST_Intersects" not in sql
+        assert len(params) == 3
+
+    def test_all_fields(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, altitude_min_ft=10000, altitude_max_ft=40000,
+                time_from=_T1, time_to=_T2,
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "ST_Intersects" in sql
+        assert "ST_ZMax" in sql
+        assert "ST_ZMin" in sql
+        assert "end_ts >=" in sql
+        assert "start_ts <" in sql
+        assert len(params) == 5
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +186,7 @@ class TestTrajectoryWithin:
     def test_produces_st_within(self) -> None:
         params: list = []
         pred = TrajectoryWithin(
-            trajectory_within=SpatialPredicateValue(geometry=_POLYGON)
+            trajectory_within=SpatioTemporalAltitudeValue(geometry=_POLYGON)
         )
         sql = compile_predicate(pred, params)
         assert sql.startswith("ST_Within(path_geom,")
@@ -127,19 +194,39 @@ class TestTrajectoryWithin:
     def test_altitude_bounds_propagated(self) -> None:
         params: list = []
         pred = TrajectoryWithin(
-            trajectory_within=SpatialPredicateValue(
+            trajectory_within=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, altitude_min_ft=5000
             )
         )
         sql = compile_predicate(pred, params)
         assert "ST_ZMax" in sql
 
+    def test_time_bounds_propagated(self) -> None:
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, time_from=_T1, time_to=_T2
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "end_ts >=" in sql
+        assert "start_ts <" in sql
+
+    def test_time_only(self) -> None:
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(time_from=_T1)
+        )
+        sql = compile_predicate(pred, params)
+        assert "ST_Within" not in sql
+        assert "end_ts >=" in sql
+
 
 class TestTrajectoryDisjoint:
     def test_produces_st_disjoint(self) -> None:
         params: list = []
         pred = TrajectoryDisjoint(
-            trajectory_disjoint=SpatialPredicateValue(geometry=_POLYGON)
+            trajectory_disjoint=SpatioTemporalAltitudeValue(geometry=_POLYGON)
         )
         sql = compile_predicate(pred, params)
         assert sql.startswith("ST_Disjoint(path_geom,")
@@ -147,12 +234,23 @@ class TestTrajectoryDisjoint:
     def test_altitude_bounds_propagated(self) -> None:
         params: list = []
         pred = TrajectoryDisjoint(
-            trajectory_disjoint=SpatialPredicateValue(
+            trajectory_disjoint=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, altitude_max_ft=18000
             )
         )
         sql = compile_predicate(pred, params)
         assert "ST_ZMin" in sql
+
+    def test_time_bounds_propagated(self) -> None:
+        params: list = []
+        pred = TrajectoryDisjoint(
+            trajectory_disjoint=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, time_from=_T1, time_to=_T2
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "end_ts >=" in sql
+        assert "start_ts <" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -163,70 +261,121 @@ class TestTrajectoryDisjoint:
 class TestPointWithin:
     def test_starts_within_polygon_uses_st_within(self) -> None:
         params: list = []
-        pred = StartsWithin(starts_within=_POLYGON)
+        pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_POLYGON))
         sql = compile_predicate(pred, params)
         assert "ST_Within(start_point," in sql
         assert "ST_GeomFromGeoJSON" in sql
 
     def test_ends_within_polygon_uses_st_within(self) -> None:
         params: list = []
-        pred = EndsWithin(ends_within=_POLYGON)
+        pred = EndsWithin(ends_within=SpatioTemporalValue(geometry=_POLYGON))
         sql = compile_predicate(pred, params)
         assert "ST_Within(end_point," in sql
 
     def test_starts_within_circle_uses_st_dwithin(self) -> None:
         params: list = []
-        pred = StartsWithin(starts_within=_CIRCLE)
+        pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_CIRCLE))
         sql = compile_predicate(pred, params)
         assert "ST_DWithin(start_point::geography," in sql
         assert len(params) == 3  # lon, lat, radius
 
 
 # ---------------------------------------------------------------------------
-# _compile_time_window
+# Time fields on starts_within / ends_within / trajectory_intersects
 # ---------------------------------------------------------------------------
 
+_T1 = datetime.fromisoformat("2025-04-01T00:00:00+00:00")
+_T2 = datetime.fromisoformat("2025-04-02T00:00:00+00:00")
 
-class TestTimeWindow:
-    def test_starts_within_timerange_filters_start_ts(self) -> None:
+
+class TestTimeFields:
+    def test_starts_within_time_from_filters_start_ts(self) -> None:
         params: list = []
-        pred = StartsWithin(
-            starts_within={
-                "type": "TimeRange",
-                "from": "2025-04-01T00:00:00Z",
-                "to": "2025-04-02T00:00:00Z",
-            }
-        )
+        pred = StartsWithin(starts_within=SpatioTemporalValue(time_from=_T1))
+        sql = compile_predicate(pred, params)
+        assert "start_ts >=" in sql
+        assert "start_ts <" not in sql
+        assert len(params) == 1
+
+    def test_starts_within_time_to_filters_start_ts(self) -> None:
+        params: list = []
+        pred = StartsWithin(starts_within=SpatioTemporalValue(time_to=_T2))
+        sql = compile_predicate(pred, params)
+        assert "start_ts <" in sql
+        assert "start_ts >=" not in sql
+        assert len(params) == 1
+
+    def test_starts_within_time_window(self) -> None:
+        params: list = []
+        pred = StartsWithin(starts_within=SpatioTemporalValue(time_from=_T1, time_to=_T2))
         sql = compile_predicate(pred, params)
         assert "start_ts >=" in sql
         assert "start_ts <" in sql
         assert len(params) == 2
 
-    def test_ends_within_timerange_filters_end_ts(self) -> None:
+    def test_ends_within_time_filters_end_ts(self) -> None:
         params: list = []
-        pred = EndsWithin(
-            ends_within={
-                "type": "TimeRange",
-                "to": "2025-04-01T12:00:00Z",
-            }
-        )
+        pred = EndsWithin(ends_within=SpatioTemporalValue(time_to=_T1))
         sql = compile_predicate(pred, params)
         assert "end_ts <" in sql
+        assert "start_ts" not in sql
+        assert len(params) == 1
+
+    def test_intersects_time_uses_activity_semantics(self) -> None:
+        # time_from → end_ts >= time_from  (flight must still be active)
+        # time_to   → start_ts < time_to   (flight must have started)
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(time_from=_T1, time_to=_T2)
+        )
+        sql = compile_predicate(pred, params)
+        assert "end_ts >=" in sql
+        assert "start_ts <" in sql
+        assert len(params) == 2
+
+    def test_ends_within_time_from_filters_end_ts(self) -> None:
+        params: list = []
+        pred = EndsWithin(ends_within=SpatioTemporalValue(time_from=_T1))
+        sql = compile_predicate(pred, params)
+        assert "end_ts >=" in sql
+        assert "end_ts <" not in sql
+        assert len(params) == 1
+
+    def test_intersects_time_to_only(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(time_to=_T2)
+        )
+        sql = compile_predicate(pred, params)
+        assert "start_ts <" in sql
         assert "end_ts >=" not in sql
         assert len(params) == 1
 
-    def test_timerange_from_only(self) -> None:
+    def test_starts_within_geometry_and_time(self) -> None:
         params: list = []
-        pred = StartsWithin(starts_within={"type": "TimeRange", "from": "2025-04-01T00:00:00Z"})
+        pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_POLYGON, time_from=_T1))
         sql = compile_predicate(pred, params)
+        assert "ST_Within(start_point," in sql
         assert "start_ts >=" in sql
-        assert "start_ts <" not in sql
 
-    def test_timerange_empty_bounds_returns_true(self) -> None:
+    def test_starts_within_geometry_and_time_to(self) -> None:
         params: list = []
-        sql = _compile_time_window("start_ts", TimeRange(type="TimeRange"), params)
-        assert sql == "TRUE"
-        assert params == []
+        pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_POLYGON, time_to=_T2))
+        sql = compile_predicate(pred, params)
+        assert "ST_Within(start_point," in sql
+        assert "start_ts <" in sql
+        assert "start_ts >=" not in sql
+
+    def test_starts_within_all_fields(self) -> None:
+        params: list = []
+        pred = StartsWithin(
+            starts_within=SpatioTemporalValue(geometry=_POLYGON, time_from=_T1, time_to=_T2)
+        )
+        sql = compile_predicate(pred, params)
+        assert "ST_Within(start_point," in sql
+        assert "start_ts >=" in sql
+        assert "start_ts <" in sql
+        assert len(params) == 3
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Braces, Circle, Clock, Pin, Plane, Play, Plus, Polygon, Text, Viewport, X } from "../Icons";
+import { Braces, Circle, Pin, Plane, Play, Plus, Polygon, Text, Viewport, X } from "../Icons";
 
 // ===== Types =====
 
@@ -13,37 +13,38 @@ interface AircraftPred extends BasePred {
   icaoTypes: string[];
   emitters: string[];
 }
-interface TimePred extends BasePred {
-  kind: "time";
-  from: string;
-  to: string;
-}
 interface StartsWithinPred extends BasePred {
   kind: "starts_within";
-  shape: "circle" | "polygon" | "viewport";
+  shape: "none" | "circle" | "polygon" | "viewport";
   lat: number | null;
   lng: number | null;
   radiusNm: number;
   polygon: [number, number][] | null;
+  timeFrom: string;
+  timeTo: string;
 }
 interface EndsWithinPred extends BasePred {
   kind: "ends_within";
-  shape: "circle" | "polygon" | "viewport";
+  shape: "none" | "circle" | "polygon" | "viewport";
   lat: number | null;
   lng: number | null;
   radiusNm: number;
   polygon: [number, number][] | null;
+  timeFrom: string;
+  timeTo: string;
 }
 interface IntersectsPred extends BasePred {
   kind: "region";
   regionName: string;
-  shape: "circle" | "polygon" | "viewport";
+  shape: "none" | "circle" | "polygon" | "viewport";
   polygon: [number, number][] | null;
   lat: number | null;
   lng: number | null;
   radiusNm: number;
   altMin: number | null;
   altMax: number | null;
+  timeFrom: string;
+  timeTo: string;
 }
 interface CallsignPred extends BasePred {
   kind: "callsign";
@@ -52,7 +53,6 @@ interface CallsignPred extends BasePred {
 
 export type UIPredicate =
   | AircraftPred
-  | TimePred
   | StartsWithinPred
   | EndsWithinPred
   | IntersectsPred
@@ -79,17 +79,14 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
     return { id, kind: "group", mode: kind === "group_all" ? "all" : "any", items: [] };
   }
   if (kind === "starts_within" || kind === "ends_within") {
-    return { id, kind, shape: "circle", lat: null, lng: null, radiusNm: 25, polygon: null };
+    return { id, kind, shape: "none", lat: null, lng: null, radiusNm: 25, polygon: null, timeFrom: "", timeTo: "" };
   }
   if (kind === "region") {
     return {
-      id, kind, regionName: "Region " + String(regionCount + 1), shape: "polygon",
+      id, kind, regionName: "Region " + String(regionCount + 1), shape: "none",
       polygon: null, lat: null, lng: null, radiusNm: 25,
-      altMin: null, altMax: null,
+      altMin: null, altMax: null, timeFrom: "", timeTo: "",
     };
-  }
-  if (kind === "time") {
-    return { id, kind, from: "", to: "" };
   }
   if (kind === "aircraft") {
     return { id, kind, icaoTypes: [], emitters: [] };
@@ -124,21 +121,28 @@ export function isPredValid(pred: UIPredicate): boolean {
   switch (pred.kind) {
     case "aircraft":
       return pred.icaoTypes.length > 0 || pred.emitters.length > 0;
-    case "time":
-      return pred.from !== "" && pred.to !== "";
     case "callsign":
       return pred.pattern.trim() !== "";
     case "starts_within":
-    case "ends_within":
+    case "ends_within": {
+      const hasTime = pred.timeFrom !== "" || pred.timeTo !== "";
+      if (pred.shape === "none") return hasTime;
       if (pred.shape === "viewport") return true;
       if (pred.shape === "circle") return pred.lat !== null && pred.lng !== null;
       return pred.polygon !== null && pred.polygon.length >= 3;
-    case "region":
+    }
+    case "region": {
+      const hasTime = pred.timeFrom !== "" || pred.timeTo !== "";
+      if (pred.shape === "none") return hasTime;
       if (pred.shape === "viewport") return true;
-      if (pred.shape === "circle") return pred.lat !== null && pred.lng !== null;
-      if (pred.polygon === null || pred.polygon.length < 3) return false;
+      if (pred.shape === "circle") {
+        if (pred.lat === null) return false;
+      } else if (pred.polygon === null || pred.polygon.length < 3) {
+        return false;
+      }
       if (pred.altMin !== null && pred.altMax !== null && pred.altMin > pred.altMax) return false;
       return true;
+    }
   }
 }
 
@@ -181,31 +185,27 @@ function FieldLabel({ children }: { children: React.ReactNode }): React.ReactEle
   return <div className="field-label">{children}</div>;
 }
 
+type Shape = "none" | "circle" | "polygon" | "viewport";
+
 function ShapeToggle({
   shape,
   onChange,
 }: {
-  shape: "circle" | "polygon" | "viewport";
-  onChange: (s: "circle" | "polygon" | "viewport") => void;
+  shape: Shape;
+  onChange: (s: Shape) => void;
 }): React.ReactElement {
   return (
     <div className="shape-toggle">
-      <button
-        className={shape === "circle" ? "active" : ""}
-        onClick={() => { onChange("circle"); }}
-      >
+      <button className={shape === "none" ? "active" : ""} onClick={() => { onChange("none"); }}>
+        —
+      </button>
+      <button className={shape === "circle" ? "active" : ""} onClick={() => { onChange("circle"); }}>
         <Circle size={12} /> Circle
       </button>
-      <button
-        className={shape === "polygon" ? "active" : ""}
-        onClick={() => { onChange("polygon"); }}
-      >
+      <button className={shape === "polygon" ? "active" : ""} onClick={() => { onChange("polygon"); }}>
         <Polygon size={12} /> Polygon
       </button>
-      <button
-        className={shape === "viewport" ? "active" : ""}
-        onClick={() => { onChange("viewport"); }}
-      >
+      <button className={shape === "viewport" ? "active" : ""} onClick={() => { onChange("viewport"); }}>
         <Viewport size={12} /> Viewport
       </button>
     </div>
@@ -390,39 +390,6 @@ function AircraftCard({
   );
 }
 
-function TimeCard({
-  pred,
-  onChange,
-  onRemove,
-}: {
-  pred: TimePred;
-  onChange: (p: TimePred) => void;
-  onRemove: () => void;
-}): React.ReactElement {
-  return (
-    <PredCard icon={<Clock />} name="Time range" onRemove={onRemove} invalid={!isPredValid(pred)}>
-      <div>
-        <FieldLabel>From</FieldLabel>
-        <input
-          className="text-field mono"
-          type="datetime-local"
-          value={pred.from}
-          onChange={(e) => { onChange({ ...pred, from: e.target.value }); }}
-        />
-      </div>
-      <div>
-        <FieldLabel>To</FieldLabel>
-        <input
-          className="text-field mono"
-          type="datetime-local"
-          value={pred.to}
-          onChange={(e) => { onChange({ ...pred, to: e.target.value }); }}
-        />
-      </div>
-    </PredCard>
-  );
-}
-
 function PointRadiusCard({
   pred,
   onChange,
@@ -496,11 +463,29 @@ function PointRadiusCard({
             </button>
           </div>
         </>
-      ) : (
+      ) : pred.shape === "viewport" ? (
         <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10.5, color: "var(--fg-2)" }}>
           Uses current map viewport
         </div>
-      )}
+      ) : null}
+      <div style={{ marginTop: 4 }}>
+        <FieldLabel>From</FieldLabel>
+        <input
+          className="text-field mono"
+          type="datetime-local"
+          value={pred.timeFrom}
+          onChange={(e) => { onChange({ ...pred, timeFrom: e.target.value }); }}
+        />
+      </div>
+      <div>
+        <FieldLabel>To</FieldLabel>
+        <input
+          className="text-field mono"
+          type="datetime-local"
+          value={pred.timeTo}
+          onChange={(e) => { onChange({ ...pred, timeTo: e.target.value }); }}
+        />
+      </div>
     </PredCard>
   );
 }
@@ -524,10 +509,6 @@ function IntersectsCard({
   isPicking: boolean;
   name: string;
 }): React.ReactElement {
-  const hasGeometry =
-    pred.shape === "polygon" ? pred.polygon !== null :
-    pred.shape === "circle" ? pred.lat !== null :
-    true; // viewport always "has geometry"
   return (
     <PredCard icon={<Polygon />} name={name} onRemove={onRemove} invalid={!isPredValid(pred)}>
       <ShapeToggle
@@ -582,41 +563,57 @@ function IntersectsCard({
             </button>
           </div>
         </>
-      ) : (
+      ) : pred.shape === "viewport" ? (
         <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10.5, color: "var(--fg-2)" }}>
           Uses current map viewport
         </div>
-      )}
-      {hasGeometry && (
-        <>
-          <div className="pred-row" style={{ marginTop: 4 }}>
-            <div>
-              <FieldLabel>Alt min (ft)</FieldLabel>
-              <input
-                className="text-field mono"
-                type="number"
-                placeholder="0"
-                value={pred.altMin ?? ""}
-                onChange={(e) => {
-                  onChange({ ...pred, altMin: e.target.value === "" ? null : +e.target.value });
-                }}
-              />
-            </div>
-            <div>
-              <FieldLabel>Alt max (ft)</FieldLabel>
-              <input
-                className="text-field mono"
-                type="number"
-                placeholder="∞"
-                value={pred.altMax ?? ""}
-                onChange={(e) => {
-                  onChange({ ...pred, altMax: e.target.value === "" ? null : +e.target.value });
-                }}
-              />
-            </div>
+      ) : null}
+      {pred.shape !== "none" && (
+        <div className="pred-row" style={{ marginTop: 4 }}>
+          <div>
+            <FieldLabel>Alt min (ft)</FieldLabel>
+            <input
+              className="text-field mono"
+              type="number"
+              placeholder="0"
+              value={pred.altMin ?? ""}
+              onChange={(e) => {
+                onChange({ ...pred, altMin: e.target.value === "" ? null : +e.target.value });
+              }}
+            />
           </div>
-        </>
+          <div>
+            <FieldLabel>Alt max (ft)</FieldLabel>
+            <input
+              className="text-field mono"
+              type="number"
+              placeholder="∞"
+              value={pred.altMax ?? ""}
+              onChange={(e) => {
+                onChange({ ...pred, altMax: e.target.value === "" ? null : +e.target.value });
+              }}
+            />
+          </div>
+        </div>
       )}
+      <div style={{ marginTop: 4 }}>
+        <FieldLabel>From</FieldLabel>
+        <input
+          className="text-field mono"
+          type="datetime-local"
+          value={pred.timeFrom}
+          onChange={(e) => { onChange({ ...pred, timeFrom: e.target.value }); }}
+        />
+      </div>
+      <div>
+        <FieldLabel>To</FieldLabel>
+        <input
+          className="text-field mono"
+          type="datetime-local"
+          value={pred.timeTo}
+          onChange={(e) => { onChange({ ...pred, timeTo: e.target.value }); }}
+        />
+      </div>
     </PredCard>
   );
 }
@@ -649,10 +646,9 @@ function CallsignCard({
 
 const FILTER_OPTS: { kind: AddKind; icon: React.ReactNode; label: string; desc: string }[] = [
   { kind: "aircraft", icon: <Plane />, label: "Aircraft", desc: "Type, emitter category" },
-  { kind: "time", icon: <Clock />, label: "Time range", desc: "From / to" },
-  { kind: "starts_within", icon: <Pin />, label: "Starts within", desc: "Point or polygon" },
-  { kind: "ends_within", icon: <Pin />, label: "Ends within", desc: "Point or polygon" },
-  { kind: "region", icon: <Polygon />, label: "Intersects", desc: "Polygon or circle" },
+  { kind: "starts_within", icon: <Pin />, label: "Starts within", desc: "Area, time, or both" },
+  { kind: "ends_within", icon: <Pin />, label: "Ends within", desc: "Area, time, or both" },
+  { kind: "region", icon: <Polygon />, label: "Within", desc: "Area, altitude, time" },
   { kind: "callsign", icon: <Text />, label: "Callsign", desc: "Regex match" },
   { kind: "group_all", icon: <Braces />, label: "All of", desc: "All sub-filters must match" },
   { kind: "group_any", icon: <Braces />, label: "Any of", desc: "At least one sub-filter matches" },
@@ -717,8 +713,6 @@ function PredicateRenderer({
   switch (pred.kind) {
     case "aircraft":
       return <AircraftCard pred={pred} onChange={(p) => { onChange(p); }} onRemove={onRemove} />;
-    case "time":
-      return <TimeCard pred={pred} onChange={(p) => { onChange(p); }} onRemove={onRemove} />;
     case "starts_within":
     case "ends_within":
       return (
@@ -862,7 +856,7 @@ function GroupBlock({
               isPicking={pickingId === item.id}
               onArmDraw={() => { onArmDraw(item.id); }}
               isDrawing={drawingId === item.id}
-              name={labels.get(item.id) ?? (item.kind === "aircraft" ? "Aircraft" : item.kind === "time" ? "Time range" : "Callsign")}
+              name={labels.get(item.id) ?? (item.kind === "aircraft" ? "Aircraft" : "Callsign")}
             />
           )
         )}
@@ -893,8 +887,8 @@ function computeLabels(group: FilterGroup): Map<string, string> {
       const base =
         item.kind === "starts_within" ? "Starts Within" :
         item.kind === "ends_within" ? "Ends Within" :
-        "Intersects";
-      if (item.shape === "viewport") {
+        "Within";
+      if (item.shape === "none" || item.shape === "viewport") {
         result.set(item.id, base);
       } else {
         counts[base] = (counts[base] ?? 0) + 1;

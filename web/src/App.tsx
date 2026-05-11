@@ -33,12 +33,12 @@ function collectGeometries(group: FilterGroup): MapGeometry[] {
       if (item.kind === "group") {
         walk(item);
       } else if (item.kind === "starts_within" || item.kind === "ends_within" || item.kind === "region") {
-        if (item.shape === "viewport") continue;
+        if (item.shape === "viewport" || item.shape === "none") continue;
         const color = PALETTE[result.length % PALETTE.length] ?? PALETTE[0] ?? "#3b82f6";
         const baseName =
           item.kind === "starts_within" ? "Starts Within" :
           item.kind === "ends_within" ? "Ends Within" :
-          "Intersects";
+          "Within";
         counts[baseName] = (counts[baseName] ?? 0) + 1;
         const label = `${baseName} ${counts[baseName]}`;
         result.push({
