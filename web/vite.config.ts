@@ -12,14 +12,15 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    setupFiles: ["./tests/setup.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
       include: ["src/**"],
       exclude: ["src/main.tsx", "src/types/**"],
       thresholds: {
-        lines: 50,
-        functions: 35,
+        lines: 78,
+        functions: 50,
         branches: 78,
       },
     },
