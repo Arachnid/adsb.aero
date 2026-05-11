@@ -877,7 +877,7 @@ export interface QueryBuilderBodyProps {
   drawingId: string | null;
 }
 
-function computeLabels(group: FilterGroup): Map<string, string> {
+export function computeLabels(group: FilterGroup): Map<string, string> {
   const result = new Map<string, string>();
   const counts: Record<string, number> = {};
   function walk(g: FilterGroup): void {

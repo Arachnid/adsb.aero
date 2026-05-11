@@ -54,3 +54,12 @@ repos:
         files: \.sql$
       - id: sqlfluff-fix
         files: \.sql$
+
+  - repo: local
+    hooks:
+      - id: web-tests
+        name: Web tests (coverage)
+        entry: bash -c 'cd web && pnpm test --coverage --run'
+        language: system
+        pass_filenames: false
+        files: ^web/

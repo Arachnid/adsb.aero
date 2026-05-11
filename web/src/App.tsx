@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { MapGeometry, MapView } from "./components/map/MapView";
+import { MapView } from "./components/map/MapView";
+import { anyViewportFilter, collectGeometries, MapGeometry } from "./lib/queryGeometry";
 import { Topbar } from "./components/layout/Topbar";
 import { Sidebar } from "./components/layout/Sidebar";
 import {
@@ -22,51 +23,6 @@ type Theme = "dark" | "light";
 
 const SIDEBAR_W = 340;
 const SIDEBAR_MARGIN = 12;
-
-const PALETTE = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444", "#ec4899"];
-
-function collectGeometries(group: FilterGroup): MapGeometry[] {
-  const result: MapGeometry[] = [];
-  const counts: Record<string, number> = {};
-  function walk(g: FilterGroup): void {
-    for (const item of g.items) {
-      if (item.kind === "group") {
-        walk(item);
-      } else if (item.kind === "starts_within" || item.kind === "ends_within" || item.kind === "region") {
-        if (item.shape === "viewport" || item.shape === "none") continue;
-        const color = PALETTE[result.length % PALETTE.length] ?? PALETTE[0] ?? "#3b82f6";
-        const baseName =
-          item.kind === "starts_within" ? "Starts Within" :
-          item.kind === "ends_within" ? "Ends Within" :
-          "Within";
-        counts[baseName] = (counts[baseName] ?? 0) + 1;
-        const label = `${baseName} ${counts[baseName]}`;
-        result.push({
-          id: item.id,
-          label,
-          color,
-          kind: item.shape as "circle" | "polygon",
-          polygon: item.polygon,
-          lat: item.lat,
-          lng: item.lng,
-          radiusNm: item.radiusNm,
-        });
-      }
-    }
-  }
-  walk(group);
-  return result;
-}
-
-function anyViewportFilter(group: FilterGroup): boolean {
-  return group.items.some((item) => {
-    if (item.kind === "group") return anyViewportFilter(item);
-    if (item.kind === "starts_within" || item.kind === "ends_within" || item.kind === "region") {
-      return item.shape === "viewport";
-    }
-    return false;
-  });
-}
 
 function ToggleButton({
   side,

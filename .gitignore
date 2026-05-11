@@ -18,6 +18,7 @@ coverage.xml
 node_modules/
 dist/
 .pnpm-store/
+coverage/
 
 # Editor
 .vscode/

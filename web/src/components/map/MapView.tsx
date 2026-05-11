@@ -28,16 +28,8 @@ const STYLES: Record<Basemap, string | StyleSpecification> = {
   sat: SAT_STYLE,
 };
 
-export interface MapGeometry {
-  id: string;
-  label: string;
-  color: string;
-  kind: "circle" | "polygon";
-  polygon: [number, number][] | null;
-  lat: number | null;
-  lng: number | null;
-  radiusNm: number;
-}
+import type { MapGeometry } from "../../lib/queryGeometry";
+export type { MapGeometry } from "../../lib/queryGeometry";
 
 // Minimal inline GeoJSON types to avoid @types/geojson dependency issues.
 type Coord = [number, number];
