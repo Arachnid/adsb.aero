@@ -170,6 +170,9 @@ function initOverlays(map: MaplibreMap, geoms: MapGeometry[]): void {
   });
 }
 
+// [west, south, east, north] in degrees
+export type MapBounds = [number, number, number, number];
+
 interface MapViewProps {
   basemap: Basemap;
   pickingActive: boolean;
@@ -177,7 +180,7 @@ interface MapViewProps {
   onPickPoint: (lat: number, lng: number) => void;
   onDrawComplete: (points: [number, number][]) => void;
   geometries: MapGeometry[];
-  onMoveEnd?: () => void;
+  onMoveEnd?: (bounds: MapBounds) => void;
 }
 
 export function MapView({
@@ -261,7 +264,12 @@ export function MapView({
       if (pts.length >= 3) onDrawRef.current(pts);
     };
 
-    const onMoveEndHandler = (): void => { onMoveEndRef.current?.(); };
+    const getBounds = (): MapBounds => {
+      const b = map.getBounds().toArray() as [[number, number], [number, number]];
+      return [b[0][0], b[0][1], b[1][0], b[1][1]];
+    };
+
+    const onMoveEndHandler = (): void => { onMoveEndRef.current?.(getBounds()); };
 
     const setupOverlays = (): void => {
       if (!map.getSource("filter-geoms")) {
@@ -269,15 +277,16 @@ export function MapView({
       }
     };
 
-    if (map.isStyleLoaded()) setupOverlays();
-    map.on("style.load", setupOverlays);
+    const onLoadHandler = (): void => { onMoveEndRef.current?.(getBounds()); };
+
+    if (map.isStyleLoaded()) { setupOverlays(); onLoadHandler(); }
+    map.on("style.load", () => { setupOverlays(); onLoadHandler(); });
     map.on("click", onClick);
     map.on("dblclick", onDblClick);
     map.on("moveend", onMoveEndHandler);
     mapRef.current = map;
 
     return (): void => {
-      map.off("style.load", setupOverlays);
       map.off("click", onClick);
       map.off("dblclick", onDblClick);
       map.off("moveend", onMoveEndHandler);

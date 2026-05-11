@@ -15,6 +15,8 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379"
 
+    log_queries: bool = False
+
     scheduler_cache_dir: Path = Path("/data/cache")
     scheduler_interval_seconds: int = 1800
     scheduler_lookback_days: int = 0  # 0 = unlimited; set to e.g. 7 in dev

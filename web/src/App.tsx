@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { MapView } from "./components/map/MapView";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MapView, MapBounds } from "./components/map/MapView";
 import { anyViewportFilter, collectGeometries, MapGeometry } from "./lib/queryGeometry";
 import { Topbar } from "./components/layout/Topbar";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -16,6 +16,8 @@ import {
 import { ResultsPanel } from "./components/results/ResultsPanel";
 import { Legend } from "./components/ui/Legend";
 import { ChevronLeft, ChevronRight } from "./components/Icons";
+import { compileGroup } from "./lib/compileQuery";
+import { postQuery, FlightDetail, ApiError } from "./lib/api";
 
 type Basemap = "dark" | "light" | "sat";
 type ColorMode = "alt" | "cat" | "tod";
@@ -93,6 +95,13 @@ export function App(): React.ReactElement {
   const [viewportVersion, setViewportVersion] = useState(0);
   const [lastRunVersion, setLastRunVersion] = useState<number | null>(null);
 
+  const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
+  const [queryFlights, setQueryFlights] = useState<FlightDetail[] | null>(null);
+  const [queryCursor, setQueryCursor] = useState<string | null>(null);
+  const [queryLoading, setQueryLoading] = useState(false);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const queryAbortRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     document.documentElement.dataset["theme"] = theme;
   }, [theme]);
@@ -144,14 +153,61 @@ export function App(): React.ReactElement {
     setDrawingId(null);
   };
 
-  const handleRun = (): void => {
+  const handleRun = useCallback((): void => {
     setLastRunVersion(viewportVersion);
-    /* TODO: execute query */
-  };
+    queryAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    queryAbortRef.current = ctrl;
 
-  const handleMoveEnd = (): void => {
+    const match = compileGroup(rootGroup, mapBounds);
+    setQueryLoading(true);
+    setQueryError(null);
+    setQueryFlights(null);
+    setQueryCursor(null);
+    setRightCollapsed(false);
+
+    postQuery(match, { signal: ctrl.signal })
+      .then((res) => {
+        setQueryFlights(res.flights);
+        setQueryCursor(res.cursor);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        setQueryError(err instanceof ApiError ? err.message : "Query failed");
+      })
+      .finally(() => {
+        setQueryLoading(false);
+      });
+  }, [rootGroup, mapBounds, viewportVersion]);
+
+  const handleLoadMore = useCallback((): void => {
+    if (!queryCursor || queryLoading) return;
+    queryAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    queryAbortRef.current = ctrl;
+
+    const match = compileGroup(rootGroup, mapBounds);
+    setQueryLoading(true);
+    setQueryError(null);
+
+    postQuery(match, { cursor: queryCursor, signal: ctrl.signal })
+      .then((res) => {
+        setQueryFlights((prev) => [...(prev ?? []), ...res.flights]);
+        setQueryCursor(res.cursor);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        setQueryError(err instanceof ApiError ? err.message : "Query failed");
+      })
+      .finally(() => {
+        setQueryLoading(false);
+      });
+  }, [rootGroup, mapBounds, queryCursor, queryLoading]);
+
+  const handleMoveEnd = useCallback((bounds: MapBounds): void => {
+    setMapBounds(bounds);
     setViewportVersion((v) => v + 1);
-  };
+  }, []);
 
   const mapGeometries = useMemo(() => collectGeometries(rootGroup), [rootGroup]);
   const hasViewport = anyViewportFilter(rootGroup);
@@ -236,8 +292,19 @@ export function App(): React.ReactElement {
       </Sidebar>
       <ToggleButton side="left" collapsed={leftCollapsed} onToggle={() => { setLeftCollapsed((v) => !v); }} />
 
-      <Sidebar side="right" collapsed={rightCollapsed} title="Results" meta="—">
-        <ResultsPanel />
+      <Sidebar
+        side="right"
+        collapsed={rightCollapsed}
+        title="Results"
+        meta={queryFlights === null ? "—" : String(queryFlights.length) + (queryCursor ? "+" : "") + " flight" + (queryFlights.length !== 1 ? "s" : "")}
+      >
+        <ResultsPanel
+          flights={queryFlights}
+          loading={queryLoading}
+          error={queryError}
+          hasMore={queryCursor !== null}
+          onLoadMore={handleLoadMore}
+        />
       </Sidebar>
       <ToggleButton side="right" collapsed={rightCollapsed} onToggle={() => { setRightCollapsed((v) => !v); }} />
 

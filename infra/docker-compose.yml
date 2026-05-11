@@ -3,6 +3,7 @@ services:
     build: ./postgres
     image: adsb-postgres:latest
     restart: unless-stopped
+    shm_size: 256m
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-adsb}
       POSTGRES_USER: ${POSTGRES_USER:-adsb}
@@ -80,6 +81,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-adsb}
       POSTGRES_USER: ${POSTGRES_USER:-adsb}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      LOG_QUERIES: ${LOG_QUERIES:-false}
     depends_on:
       postgres:
         condition: service_healthy

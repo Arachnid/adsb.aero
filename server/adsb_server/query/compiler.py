@@ -49,19 +49,86 @@ def _compile_geometry_sql(geom: AnyGeometry, params: list[Any]) -> str:
 def _compile_spatial_path(
     spatial_fn: str, v: SpatioTemporalAltitudeValue, params: list[Any]
 ) -> str:
-    """Compile a trajectory predicate (intersects/within/disjoint) with optional geometry, altitude, and time."""
+    """Compile a trajectory predicate (intersects/within/disjoint) with optional geometry, altitude, and time.
+
+    Strategy (geometry + altitude bounds, spatial_fn != ST_Disjoint):
+
+    1. 3D prism pre-filter via &&& — extrudes the 2D input geometry to the altitude range,
+       then uses the gist_geometry_ops_nd index to prune on X, Y, and Z in a single scan.
+       This replaces a 2D ST_Intersects + separate ZMax/ZMin btree checks.
+
+    2. Exact 2D spatial check (ST_Intersects/ST_Within) on the 2D geometry.
+
+    3. Exact per-vertex refinement via EXISTS(ST_DumpPoints) — ensures at least one vertex
+       satisfies geometry ∧ altitude ∧ time simultaneously.
+       Each bound reuses the same $N placeholder already bound in step 1.
+
+    Altitude-only (no geometry): btree index on ST_ZMax/ST_ZMin expression columns.
+    ST_Disjoint + altitude: btree checks (&&& prism semantics don't apply to disjoint).
+    """
     parts: list[str] = []
+
+    # Bind altitude/time params once; placeholders are reused in both pre-filters and EXISTS.
+    alt_min_p = _p(params, v.altitude_min_ft) if v.altitude_min_ft is not None else None
+    alt_max_p = _p(params, v.altitude_max_ft) if v.altitude_max_ft is not None else None
+    time_from_p = _p(params, v.time_from) if v.time_from is not None else None
+    time_to_p = _p(params, v.time_to) if v.time_to is not None else None
+
     if v.geometry is not None:
         geom_sql = _compile_geometry_sql(v.geometry, params)
-        parts.append(f"{spatial_fn}(path_geom, {geom_sql})")
-    if v.altitude_min_ft is not None:
-        parts.append(f"ST_ZMax(path_geom::box3d) >= {_p(params, v.altitude_min_ft)}")
-    if v.altitude_max_ft is not None:
-        parts.append(f"ST_ZMin(path_geom::box3d) <= {_p(params, v.altitude_max_ft)}")
-    if v.time_from is not None:
-        parts.append(f"end_ts >= {_p(params, v.time_from)}")
-    if v.time_to is not None:
-        parts.append(f"start_ts < {_p(params, v.time_to)}")
+        has_altitude = alt_min_p is not None or alt_max_p is not None
+
+        if has_altitude and spatial_fn != "ST_Disjoint":
+            # Extrude the 2D geometry to a 3D prism spanning the altitude range.
+            # ST_Collect of two copies at floor/ceiling Z gives the right 3D bounding box.
+            # &&& hits the gist_geometry_ops_nd index, pruning on X, Y, Z in one scan.
+            floor_sql = alt_min_p if alt_min_p is not None else "-10000"
+            ceiling_sql = alt_max_p if alt_max_p is not None else "200000"
+            parts.append(
+                f"path_geom &&& ST_Collect("
+                f"ST_Force3D({geom_sql}, {floor_sql}::float8), "
+                f"ST_Force3D({geom_sql}, {ceiling_sql}::float8))"
+            )
+            # ST_Intersects is redundant here: any row satisfying EXISTS (a vertex inside
+            # the polygon at the right altitude/time) also satisfies ST_Intersects.
+            # ST_Within is not redundant — EXISTS checks "≥1 vertex inside" while ST_Within
+            # checks "whole path inside", so keep it for trajectory_within.
+            if spatial_fn != "ST_Intersects":
+                parts.append(f"{spatial_fn}(path_geom, {geom_sql})")
+        else:
+            parts.append(f"{spatial_fn}(path_geom, {geom_sql})")
+
+        # Exact combined check: geometry ∧ altitude ∧ time must coincide at the same vertex.
+        if spatial_fn != "ST_Disjoint":
+            has_zmt = has_altitude or time_from_p is not None or time_to_p is not None
+            if has_zmt:
+                vertex_conds: list[str] = [f"ST_Intersects(ST_Force2D(dp.geom), {geom_sql})"]
+                if alt_min_p is not None:
+                    vertex_conds.append(f"ST_Z(dp.geom) >= {alt_min_p}")
+                if alt_max_p is not None:
+                    vertex_conds.append(f"ST_Z(dp.geom) <= {alt_max_p}")
+                if time_from_p is not None:
+                    vertex_conds.append(f"ST_M(dp.geom) >= EXTRACT(EPOCH FROM {time_from_p}::timestamptz)")
+                if time_to_p is not None:
+                    vertex_conds.append(f"ST_M(dp.geom) < EXTRACT(EPOCH FROM {time_to_p}::timestamptz)")
+                parts.append(
+                    f"EXISTS (SELECT 1 FROM ST_DumpPoints(path_geom) dp"
+                    f" WHERE {' AND '.join(vertex_conds)})"
+                )
+
+    # Altitude pre-filters via btree expression indexes on ST_ZMax/ST_ZMin.
+    # Used when there's no geometry (altitude-only query) or ST_Disjoint (prism inapplicable).
+    if v.geometry is None or spatial_fn == "ST_Disjoint":
+        if alt_min_p is not None:
+            parts.append(f"ST_ZMax(path_geom::box3d) >= {alt_min_p}")
+        if alt_max_p is not None:
+            parts.append(f"ST_ZMin(path_geom::box3d) <= {alt_max_p}")
+
+    if time_from_p is not None:
+        parts.append(f"end_ts >= {time_from_p}")
+    if time_to_p is not None:
+        parts.append(f"start_ts < {time_to_p}")
+
     return " AND ".join(parts) if parts else "TRUE"
 
 

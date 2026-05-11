@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import textwrap
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated, Any, AsyncGenerator
@@ -13,6 +15,8 @@ from fastapi.responses import HTMLResponse
 from scalar_fastapi import get_scalar_api_reference
 
 from adsb_server.config import get_settings
+
+logger = logging.getLogger(__name__)
 from adsb_server.db.pool import create_pool
 from adsb_server.query.compiler import compile_predicate
 from adsb_server.query.models import (
@@ -36,9 +40,18 @@ FLIGHT_ID_EXPR = (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    settings = get_settings()
+    if settings.log_queries:
+        # Uvicorn only configures its own loggers; root stays at WARNING.
+        # Attach uvicorn's handler to adsb_server so INFO messages are visible.
+        adsb_logger = logging.getLogger("adsb_server")
+        adsb_logger.setLevel(logging.INFO)
+        for handler in logging.getLogger("uvicorn").handlers:
+            adsb_logger.addHandler(handler)
+
     owned = not hasattr(app.state, "pool")
     if owned:
-        app.state.pool = await create_pool(get_settings().asyncpg_dsn)
+        app.state.pool = await create_pool(settings.asyncpg_dsn)
     try:
         yield
     finally:
@@ -284,6 +297,15 @@ async def query_flights(
         ORDER BY start_ts DESC, icao24 DESC
         LIMIT {limit_p}
     """
+
+    if get_settings().log_queries:
+        dsl = body.match.model_dump(mode="json") if body.match is not None else None
+        logger.info(
+            "query dsl=%s sql=%s params=%s",
+            json.dumps(dsl),
+            textwrap.dedent(sql).strip(),
+            params,
+        )
 
     rows = await pool.fetch(sql, *params)
 
