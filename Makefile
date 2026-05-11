@@ -20,6 +20,15 @@ prod:
 prod-down:
 	cd infra && docker compose -f docker-compose.yml down
 
+# ── Code generation ───────────────────────────────────────────────────────────
+# Export the OpenAPI spec from the server and regenerate web TypeScript types.
+# Run this after any change to server/adsb_server/query/models.py or the API routes.
+gen-types:
+	server/.venv/bin/python -c \
+	  "from adsb_server.api.main import app; import json; print(json.dumps(app.openapi(), indent=2))" \
+	  > server/openapi.json
+	cd web && pnpm gen-types
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 logs:
 	cd infra && docker compose logs -f

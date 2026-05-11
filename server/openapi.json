@@ -1,0 +1,1512 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "adsb.aero API",
+    "description": "Historical ADS-B flight trajectory API. Query flights by geometry, time, aircraft type, callsign, and more. All endpoints are under `/api/v1/`. No authentication required.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Return `{\"status\": \"ok\"}` when the server is running.",
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Api V1 Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/query": {
+      "post": {
+        "summary": "Query flights",
+        "description": "Query flights matching a filter predicate. Returns a paginated list of flight details ordered by `start_ts` descending. \n\n### Pagination\n\nUse keyset-based cursor pagination: if the response includes a non-null `cursor`, repeat the same request with that value as `cursor` to fetch the next page. Stop when `cursor` is `null`.\n\n### Query DSL\n\nThe `match` field accepts a predicate \u2014 a JSON object with exactly one key naming the predicate type. Predicates can be nested with `and`, `or`, and `not`. See the schema definitions for the full predicate vocabulary.",
+        "operationId": "query_flights_api_v1_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryRequest"
+              },
+              "examples": {
+                "no_filter": {
+                  "summary": "Most recent flights",
+                  "value": {
+                    "limit": 10,
+                    "include_path": false
+                  }
+                },
+                "aircraft_type_at_airport": {
+                  "summary": "B737 family arriving at Heathrow",
+                  "value": {
+                    "match": {
+                      "and": [
+                        {
+                          "icao_type": [
+                            "B738",
+                            "B737",
+                            "B737M"
+                          ]
+                        },
+                        {
+                          "ends_within": {
+                            "geometry": {
+                              "type": "Circle",
+                              "coordinates": [
+                                -0.4543,
+                                51.4775
+                              ],
+                              "radius": 8000
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "limit": 50,
+                    "include_path": false
+                  }
+                },
+                "area_and_altitude": {
+                  "summary": "High-altitude flights over the UK on a given day",
+                  "value": {
+                    "match": {
+                      "trajectory_intersects": {
+                        "geometry": {
+                          "type": "Polygon",
+                          "coordinates": [
+                            [
+                              [
+                                -8,
+                                49
+                              ],
+                              [
+                                2,
+                                49
+                              ],
+                              [
+                                2,
+                                61
+                              ],
+                              [
+                                -8,
+                                61
+                              ],
+                              [
+                                -8,
+                                49
+                              ]
+                            ]
+                          ]
+                        },
+                        "altitude_min_ft": 35000,
+                        "time_from": "2026-03-30T00:00:00Z",
+                        "time_to": "2026-03-31T00:00:00Z"
+                      }
+                    },
+                    "limit": 100,
+                    "include_path": false
+                  }
+                },
+                "callsign_prefix": {
+                  "summary": "British Airways flights (callsign prefix)",
+                  "value": {
+                    "match": {
+                      "callsign_matches": "^BAW"
+                    },
+                    "limit": 50,
+                    "include_path": false
+                  }
+                },
+                "short_haul": {
+                  "summary": "Short flights (under 1 hour)",
+                  "value": {
+                    "match": {
+                      "duration": {
+                        "max_s": 3600
+                      }
+                    },
+                    "limit": 50,
+                    "include_path": false
+                  }
+                },
+                "departing_from": {
+                  "summary": "Departures from Charles de Gaulle in a time window",
+                  "value": {
+                    "match": {
+                      "starts_within": {
+                        "geometry": {
+                          "type": "Circle",
+                          "coordinates": [
+                            2.5479,
+                            49.0097
+                          ],
+                          "radius": 10000
+                        },
+                        "time_from": "2026-03-30T06:00:00Z",
+                        "time_to": "2026-03-30T12:00:00Z"
+                      }
+                    },
+                    "limit": 50,
+                    "include_path": false
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flights/{flight_id}": {
+      "get": {
+        "summary": "Get flight by ID",
+        "description": "Fetch the full trajectory for a single flight by its `flight_id`. \n\n`flight_id` is the value returned in `flight_id` fields from `/query`, in the form `<icao24>:<start_ts_utc>` \u2014 for example, `aabbcc:2025-04-01T10:00:00Z`.",
+        "operationId": "get_flight_api_v1_flights__flight_id__get",
+        "parameters": [
+          {
+            "name": "flight_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Flight Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlightDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No flight exists for the given `flight_id`."
+          },
+          "422": {
+            "description": "`flight_id` is malformed (missing `:` separator or invalid timestamp)."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AndPredicate": {
+        "properties": {
+          "and": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TrajectoryIntersects"
+                },
+                {
+                  "$ref": "#/components/schemas/TrajectoryWithin"
+                },
+                {
+                  "$ref": "#/components/schemas/TrajectoryDisjoint"
+                },
+                {
+                  "$ref": "#/components/schemas/StartsWithin"
+                },
+                {
+                  "$ref": "#/components/schemas/EndsWithin"
+                },
+                {
+                  "$ref": "#/components/schemas/IcaoType"
+                },
+                {
+                  "$ref": "#/components/schemas/EmitterCategory"
+                },
+                {
+                  "$ref": "#/components/schemas/CallsignMatches"
+                },
+                {
+                  "$ref": "#/components/schemas/Duration"
+                },
+                {
+                  "$ref": "#/components/schemas/AndPredicate"
+                },
+                {
+                  "$ref": "#/components/schemas/OrPredicate"
+                },
+                {
+                  "$ref": "#/components/schemas/NotPredicate"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "And",
+            "description": "All of these predicates must match."
+          }
+        },
+        "type": "object",
+        "required": [
+          "and"
+        ],
+        "title": "AndPredicate",
+        "description": "All child predicates must be true (logical AND)."
+      },
+      "CallsignMatches": {
+        "properties": {
+          "callsign_matches": {
+            "type": "string",
+            "title": "Callsign Matches",
+            "description": "POSIX regular expression matched against the callsign (case-sensitive). Flights with a null callsign never match.",
+            "examples": [
+              "^BAW"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "callsign_matches"
+        ],
+        "title": "CallsignMatches",
+        "description": "Flights whose callsign matches a POSIX regular expression."
+      },
+      "CircleGeometry": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Circle",
+            "title": "Type"
+          },
+          "coordinates": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Coordinates",
+            "description": "`[longitude, latitude]` of the circle centre."
+          },
+          "radius": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Radius",
+            "description": "Radius in metres."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "coordinates",
+          "radius"
+        ],
+        "title": "CircleGeometry",
+        "description": "Circle geometry extension (not part of the GeoJSON standard)."
+      },
+      "Duration": {
+        "properties": {
+          "duration": {
+            "$ref": "#/components/schemas/DurationValue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "duration"
+        ],
+        "title": "Duration",
+        "description": "Flights whose duration (`end_ts \u2212 start_ts`) falls within the given bounds."
+      },
+      "DurationValue": {
+        "properties": {
+          "min_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min S",
+            "description": "Minimum duration in seconds (inclusive)."
+          },
+          "max_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max S",
+            "description": "Maximum duration in seconds (inclusive)."
+          }
+        },
+        "type": "object",
+        "title": "DurationValue",
+        "description": "Bounds for a flight duration filter. Both bounds are optional."
+      },
+      "EmitterCategory": {
+        "properties": {
+          "emitter_category": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Emitter Category",
+            "description": "List of ADS-B emitter category codes to match. OR semantics.",
+            "examples": [
+              [
+                "A3",
+                "A5"
+              ]
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "emitter_category"
+        ],
+        "title": "EmitterCategory",
+        "description": "Flights matching one or more ADS-B emitter category codes."
+      },
+      "EndsWithin": {
+        "properties": {
+          "ends_within": {
+            "$ref": "#/components/schemas/SpatioTemporalValue",
+            "description": "Spatial and/or temporal constraints on the arrival point and time."
+          }
+        },
+        "type": "object",
+        "required": [
+          "ends_within"
+        ],
+        "title": "EndsWithin",
+        "description": "Flights whose arrival point falls within the given geometry and/or arrives within the given time window."
+      },
+      "FlightDetail": {
+        "properties": {
+          "flight_id": {
+            "type": "string",
+            "title": "Flight Id",
+            "description": "Stable identifier: `<icao24>:<start_ts_utc>`. Pass this to `GET /api/v1/flights/{flight_id}` to retrieve the full trajectory.",
+            "examples": [
+              "aabbcc:2025-04-01T10:00:00Z"
+            ]
+          },
+          "icao24": {
+            "type": "string",
+            "title": "Icao24",
+            "description": "24-bit Mode S transponder address in lowercase hex.",
+            "examples": [
+              "aabbcc"
+            ]
+          },
+          "callsign": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callsign",
+            "description": "Most common callsign observed during the flight, or null if none was broadcast.",
+            "examples": [
+              "BAW123"
+            ]
+          },
+          "icao_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icao Type",
+            "description": "ICAO aircraft type designator (e.g. `B738`, `A320`), or null if unknown.",
+            "examples": [
+              "B738"
+            ]
+          },
+          "emitter_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emitter Category",
+            "description": "ADS-B emitter category code (e.g. `A3` = large aircraft), or null if unknown.",
+            "examples": [
+              "A3"
+            ]
+          },
+          "start_ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Ts",
+            "description": "UTC timestamp of the first observed position in this leg."
+          },
+          "end_ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End Ts",
+            "description": "UTC timestamp of the last observed position in this leg."
+          },
+          "start_point": {
+            "$ref": "#/components/schemas/GeoJSONPointZ",
+            "description": "GeoJSON Point of the first observed position. Coordinates are `[longitude, latitude, altitude_ft]`.",
+            "examples": [
+              {
+                "coordinates": [
+                  -0.1275,
+                  51.5072,
+                  35000.0
+                ],
+                "type": "Point"
+              }
+            ]
+          },
+          "end_point": {
+            "$ref": "#/components/schemas/GeoJSONPointZ",
+            "description": "GeoJSON Point of the last observed position. Coordinates are `[longitude, latitude, altitude_ft]`.",
+            "examples": [
+              {
+                "coordinates": [
+                  -2.2667,
+                  53.4667,
+                  35000.0
+                ],
+                "type": "Point"
+              }
+            ]
+          },
+          "point_count": {
+            "type": "integer",
+            "title": "Point Count",
+            "description": "Number of vertices in the simplified path geometry. Always present, even when `include_path` is false."
+          },
+          "path": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoJSONLineStringZ"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Simplified flight path as a GeoJSON LineString. Coordinates are `[longitude, latitude, altitude_ft]`. Altitude is pressure altitude in feet (QNH correction not applied). Ground-roll points are excluded. Omitted when the request sets `include_path` to false.",
+            "examples": [
+              {
+                "coordinates": [
+                  [
+                    -0.1275,
+                    51.5072,
+                    35000.0
+                  ],
+                  [
+                    -1.2,
+                    52.5,
+                    36000.0
+                  ],
+                  [
+                    -2.2667,
+                    53.4667,
+                    35000.0
+                  ]
+                ],
+                "type": "LineString"
+              }
+            ]
+          },
+          "timestamps": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamps",
+            "description": "Unix epoch seconds (UTC) for each vertex in `path.coordinates`. Same length as `coordinates`. Omitted when `include_path` is false.",
+            "examples": [
+              [
+                1743501600.0,
+                1743505200.0,
+                1743508800.0
+              ]
+            ]
+          },
+          "path_tracks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Tracks",
+            "description": "Magnetic track (heading) in degrees 0\u2013359 for each vertex in `path.coordinates`. Same length as `coordinates`. Omitted when `include_path` is false.",
+            "examples": [
+              [
+                90,
+                315,
+                315
+              ]
+            ]
+          },
+          "squawk_runs": {
+            "anyOf": [
+              {
+                "items": {
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squawk Runs",
+            "description": "Run-length encoding of transponder squawk codes. Each entry is `[unix_timestamp, squawk_code]` and marks the start of a new code. Forward-fill from each entry to the next to determine the code in effect at any point. Omitted when `include_path` is false.",
+            "examples": [
+              [
+                [
+                  1743501600.0,
+                  "1234"
+                ]
+              ]
+            ]
+          },
+          "raw_point_count": {
+            "type": "integer",
+            "title": "Raw Point Count",
+            "description": "Number of raw ADS-B messages ingested for this leg, including ground-roll points not present in the simplified path geometry."
+          },
+          "ingest_batch_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Ingest Batch Date",
+            "description": "Calendar date of the archive batch this flight was ingested from.",
+            "examples": [
+              "2025-04-01"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "flight_id",
+          "icao24",
+          "callsign",
+          "icao_type",
+          "emitter_category",
+          "start_ts",
+          "end_ts",
+          "start_point",
+          "end_point",
+          "point_count",
+          "raw_point_count",
+          "ingest_batch_date"
+        ],
+        "title": "FlightDetail",
+        "description": "Full trajectory detail for a single flight leg, extending FlightSummary."
+      },
+      "GeoJSONGeometryCollection": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "GeometryCollection",
+            "title": "Type"
+          },
+          "geometries": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/GeoJSONPoint"
+                },
+                {
+                  "$ref": "#/components/schemas/GeoJSONMultiPoint"
+                },
+                {
+                  "$ref": "#/components/schemas/GeoJSONLineString"
+                },
+                {
+                  "$ref": "#/components/schemas/GeoJSONMultiLineString"
+                },
+                {
+                  "$ref": "#/components/schemas/GeoJSONPolygon"
+                },
+                {
+                  "$ref": "#/components/schemas/GeoJSONMultiPolygon"
+                },
+                {
+                  "$ref": "#/components/schemas/GeoJSONGeometryCollection"
+                },
+                {
+                  "$ref": "#/components/schemas/CircleGeometry"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "Circle": "#/components/schemas/CircleGeometry",
+                  "GeometryCollection": "#/components/schemas/GeoJSONGeometryCollection",
+                  "LineString": "#/components/schemas/GeoJSONLineString",
+                  "MultiLineString": "#/components/schemas/GeoJSONMultiLineString",
+                  "MultiPoint": "#/components/schemas/GeoJSONMultiPoint",
+                  "MultiPolygon": "#/components/schemas/GeoJSONMultiPolygon",
+                  "Point": "#/components/schemas/GeoJSONPoint",
+                  "Polygon": "#/components/schemas/GeoJSONPolygon"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Geometries",
+            "description": "Array of geometry objects."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "geometries"
+        ],
+        "title": "GeoJSONGeometryCollection",
+        "description": "GeoJSON GeometryCollection \u2014 a heterogeneous collection of geometries."
+      },
+      "GeoJSONLineString": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "LineString",
+            "title": "Type"
+          },
+          "coordinates": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Coordinates",
+            "description": "Array of `[longitude, latitude]` pairs."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "title": "GeoJSONLineString",
+        "description": "GeoJSON LineString geometry."
+      },
+      "GeoJSONLineStringZ": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "LineString",
+            "title": "Type"
+          },
+          "coordinates": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 3,
+              "minItems": 3
+            },
+            "type": "array",
+            "title": "Coordinates",
+            "description": "Sequence of `[longitude, latitude, altitude_ft]` vertices."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "title": "GeoJSONLineStringZ",
+        "description": "GeoJSON LineString with a mandatory altitude on every vertex, as returned in path fields."
+      },
+      "GeoJSONMultiLineString": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "MultiLineString",
+            "title": "Type"
+          },
+          "coordinates": {
+            "items": {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Coordinates",
+            "description": "Array of LineString coordinate arrays."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "title": "GeoJSONMultiLineString",
+        "description": "GeoJSON MultiLineString geometry."
+      },
+      "GeoJSONMultiPoint": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "MultiPoint",
+            "title": "Type"
+          },
+          "coordinates": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Coordinates",
+            "description": "Array of Point coordinate arrays."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "title": "GeoJSONMultiPoint",
+        "description": "GeoJSON MultiPoint geometry."
+      },
+      "GeoJSONMultiPolygon": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "MultiPolygon",
+            "title": "Type"
+          },
+          "coordinates": {
+            "items": {
+              "items": {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Coordinates",
+            "description": "Array of Polygon coordinate arrays."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "title": "GeoJSONMultiPolygon",
+        "description": "GeoJSON MultiPolygon geometry."
+      },
+      "GeoJSONPoint": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Point",
+            "title": "Type"
+          },
+          "coordinates": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Coordinates",
+            "description": "`[longitude, latitude]` or `[longitude, latitude, altitude]`."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "title": "GeoJSONPoint",
+        "description": "GeoJSON Point geometry."
+      },
+      "GeoJSONPointZ": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Point",
+            "title": "Type"
+          },
+          "coordinates": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Coordinates",
+            "description": "`[longitude, latitude, altitude_ft]`."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "title": "GeoJSONPointZ",
+        "description": "GeoJSON Point with a mandatory altitude component, as returned in flight position fields."
+      },
+      "GeoJSONPolygon": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Polygon",
+            "title": "Type"
+          },
+          "coordinates": {
+            "items": {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Coordinates",
+            "description": "Array of linear rings. First ring is the exterior boundary; subsequent rings are interior holes. Each ring is closed (first == last position)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "title": "GeoJSONPolygon",
+        "description": "GeoJSON Polygon geometry."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IcaoType": {
+        "properties": {
+          "icao_type": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Icao Type",
+            "description": "List of ICAO type designators to match (case-sensitive). OR semantics.",
+            "examples": [
+              [
+                "B738",
+                "B737"
+              ]
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "icao_type"
+        ],
+        "title": "IcaoType",
+        "description": "Flights matching one or more ICAO aircraft type designators."
+      },
+      "NotPredicate": {
+        "properties": {
+          "not": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrajectoryIntersects"
+              },
+              {
+                "$ref": "#/components/schemas/TrajectoryWithin"
+              },
+              {
+                "$ref": "#/components/schemas/TrajectoryDisjoint"
+              },
+              {
+                "$ref": "#/components/schemas/StartsWithin"
+              },
+              {
+                "$ref": "#/components/schemas/EndsWithin"
+              },
+              {
+                "$ref": "#/components/schemas/IcaoType"
+              },
+              {
+                "$ref": "#/components/schemas/EmitterCategory"
+              },
+              {
+                "$ref": "#/components/schemas/CallsignMatches"
+              },
+              {
+                "$ref": "#/components/schemas/Duration"
+              },
+              {
+                "$ref": "#/components/schemas/AndPredicate"
+              },
+              {
+                "$ref": "#/components/schemas/OrPredicate"
+              },
+              {
+                "$ref": "#/components/schemas/NotPredicate"
+              }
+            ],
+            "title": "Not",
+            "description": "This predicate must not match."
+          }
+        },
+        "type": "object",
+        "required": [
+          "not"
+        ],
+        "title": "NotPredicate",
+        "description": "Negates a child predicate (logical NOT)."
+      },
+      "OrPredicate": {
+        "properties": {
+          "or": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TrajectoryIntersects"
+                },
+                {
+                  "$ref": "#/components/schemas/TrajectoryWithin"
+                },
+                {
+                  "$ref": "#/components/schemas/TrajectoryDisjoint"
+                },
+                {
+                  "$ref": "#/components/schemas/StartsWithin"
+                },
+                {
+                  "$ref": "#/components/schemas/EndsWithin"
+                },
+                {
+                  "$ref": "#/components/schemas/IcaoType"
+                },
+                {
+                  "$ref": "#/components/schemas/EmitterCategory"
+                },
+                {
+                  "$ref": "#/components/schemas/CallsignMatches"
+                },
+                {
+                  "$ref": "#/components/schemas/Duration"
+                },
+                {
+                  "$ref": "#/components/schemas/AndPredicate"
+                },
+                {
+                  "$ref": "#/components/schemas/OrPredicate"
+                },
+                {
+                  "$ref": "#/components/schemas/NotPredicate"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Or",
+            "description": "At least one of these predicates must match."
+          }
+        },
+        "type": "object",
+        "required": [
+          "or"
+        ],
+        "title": "OrPredicate",
+        "description": "At least one child predicate must be true (logical OR)."
+      },
+      "QueryRequest": {
+        "properties": {
+          "match": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrajectoryIntersects"
+              },
+              {
+                "$ref": "#/components/schemas/TrajectoryWithin"
+              },
+              {
+                "$ref": "#/components/schemas/TrajectoryDisjoint"
+              },
+              {
+                "$ref": "#/components/schemas/StartsWithin"
+              },
+              {
+                "$ref": "#/components/schemas/EndsWithin"
+              },
+              {
+                "$ref": "#/components/schemas/IcaoType"
+              },
+              {
+                "$ref": "#/components/schemas/EmitterCategory"
+              },
+              {
+                "$ref": "#/components/schemas/CallsignMatches"
+              },
+              {
+                "$ref": "#/components/schemas/Duration"
+              },
+              {
+                "$ref": "#/components/schemas/AndPredicate"
+              },
+              {
+                "$ref": "#/components/schemas/OrPredicate"
+              },
+              {
+                "$ref": "#/components/schemas/NotPredicate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match",
+            "description": "Filter predicate. Omit or set to `null` to return all flights."
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "description": "Maximum number of flights to return per page.",
+            "default": 100
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "Continuation token from the previous page's `cursor` field."
+          },
+          "include_path": {
+            "type": "boolean",
+            "title": "Include Path",
+            "description": "Whether to include `path`, `timestamps`, `path_tracks`, and `squawk_runs` in each result. Set to `false` for lightweight listing queries where trajectory data is not needed.",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "QueryRequest",
+        "description": "Request body for `POST /api/v1/query`."
+      },
+      "QueryResponse": {
+        "properties": {
+          "flights": {
+            "items": {
+              "$ref": "#/components/schemas/FlightDetail"
+            },
+            "type": "array",
+            "title": "Flights",
+            "description": "Flights on this page, ordered by `start_ts` descending then `icao24` descending."
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "Opaque continuation token. Pass unchanged as `cursor` in the next request to retrieve the next page. `null` when there are no more results."
+          }
+        },
+        "type": "object",
+        "required": [
+          "flights",
+          "cursor"
+        ],
+        "title": "QueryResponse",
+        "description": "Paginated list of flights matching a query."
+      },
+      "SpatioTemporalAltitudeValue": {
+        "properties": {
+          "geometry": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/GeoJSONPoint"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONMultiPoint"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONLineString"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONMultiLineString"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONPolygon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONMultiPolygon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONGeometryCollection"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CircleGeometry"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "type",
+                  "mapping": {
+                    "Circle": "#/components/schemas/CircleGeometry",
+                    "GeometryCollection": "#/components/schemas/GeoJSONGeometryCollection",
+                    "LineString": "#/components/schemas/GeoJSONLineString",
+                    "MultiLineString": "#/components/schemas/GeoJSONMultiLineString",
+                    "MultiPoint": "#/components/schemas/GeoJSONMultiPoint",
+                    "MultiPolygon": "#/components/schemas/GeoJSONMultiPolygon",
+                    "Point": "#/components/schemas/GeoJSONPoint",
+                    "Polygon": "#/components/schemas/GeoJSONPolygon"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry",
+            "description": "GeoJSON geometry or Circle to test the flight path against. Omit for a time- or altitude-only filter."
+          },
+          "altitude_min_ft": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Altitude Min Ft",
+            "description": "Minimum altitude bound in feet (inclusive). Compared against the bounding box of the simplified path \u2014 an approximation."
+          },
+          "altitude_max_ft": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Altitude Max Ft",
+            "description": "Maximum altitude bound in feet (inclusive). Compared against the bounding box of the simplified path \u2014 an approximation."
+          },
+          "time_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time From",
+            "description": "Inclusive lower bound: the flight must still be active at this time (end_ts >= time_from)."
+          },
+          "time_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time To",
+            "description": "Exclusive upper bound: the flight must have started by this time (start_ts < time_to)."
+          }
+        },
+        "type": "object",
+        "title": "SpatioTemporalAltitudeValue",
+        "description": "Spatial, altitude, and/or temporal filter \u2014 used by trajectory_intersects / within / disjoint.\n\nAt least one constraint must be provided."
+      },
+      "SpatioTemporalValue": {
+        "properties": {
+          "geometry": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/GeoJSONPoint"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONMultiPoint"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONLineString"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONMultiLineString"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONPolygon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONMultiPolygon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONGeometryCollection"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CircleGeometry"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "type",
+                  "mapping": {
+                    "Circle": "#/components/schemas/CircleGeometry",
+                    "GeometryCollection": "#/components/schemas/GeoJSONGeometryCollection",
+                    "LineString": "#/components/schemas/GeoJSONLineString",
+                    "MultiLineString": "#/components/schemas/GeoJSONMultiLineString",
+                    "MultiPoint": "#/components/schemas/GeoJSONMultiPoint",
+                    "MultiPolygon": "#/components/schemas/GeoJSONMultiPolygon",
+                    "Point": "#/components/schemas/GeoJSONPoint",
+                    "Polygon": "#/components/schemas/GeoJSONPolygon"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry",
+            "description": "GeoJSON geometry or Circle to test the departure/arrival point against. Omit for a time-only filter."
+          },
+          "time_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time From",
+            "description": "Inclusive lower bound on start_ts (starts_within) or end_ts (ends_within)."
+          },
+          "time_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time To",
+            "description": "Exclusive upper bound on start_ts or end_ts."
+          }
+        },
+        "type": "object",
+        "title": "SpatioTemporalValue",
+        "description": "Spatial and/or temporal filter without altitude \u2014 used by starts_within / ends_within.\n\nAt least one of geometry, time_from, or time_to must be provided."
+      },
+      "StartsWithin": {
+        "properties": {
+          "starts_within": {
+            "$ref": "#/components/schemas/SpatioTemporalValue",
+            "description": "Spatial and/or temporal constraints on the departure point and time."
+          }
+        },
+        "type": "object",
+        "required": [
+          "starts_within"
+        ],
+        "title": "StartsWithin",
+        "description": "Flights whose departure point falls within the given geometry and/or departs within the given time window."
+      },
+      "TrajectoryDisjoint": {
+        "properties": {
+          "trajectory_disjoint": {
+            "$ref": "#/components/schemas/SpatioTemporalAltitudeValue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trajectory_disjoint"
+        ],
+        "title": "TrajectoryDisjoint",
+        "description": "Flights whose simplified path does not intersect the given geometry and/or were active during the given time window."
+      },
+      "TrajectoryIntersects": {
+        "properties": {
+          "trajectory_intersects": {
+            "$ref": "#/components/schemas/SpatioTemporalAltitudeValue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trajectory_intersects"
+        ],
+        "title": "TrajectoryIntersects",
+        "description": "Flights whose simplified path crosses the given geometry and/or were active during the given time window."
+      },
+      "TrajectoryWithin": {
+        "properties": {
+          "trajectory_within": {
+            "$ref": "#/components/schemas/SpatioTemporalAltitudeValue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trajectory_within"
+        ],
+        "title": "TrajectoryWithin",
+        "description": "Flights whose entire simplified path lies within the given geometry and/or were active during the given time window."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
