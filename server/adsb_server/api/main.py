@@ -4,21 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import textwrap
+from collections.abc import AsyncGenerator  # noqa: TC003
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Annotated, Any, AsyncGenerator
+from typing import TYPE_CHECKING, Annotated, Any
 
-import asyncpg
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse  # noqa: TC002
 from scalar_fastapi import get_scalar_api_reference
 
 from adsb_server.config import get_settings
-
-logger = logging.getLogger(__name__)
 from adsb_server.db.pool import create_pool
-from adsb_server.query.compiler import compile_predicate
+from adsb_server.query.compiler import CompiledPredicate, compile_predicate
 from adsb_server.query.models import (
     FlightDetail,
     GeoJSONLineStringZ,
@@ -28,6 +27,17 @@ from adsb_server.query.models import (
     decode_cursor,
     encode_cursor,
 )
+
+if TYPE_CHECKING:
+    import asyncpg
+
+logger = logging.getLogger(__name__)
+
+
+def _p(params: list[Any], val: Any) -> str:
+    """Append val to params and return its $n placeholder."""
+    params.append(val)
+    return f"${len(params)}"
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -102,7 +112,9 @@ async def get_pool(request: Request) -> asyncpg.Pool:
 # Helper: row → FlightDetail
 # ---------------------------------------------------------------------------
 
-# Columns selected by both /query and /flights/{id}
+# Columns selected by both /query and /flights/{id}.
+# start_point and end_point are derived from the first/last instant of the tgeompoint.
+# path_text and path_tracks_text are the MobilityDB text representations, parsed in Python.
 _FLIGHT_COLS = f"""
     {FLIGHT_ID_EXPR} AS flight_id,
     f.icao24,
@@ -111,34 +123,52 @@ _FLIGHT_COLS = f"""
     f.emitter_category,
     f.start_ts,
     f.end_ts,
-    ST_AsGeoJSON(f.start_point, 6) AS start_point,
-    ST_AsGeoJSON(f.end_point, 6) AS end_point,
-    ST_AsText(f.path_geom) AS path_wkt,
-    f.path_tracks,
+    ST_AsGeoJSON(startValue(f.path)::geometry, 6) AS start_point,
+    ST_AsGeoJSON(endValue(f.path)::geometry, 6) AS end_point,
+    asText(f.path) AS path_text,
+    asText(f.path_tracks) AS path_tracks_text,
     f.squawk_runs,
     f.raw_point_count,
     f.ingest_batch_date,
-    ST_NPoints(f.path_geom) AS point_count
+    numInstants(f.path) AS point_count
 """
 
 
-def _parse_path_wkt(
-    wkt: str, path_tracks: list[int],
-) -> tuple[GeoJSONLineStringZ, list[float], list[int]]:
-    """Parse a LINESTRINGZM WKT into a GeoJSON LineString, timestamps list, and path_tracks.
+_INSTANT_RE = re.compile(
+    r"POINT\s+Z\s*\(\s*([^\s]+)\s+([^\s]+)\s+([^\s]+)\s*\)@([^,\]\)]+)",
+    re.IGNORECASE,
+)
+_TINT_INSTANT_RE = re.compile(r"(-?\d+)@")
 
-    ST_AsText preserves M (timestamp) values that ST_AsGeoJSON discards.
-    Coordinates are rounded to 6 decimal places to match ST_AsGeoJSON precision.
-    path_geom never contains ground points (they are excluded at ingest time).
+
+def _parse_path(
+    path_text: str,
+    path_tracks_text: str,
+) -> tuple[GeoJSONLineStringZ, list[float], list[int]]:
+    """Parse MobilityDB tgeompoint and tint text representations.
+
+    path_text format:    '[POINT Z (lon lat alt)@YYYY-MM-DD HH:MM:SS+00, ...]'
+    path_tracks_text:    '[val@YYYY-MM-DD HH:MM:SS+00, ...]'
+
+    Returns (GeoJSON LineString, timestamps as unix epochs, track angles).
+    Coordinates rounded to 6 decimal places.
     """
-    inner = wkt[wkt.index("(") + 1 : wkt.rindex(")")]
     coords_3d: list[tuple[float, float, float]] = []
     timestamps: list[float] = []
-    for point_str in inner.split(","):
-        parts = point_str.split()
-        coords_3d.append((round(float(parts[0]), 6), round(float(parts[1]), 6), round(float(parts[2]), 6)))
-        timestamps.append(float(parts[3]))
-    return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps, list(path_tracks)
+    for m in _INSTANT_RE.finditer(path_text):
+        lon = round(float(m.group(1)), 6)
+        lat = round(float(m.group(2)), 6)
+        alt = round(float(m.group(3)), 6)
+        ts_str = m.group(4).strip()
+        # Normalise "+00" → "+00:00" so fromisoformat accepts it
+        if ts_str.endswith("+00"):
+            ts_str = ts_str + ":00"
+        timestamps.append(datetime.fromisoformat(ts_str).timestamp())
+        coords_3d.append((lon, lat, alt))
+
+    path_tracks = [int(m.group(1)) for m in _TINT_INSTANT_RE.finditer(path_tracks_text)]
+
+    return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps, path_tracks
 
 
 def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDetail:
@@ -147,8 +177,7 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
     filtered_tracks = None
     squawk_runs = None
     if include_path:
-        raw_tracks = list(row["path_tracks"])
-        path, timestamps, filtered_tracks = _parse_path_wkt(row["path_wkt"], raw_tracks)
+        path, timestamps, filtered_tracks = _parse_path(row["path_text"], row["path_tracks_text"])
         squawk_raw: str | None = row["squawk_runs"]
         squawk_runs = (
             [(float(r[0]), str(r[1])) for r in json.loads(squawk_raw)] if squawk_raw else []
@@ -217,7 +246,7 @@ async def query_flights(
                         "match": {
                             "and": [
                                 {"icao_type": ["B738", "B737", "B737M"]},
-                                {"ends_within": {"geometry": {"type": "Circle", "coordinates": [-0.4543, 51.4775], "radius": 8000}}},
+                                {"ends_within": {"geometry": {"type": "Circle", "coordinates": [-0.4543, 51.4775], "radius": 8000}}},  # noqa: E501
                             ]
                         },
                         "limit": 50,
@@ -231,7 +260,7 @@ async def query_flights(
                             "trajectory_intersects": {
                                 "geometry": {
                                     "type": "Polygon",
-                                    "coordinates": [[[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]],
+                                    "coordinates": [[[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]],  # noqa: E501
                                 },
                                 "altitude_min_ft": 35000,
                                 "time_from": "2026-03-30T00:00:00Z",
@@ -244,18 +273,18 @@ async def query_flights(
                 },
                 "callsign_prefix": {
                     "summary": "British Airways flights (callsign prefix)",
-                    "value": {"match": {"callsign_matches": "^BAW"}, "limit": 50, "include_path": False},
+                    "value": {"match": {"callsign_matches": "^BAW"}, "limit": 50, "include_path": False},  # noqa: E501
                 },
                 "short_haul": {
                     "summary": "Short flights (under 1 hour)",
-                    "value": {"match": {"duration": {"max_s": 3600}}, "limit": 50, "include_path": False},
+                    "value": {"match": {"duration": {"max_s": 3600}}, "limit": 50, "include_path": False},  # noqa: E501
                 },
                 "departing_from": {
                     "summary": "Departures from Charles de Gaulle in a time window",
                     "value": {
                         "match": {
                             "starts_within": {
-                                "geometry": {"type": "Circle", "coordinates": [2.5479, 49.0097], "radius": 10000},
+                                "geometry": {"type": "Circle", "coordinates": [2.5479, 49.0097], "radius": 10000},  # noqa: E501
                                 "time_from": "2026-03-30T06:00:00Z",
                                 "time_to": "2026-03-30T12:00:00Z",
                             }
@@ -274,8 +303,10 @@ async def query_flights(
 
     # Build WHERE clause
     where_parts: list[str] = []
+    compiled: CompiledPredicate | None = None
     if body.match is not None:
-        where_parts.append(f"({compile_predicate(body.match, params)})")
+        compiled = compile_predicate(body.match, params)
+        where_parts.append(f"({compiled})")
 
     # Cursor condition
     if body.cursor is not None:
@@ -290,9 +321,17 @@ async def query_flights(
 
     limit_p = _p(params, body.limit + 1)
 
+    ctes = compiled.ctes if compiled is not None else []
+    with_clause = (
+        "WITH " + ", ".join(f"{name} AS ({cte_body})" for name, cte_body in ctes) + "\n"
+        if ctes
+        else ""
+    )
+    from_extras = (", " + ", ".join(name for name, _ in ctes)) if ctes else ""
+
     sql = f"""
-        SELECT {_FLIGHT_COLS}
-        FROM flights f
+        {with_clause}SELECT {_FLIGHT_COLS}
+        FROM flights f{from_extras}
         {where_sql}
         ORDER BY start_ts DESC, icao24 DESC
         LIMIT {limit_p}
@@ -335,7 +374,7 @@ async def query_flights(
     ),
     responses={
         404: {"description": "No flight exists for the given `flight_id`."},
-        422: {"description": "`flight_id` is malformed (missing `:` separator or invalid timestamp)."},
+        422: {"description": "`flight_id` is malformed (missing `:` separator or invalid timestamp)."},  # noqa: E501
     },
 )
 async def get_flight(
@@ -355,7 +394,7 @@ async def get_flight(
     try:
         start_ts: datetime = datetime.fromisoformat(ts_str)
     except ValueError:
-        raise HTTPException(status_code=422, detail="Malformed flight_id timestamp")
+        raise HTTPException(status_code=422, detail="Malformed flight_id timestamp") from None
 
     sql = f"""
         SELECT {_FLIGHT_COLS}
@@ -368,12 +407,6 @@ async def get_flight(
         raise HTTPException(status_code=404, detail="Flight not found")
 
     return _row_to_detail(row)
-
-
-def _p(params: list[Any], val: Any) -> str:
-    """Append val to params and return its $n placeholder."""
-    params.append(val)
-    return f"${len(params)}"
 
 
 app.include_router(router)

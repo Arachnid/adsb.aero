@@ -1,18 +1,34 @@
-"""WKT geometry construction helpers for PostGIS insertion."""
+"""MobilityDB temporal type construction helpers for DB insertion."""
 
 from __future__ import annotations
 
-import logging
-
-logger = logging.getLogger(__name__)
+from datetime import UTC, datetime
 
 
-def point_zm(lon: float, lat: float, alt_ft: float, ts_epoch: float) -> str:
-    """Return a WKT POINTZM string."""
-    return f"POINTZM({lon} {lat} {alt_ft} {ts_epoch})"
+def _fmt_ts(ts_epoch: float) -> str:
+    """Format a unix epoch float as an ISO 8601 UTC timestamp for MobilityDB."""
+    return datetime.fromtimestamp(ts_epoch, UTC).strftime("%Y-%m-%dT%H:%M:%S.%f+00")
 
 
-def linestring_zm(vertices: list[tuple[float, float, float, float]]) -> str:
-    """Return a WKT LINESTRINGZM string from a list of (lon, lat, alt_ft, ts) tuples."""
-    coords = ", ".join(f"{lon} {lat} {alt_ft} {ts}" for lon, lat, alt_ft, ts in vertices)
-    return f"LINESTRINGZM({coords})"
+def tgeompoint_seq(vertices: list[tuple[float, float, float, float]]) -> str:
+    """Return a MobilityDB tgeompoint sequence string (SRID 4326, linear interpolation).
+
+    vertices: list of (lon, lat, alt_ft, ts_epoch) tuples.
+    Output: 'SRID=4326;[POINT Z (lon lat alt)@ts, ...]'
+    """
+    instants = [
+        f"POINT Z ({lon} {lat} {alt_ft})@{_fmt_ts(ts)}"
+        for lon, lat, alt_ft, ts in vertices
+    ]
+    return f"SRID=4326;[{', '.join(instants)}]"
+
+
+def tint_seq(values: list[int], timestamps: list[float]) -> str:
+    """Return a MobilityDB tint sequence string (stepwise by type).
+
+    values: integer values at each instant (e.g. track angles 0-359).
+    timestamps: corresponding unix epoch floats, same length as values.
+    Output: '[val@ts, ...]'
+    """
+    instants = [f"{v}@{_fmt_ts(ts)}" for v, ts in zip(values, timestamps, strict=True)]
+    return f"[{', '.join(instants)}]"

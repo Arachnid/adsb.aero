@@ -17,7 +17,7 @@ from typing import Any
 import asyncpg  # noqa: TC002
 
 from adsb_server.geometry.simplify import simplify_flight
-from adsb_server.geometry.wkt import linestring_zm, point_zm
+from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import count_traces, stream_tarball
 from adsb_server.ingestion.splitter import (
@@ -33,16 +33,16 @@ _CHUNK_SIZE = 256
 
 _UPSERT_FLIGHT_SQL = """
 INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
-    start_ts, end_ts, start_point, end_point, path_geom,
-    path_tracks, squawk_runs, raw_point_count, ingest_batch_date)
+    start_ts, end_ts, path, path_tracks,
+    squawk_runs, raw_point_count, ingest_batch_date)
 VALUES ($1,$2,$3,$4,$5,$6,
-    ST_GeomFromText($7,4326), ST_GeomFromText($8,4326), ST_GeomFromText($9,4326),
-    $10, $11::jsonb, $12, $13)
+    $7::tgeompoint, $8::tint,
+    $9::jsonb, $10, $11)
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
-    end_ts=EXCLUDED.end_ts, end_point=EXCLUDED.end_point,
-    path_geom=EXCLUDED.path_geom, path_tracks=EXCLUDED.path_tracks,
+    end_ts=EXCLUDED.end_ts,
+    path=EXCLUDED.path, path_tracks=EXCLUDED.path_tracks,
     squawk_runs=EXCLUDED.squawk_runs, raw_point_count=EXCLUDED.raw_point_count,
     ingest_batch_date=EXCLUDED.ingest_batch_date
 """
@@ -50,8 +50,8 @@ ON CONFLICT (icao24, start_ts) DO UPDATE SET
 _FlightParams = tuple[
     str, str | None, str | None, str | None,
     datetime, datetime,
-    str, str, str,
-    list[int], str, int, date,
+    str, str,
+    str, int, date,
 ]
 
 
@@ -71,8 +71,7 @@ def _flight_to_params(
     batch_date: date,
 ) -> _FlightParams:
     """Convert a FinalizedFlight into the parameter tuple for the UPSERT SQL."""
-    start_v = flight.vertices[0]
-    end_v = flight.vertices[-1]
+    timestamps = [v[3] for v in flight.vertices]
     return (
         flight.icao24,
         flight.callsign,
@@ -80,10 +79,8 @@ def _flight_to_params(
         flight.emitter_category,
         flight.start_ts,
         flight.end_ts,
-        point_zm(*start_v),
-        point_zm(*end_v),
-        linestring_zm(flight.vertices),
-        flight.path_tracks,
+        tgeompoint_seq(flight.vertices),
+        tint_seq(flight.path_tracks, timestamps),
         json.dumps(flight.squawk_runs),
         flight.raw_point_count,
         batch_date,
@@ -118,10 +115,9 @@ def _in_progress_flight_to_params(
         vertices.append((p.lon, p.lat, p.alt_baro or 0.0, p.ts))
         path_tracks.append(round(p.track) % 360 if p.track is not None else 0)
 
-    start_v = vertices[0]
-    end_v = vertices[-1]
-    start_ts = datetime.fromtimestamp(start_v[3], tz=UTC)
-    end_ts = datetime.fromtimestamp(end_v[3], tz=UTC)
+    start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
+    end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
+    timestamps = [v[3] for v in vertices]
 
     return (
         flight.icao24,
@@ -130,10 +126,8 @@ def _in_progress_flight_to_params(
         flight.emitter_category,
         start_ts,
         end_ts,
-        point_zm(*start_v),
-        point_zm(*end_v),
-        linestring_zm(vertices),
-        path_tracks,
+        tgeompoint_seq(vertices),
+        tint_seq(path_tracks, timestamps),
         json.dumps(build_squawk_runs([interp[i] for i in kept])),
         len(flight.points),
         batch_date,

@@ -40,6 +40,13 @@ async def test_postgis_extension_loaded(conn: asyncpg.Connection) -> None:  # ty
 
 
 @pytest.mark.asyncio
+async def test_mobilitydb_extension_loaded(conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
+    row = await conn.fetchrow("SELECT mobilitydb_version()")
+    assert row is not None
+    assert row[0] is not None
+
+
+@pytest.mark.asyncio
 async def test_flights_partitioned(conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
     row = await conn.fetchrow(
         """
@@ -72,14 +79,14 @@ async def test_flights_monthly_partitions_exist(conn: asyncpg.Connection) -> Non
 
 
 @pytest.mark.asyncio
-async def test_flights_nd_gist_index_exists(conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
+async def test_flights_path_gist_index_exists(conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
     row = await conn.fetchrow(
         """
         SELECT indexname FROM pg_indexes
-        WHERE tablename = 'flights' AND indexname = 'flights_path_geom_nd'
+        WHERE tablename = 'flights' AND indexname = 'flights_path'
         """
     )
-    assert row is not None, "4D GIST index flights_path_geom_nd not found"
+    assert row is not None, "MobilityDB STBOX GiST index flights_path not found"
 
 
 @pytest.mark.asyncio

@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 
-import asyncpg
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
+    import asyncpg
+
 from adsb_server.api.main import app
-from adsb_server.geometry.wkt import linestring_zm, point_zm
+from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq
 
 # ---------------------------------------------------------------------------
 # Test flight data
@@ -20,46 +24,44 @@ FLIGHT_A_ICAO = "aabbcc"
 FLIGHT_A_CALLSIGN = "BAW123"
 FLIGHT_A_TYPE = "B738"
 FLIGHT_A_EMITTER = "A3"
-FLIGHT_A_START_TS = datetime(2025, 4, 1, 10, 0, 0, tzinfo=timezone.utc)
-FLIGHT_A_END_TS = datetime(2025, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
+FLIGHT_A_START_TS = datetime(2025, 4, 1, 10, 0, 0, tzinfo=UTC)
+FLIGHT_A_END_TS = datetime(2025, 4, 1, 12, 0, 0, tzinfo=UTC)
 
 FLIGHT_B_ICAO = "ddeeff"
 FLIGHT_B_CALLSIGN = "AFR999"
 FLIGHT_B_TYPE = "A320"
 FLIGHT_B_EMITTER = "A3"
-FLIGHT_B_START_TS = datetime(2025, 4, 1, 6, 0, 0, tzinfo=timezone.utc)
-FLIGHT_B_END_TS = datetime(2025, 4, 1, 9, 0, 0, tzinfo=timezone.utc)
+FLIGHT_B_START_TS = datetime(2025, 4, 1, 6, 0, 0, tzinfo=UTC)
+FLIGHT_B_END_TS = datetime(2025, 4, 1, 9, 0, 0, tzinfo=UTC)
 
 # Flight A path: London → midpoint → Manchester
-FLIGHT_A_PATH = linestring_zm([
-    (-0.1275, 51.5072, 35000, 1743501600.0),
-    (-1.2, 52.5, 36000, 1743505200.0),
-    (-2.2667, 53.4667, 35000, 1743508800.0),
-])
-FLIGHT_A_START = point_zm(-0.1275, 51.5072, 35000, 1743501600.0)
-FLIGHT_A_END = point_zm(-2.2667, 53.4667, 35000, 1743508800.0)
+_A_VERTS = [
+    (-0.1275, 51.5072, 35000.0, 1743501600.0),
+    (-1.2, 52.5, 36000.0, 1743505200.0),
+    (-2.2667, 53.4667, 35000.0, 1743508800.0),
+]
+FLIGHT_A_PATH = tgeompoint_seq(_A_VERTS)
+FLIGHT_A_TRACKS = tint_seq([90, 315, 315], [v[3] for v in _A_VERTS])
 
 # Flight B path: Paris → Rome
-FLIGHT_B_PATH = linestring_zm([
-    (2.3490, 48.8600, 38000, 1743487200.0),
-    (12.4964, 41.9028, 38000, 1743498000.0),
-])
-FLIGHT_B_START = point_zm(2.3490, 48.8600, 38000, 1743487200.0)
-FLIGHT_B_END = point_zm(12.4964, 41.9028, 38000, 1743498000.0)
+_B_VERTS = [
+    (2.3490, 48.8600, 38000.0, 1743487200.0),
+    (12.4964, 41.9028, 38000.0, 1743498000.0),
+]
+FLIGHT_B_PATH = tgeompoint_seq(_B_VERTS)
+FLIGHT_B_TRACKS = tint_seq([135, 135], [v[3] for v in _B_VERTS])
 
 INSERT_FLIGHT = """
     INSERT INTO flights (
         icao24, callsign, icao_type, emitter_category,
         start_ts, end_ts,
-        start_point, end_point, path_geom,
-        path_tracks, squawk_runs, raw_point_count, ingest_batch_date
+        path, path_tracks,
+        squawk_runs, raw_point_count, ingest_batch_date
     ) VALUES (
         $1, $2, $3, $4,
         $5, $6,
-        ST_GeomFromText($7, 4326),
-        ST_GeomFromText($8, 4326),
-        ST_GeomFromText($9, 4326),
-        $10, $11::jsonb, $12, $13
+        $7::tgeompoint, $8::tint,
+        $9::jsonb, $10, $11
     )
     ON CONFLICT (icao24, start_ts) DO NOTHING
 """
@@ -72,15 +74,15 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
         INSERT_FLIGHT,
         FLIGHT_A_ICAO, FLIGHT_A_CALLSIGN, FLIGHT_A_TYPE, FLIGHT_A_EMITTER,
         FLIGHT_A_START_TS, FLIGHT_A_END_TS,
-        FLIGHT_A_START, FLIGHT_A_END, FLIGHT_A_PATH,
-        [90, 315, 315], "[[1743501600.0,\"1234\"]]", 30, date(2025, 4, 1),
+        FLIGHT_A_PATH, FLIGHT_A_TRACKS,
+        "[[1743501600.0,\"1234\"]]", 30, date(2025, 4, 1),
     )
     await pool.execute(
         INSERT_FLIGHT,
         FLIGHT_B_ICAO, FLIGHT_B_CALLSIGN, FLIGHT_B_TYPE, FLIGHT_B_EMITTER,
         FLIGHT_B_START_TS, FLIGHT_B_END_TS,
-        FLIGHT_B_START, FLIGHT_B_END, FLIGHT_B_PATH,
-        [135, 135], "[]", 50, date(2025, 4, 1),
+        FLIGHT_B_PATH, FLIGHT_B_TRACKS,
+        "[]", 50, date(2025, 4, 1),
     )
 
 

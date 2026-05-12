@@ -6,11 +6,11 @@ database is required. For end-to-end filtering behaviour see test_api/test_query
 
 from __future__ import annotations
 
-import pytest
-
 from datetime import datetime
 
-from adsb_server.query.compiler import compile_predicate
+import pytest
+
+from adsb_server.query.compiler import CompiledPredicate, compile_predicate
 from adsb_server.query.models import (
     AndPredicate,
     Duration,
@@ -33,6 +33,9 @@ _POLYGON = {
     "coordinates": [[[-2, 50], [2, 50], [2, 52], [-2, 52], [-2, 50]]],
 }
 _CIRCLE = {"type": "Circle", "coordinates": [-1.0, 52.0], "radius": 50000}
+
+_T1 = datetime.fromisoformat("2025-04-01T00:00:00+00:00")
+_T2 = datetime.fromisoformat("2025-04-02T00:00:00+00:00")
 
 
 # ---------------------------------------------------------------------------
@@ -78,93 +81,107 @@ class TestCircleGeometry:
 
 
 # ---------------------------------------------------------------------------
-# _compile_spatial_path — altitude bounds
+# trajectory_intersects — MobilityDB eIntersects / atStbox
 # ---------------------------------------------------------------------------
 
 
-class TestAltitudeBounds:
-    def test_altitude_min_with_geometry_uses_prism_and_vertex_check(self) -> None:
-        # 3D prism &&& pre-filter (ndgist) + exact per-vertex EXISTS refinement.
+class TestTrajectoryIntersects:
+    def test_geometry_only_uses_eintersects(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON)
+        )
+        sql = compile_predicate(pred, params)
+        assert "eIntersects(path," in sql
+        assert "atStbox" not in sql
+        assert "stbox" not in sql
+
+    def test_geometry_altitude_min_uses_atStbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, altitude_min_ft=10000
             )
         )
-        sql = compile_predicate(pred, params)
-        assert "path_geom &&&" in sql                     # 3D prism uses ndgist index
-        assert "ST_Force3D" in sql
-        assert "ST_ZMax(path_geom::box3d)" not in sql     # btree check replaced by prism
-        assert "EXISTS" in sql                            # exact vertex check
-        assert "ST_Z(dp.geom) >=" in sql
+        compiled = compile_predicate(pred, params)
+        # CTE carries geometry + 3D STBOX; WHERE references the CTE alias.
+        assert isinstance(compiled, CompiledPredicate)
+        assert compiled.ctes
+        cte_body = compiled.ctes[0][1]
+        assert "ST_3DMakeBox(" in cte_body
+        assert "stbox(" in cte_body
+        assert "path && " in compiled
+        assert "atStbox(path," in compiled
+        assert "eIntersects(atStbox(" in compiled
+        assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
         assert 10000.0 in params
 
-    def test_altitude_max_with_geometry_uses_prism_and_vertex_check(self) -> None:
+    def test_geometry_altitude_max_uses_atStbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, altitude_max_ft=40000
             )
         )
-        sql = compile_predicate(pred, params)
-        assert "path_geom &&&" in sql
-        assert "ST_Force3D" in sql
-        assert "ST_ZMin(path_geom::box3d)" not in sql
-        assert "EXISTS" in sql
-        assert "ST_Z(dp.geom) <=" in sql
+        compiled = compile_predicate(pred, params)
+        assert compiled.ctes
+        cte_body = compiled.ctes[0][1]
+        assert "ST_3DMakeBox(" in cte_body
+        assert "eIntersects(atStbox(" in compiled
+        assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
         assert 40000.0 in params
 
-    def test_both_altitude_bounds_with_geometry(self) -> None:
+    def test_geometry_both_altitude_bounds_uses_atStbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, altitude_min_ft=10000, altitude_max_ft=40000
             )
         )
-        sql = compile_predicate(pred, params)
-        assert "path_geom &&&" in sql
-        assert "ST_Force3D" in sql
-        assert "ST_ZMax(path_geom::box3d)" not in sql
-        assert "ST_ZMin(path_geom::box3d)" not in sql
-        assert "EXISTS" in sql
-        assert "ST_Z(dp.geom) >=" in sql
-        assert "ST_Z(dp.geom) <=" in sql
-        assert len(params) == 3  # alt_min, alt_max, geom
+        compiled = compile_predicate(pred, params)
+        assert compiled.ctes
+        cte_body = compiled.ctes[0][1]
+        assert "ST_3DMakeBox(" in cte_body
+        assert "eIntersects(atStbox(" in compiled
+        assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
+        assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
+        assert 10000.0 in params
+        assert 40000.0 in params
 
-    def test_no_altitude_bounds_no_extra_conditions(self) -> None:
+    def test_geometry_only_no_extra_conditions(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON)
         )
-        sql = compile_predicate(pred, params)
-        assert "ST_ZMax" not in sql
-        assert "ST_ZMin" not in sql
-        assert "EXISTS" not in sql
+        compiled = compile_predicate(pred, params)
+        assert "ST_ZMax" not in compiled
+        assert "ST_ZMin" not in compiled
+        assert "EXISTS" not in compiled
+        assert "atStbox" not in compiled
+        assert not compiled.ctes
 
-    def test_altitude_min_only_no_geometry_uses_bbox(self) -> None:
-        # Without geometry: bounding-box check only (semantics: flight reached this altitude).
+    def test_altitude_min_no_geometry_uses_trajectory_zmax(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(altitude_min_ft=35000)
         )
         sql = compile_predicate(pred, params)
-        assert "ST_ZMax(path_geom::box3d)" in sql
-        assert "ST_Intersects" not in sql
-        assert "EXISTS" not in sql
+        assert "ST_ZMax(trajectory(path)::box3d)" in sql
+        assert "eIntersects" not in sql
+        assert "atStbox" not in sql
         assert len(params) == 1
 
-    def test_altitude_max_only_no_geometry_uses_bbox(self) -> None:
+    def test_altitude_max_no_geometry_uses_trajectory_zmin(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(altitude_max_ft=10000)
         )
         sql = compile_predicate(pred, params)
-        assert "ST_ZMin(path_geom::box3d)" in sql
-        assert "ST_Intersects" not in sql
-        assert "EXISTS" not in sql
+        assert "ST_ZMin(trajectory(path)::box3d)" in sql
+        assert "eIntersects" not in sql
         assert len(params) == 1
 
-    def test_altitude_and_time_no_geometry_uses_whole_flight_checks(self) -> None:
+    def test_altitude_and_time_no_geometry(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -172,15 +189,15 @@ class TestAltitudeBounds:
             )
         )
         sql = compile_predicate(pred, params)
-        assert "ST_ZMax" in sql
+        assert "ST_ZMax(trajectory(path)::box3d)" in sql
         assert "end_ts >=" in sql
         assert "start_ts <" in sql
-        assert "ST_Intersects" not in sql
-        assert "EXISTS" not in sql
+        assert "eIntersects" not in sql
+        assert "atStbox" not in sql
         assert len(params) == 3
 
-    def test_all_fields_uses_prism_and_vertex_exists(self) -> None:
-        # geometry + altitude + time: 3D prism &&& for index, EXISTS for exact vertex check.
+    def test_all_fields_uses_3d_t_stbox_cte(self) -> None:
+        # geometry + altitude + time → 3D+T STBOX in CTE; altitude enforced via atStbox
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -188,64 +205,87 @@ class TestAltitudeBounds:
                 time_from=_T1, time_to=_T2,
             )
         )
-        sql = compile_predicate(pred, params)
-        assert "path_geom &&&" in sql                     # 3D prism ndgist pre-filter
-        assert "ST_Force3D" in sql
-        assert "ST_Intersects(path_geom," not in sql      # redundant when EXISTS present
-        assert "ST_ZMax(path_geom::box3d)" not in sql     # replaced by prism
-        assert "ST_ZMin(path_geom::box3d)" not in sql
-        assert "end_ts >=" in sql                         # time pre-filter
-        assert "start_ts <" in sql
-        assert "EXISTS" in sql                            # exact vertex check
-        assert "ST_DumpPoints" in sql
-        assert "ST_Z(dp.geom) >=" in sql
-        assert "ST_Z(dp.geom) <=" in sql
-        assert "ST_M(dp.geom) >=" in sql
-        assert "ST_M(dp.geom) <" in sql
-        assert len(params) == 5  # alt_min, alt_max, T1, T2, geom — each bound once
+        compiled = compile_predicate(pred, params)
+        assert compiled.ctes
+        cte_body = compiled.ctes[0][1]
+        assert "ST_3DMakeBox(" in cte_body
+        assert "stbox(" in cte_body
+        assert "span(" in cte_body
+        assert "eIntersects(atStbox(" in compiled
+        assert "end_ts >=" in compiled
+        assert "start_ts <" in compiled
+        # Altitude is now in the STBOX, not separate btree expressions.
+        assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
+        assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
+        # Params: alt_min, alt_max, time_from, time_to, geom — each bound once.
+        assert len(params) == 5
+
+    def test_geometry_time_only_uses_stbox_cte(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, time_from=_T1, time_to=_T2
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        assert compiled.ctes
+        cte_body = compiled.ctes[0][1]
+        assert "stbox(" in cte_body
+        assert "span(" in cte_body
+        assert "eIntersects(atStbox(" in compiled
+        assert "end_ts >=" in compiled
+        assert "start_ts <" in compiled
 
 
 # ---------------------------------------------------------------------------
-# Spatial path predicate variants
+# trajectory_within — ST_Within(trajectory(path), geom)
 # ---------------------------------------------------------------------------
 
 
 class TestTrajectoryWithin:
-    def test_produces_st_within(self) -> None:
+    def test_geometry_only_uses_st_within_trajectory(self) -> None:
         params: list = []
         pred = TrajectoryWithin(
             trajectory_within=SpatioTemporalAltitudeValue(geometry=_POLYGON)
         )
         sql = compile_predicate(pred, params)
-        assert sql.startswith("ST_Within(path_geom,")
+        assert "ST_Within(trajectory(path)," in sql
+        assert "atStbox" not in sql
 
-    def test_altitude_bounds_with_geometry_uses_vertex_check(self) -> None:
+    def test_altitude_bounds_uses_atStbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryWithin(
             trajectory_within=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, altitude_min_ft=5000
             )
         )
-        sql = compile_predicate(pred, params)
-        assert "path_geom &&&" in sql
-        assert "ST_Force3D" in sql
-        assert "EXISTS" in sql
-        assert "ST_Z(dp.geom) >=" in sql
-        assert "ST_ZMax" not in sql
+        compiled = compile_predicate(pred, params)
+        assert compiled.ctes
+        cte_body = compiled.ctes[0][1]
+        assert "ST_3DMakeBox(" in cte_body
+        assert "path && " in compiled
+        assert "atStbox(path," in compiled
+        assert "IS NOT NULL" in compiled
+        assert "ST_Within(trajectory(path)," in compiled
+        assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
 
-    def test_time_bounds_with_geometry_uses_vertex_check(self) -> None:
+    def test_time_bounds_uses_stbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryWithin(
             trajectory_within=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, time_from=_T1, time_to=_T2
             )
         )
-        sql = compile_predicate(pred, params)
-        assert "EXISTS" in sql
-        assert "ST_M(dp.geom) >=" in sql
-        assert "ST_M(dp.geom) <" in sql
-        assert "end_ts >=" in sql
-        assert "start_ts <" in sql
+        compiled = compile_predicate(pred, params)
+        assert compiled.ctes
+        cte_body = compiled.ctes[0][1]
+        assert "stbox(" in cte_body
+        assert "span(" in cte_body
+        assert "ST_Within(trajectory(path)," in compiled
+        assert "atStbox(path," in compiled
+        assert "IS NOT NULL" in compiled
+        assert "end_ts >=" in compiled
+        assert "start_ts <" in compiled
 
     def test_time_only(self) -> None:
         params: list = []
@@ -257,16 +297,21 @@ class TestTrajectoryWithin:
         assert "end_ts >=" in sql
 
 
+# ---------------------------------------------------------------------------
+# trajectory_disjoint — NOT eIntersects
+# ---------------------------------------------------------------------------
+
+
 class TestTrajectoryDisjoint:
-    def test_produces_st_disjoint(self) -> None:
+    def test_geometry_only_uses_not_eintersects(self) -> None:
         params: list = []
         pred = TrajectoryDisjoint(
             trajectory_disjoint=SpatioTemporalAltitudeValue(geometry=_POLYGON)
         )
         sql = compile_predicate(pred, params)
-        assert sql.startswith("ST_Disjoint(path_geom,")
+        assert "NOT eIntersects(path," in sql
 
-    def test_altitude_bounds_propagated(self) -> None:
+    def test_altitude_bounds_use_trajectory_btree(self) -> None:
         params: list = []
         pred = TrajectoryDisjoint(
             trajectory_disjoint=SpatioTemporalAltitudeValue(
@@ -274,7 +319,9 @@ class TestTrajectoryDisjoint:
             )
         )
         sql = compile_predicate(pred, params)
-        assert "ST_ZMin" in sql
+        assert "NOT eIntersects(path," in sql
+        assert "ST_ZMin(trajectory(path)::box3d)" in sql
+        assert "stbox" not in sql  # no STBOX prism for disjoint
 
     def test_time_bounds_propagated(self) -> None:
         params: list = []
@@ -284,43 +331,47 @@ class TestTrajectoryDisjoint:
             )
         )
         sql = compile_predicate(pred, params)
+        assert "NOT eIntersects(path," in sql
         assert "end_ts >=" in sql
         assert "start_ts <" in sql
 
 
 # ---------------------------------------------------------------------------
-# _compile_point_within — Circle vs GeoJSON
+# _compile_point_within — startValue/endValue expressions
 # ---------------------------------------------------------------------------
 
 
 class TestPointWithin:
-    def test_starts_within_polygon_uses_st_within(self) -> None:
+    def test_starts_within_polygon_uses_startvalue(self) -> None:
         params: list = []
         pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_POLYGON))
         sql = compile_predicate(pred, params)
-        assert "ST_Within(start_point," in sql
+        assert "ST_Within(startValue(path)::geometry," in sql
         assert "ST_GeomFromGeoJSON" in sql
 
-    def test_ends_within_polygon_uses_st_within(self) -> None:
+    def test_ends_within_polygon_uses_endvalue(self) -> None:
         params: list = []
         pred = EndsWithin(ends_within=SpatioTemporalValue(geometry=_POLYGON))
         sql = compile_predicate(pred, params)
-        assert "ST_Within(end_point," in sql
+        assert "ST_Within(endValue(path)::geometry," in sql
 
-    def test_starts_within_circle_uses_st_dwithin(self) -> None:
+    def test_starts_within_circle_uses_st_dwithin_geography(self) -> None:
         params: list = []
         pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_CIRCLE))
         sql = compile_predicate(pred, params)
-        assert "ST_DWithin(start_point::geography," in sql
+        assert "ST_DWithin(startValue(path)::geometry::geography," in sql
         assert len(params) == 3  # lon, lat, radius
+
+    def test_ends_within_circle_uses_st_dwithin_geography(self) -> None:
+        params: list = []
+        pred = EndsWithin(ends_within=SpatioTemporalValue(geometry=_CIRCLE))
+        sql = compile_predicate(pred, params)
+        assert "ST_DWithin(endValue(path)::geometry::geography," in sql
 
 
 # ---------------------------------------------------------------------------
 # Time fields on starts_within / ends_within / trajectory_intersects
 # ---------------------------------------------------------------------------
-
-_T1 = datetime.fromisoformat("2025-04-01T00:00:00+00:00")
-_T2 = datetime.fromisoformat("2025-04-02T00:00:00+00:00")
 
 
 class TestTimeFields:
@@ -357,9 +408,6 @@ class TestTimeFields:
         assert len(params) == 1
 
     def test_intersects_time_no_geometry_uses_activity_semantics(self) -> None:
-        # No geometry: time_from → end_ts >= time_from (flight was still active)
-        #              time_to   → start_ts < time_to  (flight had started)
-        # This is correct for "flights active during this window" without a spatial constraint.
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(time_from=_T1, time_to=_T2)
@@ -367,7 +415,7 @@ class TestTimeFields:
         sql = compile_predicate(pred, params)
         assert "end_ts >=" in sql
         assert "start_ts <" in sql
-        assert "EXISTS" not in sql
+        assert "eIntersects" not in sql
         assert len(params) == 2
 
     def test_ends_within_time_from_filters_end_ts(self) -> None:
@@ -392,16 +440,8 @@ class TestTimeFields:
         params: list = []
         pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_POLYGON, time_from=_T1))
         sql = compile_predicate(pred, params)
-        assert "ST_Within(start_point," in sql
+        assert "ST_Within(startValue(path)::geometry," in sql
         assert "start_ts >=" in sql
-
-    def test_starts_within_geometry_and_time_to(self) -> None:
-        params: list = []
-        pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_POLYGON, time_to=_T2))
-        sql = compile_predicate(pred, params)
-        assert "ST_Within(start_point," in sql
-        assert "start_ts <" in sql
-        assert "start_ts >=" not in sql
 
     def test_starts_within_all_fields(self) -> None:
         params: list = []
@@ -409,7 +449,7 @@ class TestTimeFields:
             starts_within=SpatioTemporalValue(geometry=_POLYGON, time_from=_T1, time_to=_T2)
         )
         sql = compile_predicate(pred, params)
-        assert "ST_Within(start_point," in sql
+        assert "ST_Within(startValue(path)::geometry," in sql
         assert "start_ts >=" in sql
         assert "start_ts <" in sql
         assert len(params) == 3

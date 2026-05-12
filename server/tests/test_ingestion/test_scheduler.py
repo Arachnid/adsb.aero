@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator  # noqa: TC003
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -15,16 +14,13 @@ import pytest
 from adsb_server.ingestion.scheduler import (
     _download_and_process_release,
     _download_asset,
+    _get_errored_dates,
     _get_releases,
     _is_batch_already_processed,
     _tag_to_date,
     check_and_run_new_batches,
     scheduler_loop,
 )
-
-if TYPE_CHECKING:
-    pass
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -172,6 +168,14 @@ class TestIsBatchAlreadyProcessed:
     async def test_status_failed_returns_false(self) -> None:
         conn = AsyncMock()
         conn.fetchrow.return_value = {"status": "failed"}
+
+        result = await _is_batch_already_processed(conn, date(2025, 4, 1))
+
+        assert result is False
+
+    async def test_status_errored_returns_false(self) -> None:
+        conn = AsyncMock()
+        conn.fetchrow.return_value = {"status": "errored"}
 
         result = await _is_batch_already_processed(conn, date(2025, 4, 1))
 
@@ -483,7 +487,7 @@ class TestDownloadAndProcessRelease:
 
         assert dest_dir.exists()
 
-    async def test_run_batch_failure_marks_batch_failed(
+    async def test_run_batch_failure_marks_batch_errored(
         self, tmp_path: Path
     ) -> None:
         client = _release_client(_SAMPLE_RELEASE)
@@ -505,7 +509,30 @@ class TestDownloadAndProcessRelease:
 
         conn.execute.assert_called_once()
         sql: str = conn.execute.call_args[0][0]
-        assert "failed" in sql.lower()
+        assert "errored" in sql.lower()
+
+    async def test_run_batch_failure_stores_release_url(
+        self, tmp_path: Path
+    ) -> None:
+        client = _release_client(_SAMPLE_RELEASE)
+        conn = AsyncMock()
+
+        with (
+            patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()),
+            patch(
+                "adsb_server.ingestion.scheduler.run_batch",
+                new=AsyncMock(side_effect=RuntimeError("ingestion error")),
+            ),
+        ):
+            await _download_and_process_release(
+                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
+            )
+
+        call_args = conn.execute.call_args[0]
+        # Third positional arg is the release_url
+        stored_url: str = call_args[3]
+        assert "2025" in stored_url
+        assert _SAMPLE_TAG in stored_url
 
 
 # ---------------------------------------------------------------------------
@@ -542,6 +569,10 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=False),
             ),
             patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
                 new=AsyncMock(),
             ) as mock_dapr,
@@ -569,6 +600,10 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=True),
             ),
             patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
                 new=AsyncMock(),
             ) as mock_dapr,
@@ -590,6 +625,10 @@ class TestCheckAndRunNewBatches:
             patch(
                 "adsb_server.ingestion.scheduler._get_releases",
                 new=AsyncMock(return_value=releases),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
             ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
@@ -627,6 +666,10 @@ class TestCheckAndRunNewBatches:
             patch(
                 "adsb_server.ingestion.scheduler._is_batch_already_processed",
                 new=AsyncMock(return_value=False),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
             ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
@@ -667,6 +710,10 @@ class TestCheckAndRunNewBatches:
             patch(
                 "adsb_server.ingestion.scheduler._is_batch_already_processed",
                 new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
             ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
@@ -723,6 +770,10 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=False),
             ),
             patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
                 side_effect=mock_dapr,
             ),
@@ -732,8 +783,8 @@ class TestCheckAndRunNewBatches:
         assert len(processed_dates) == 3
         assert processed_dates == sorted(processed_dates)
 
-    async def test_stops_processing_on_batch_failure(self, tmp_path: Path) -> None:
-        """If a batch fails, subsequent days are not processed."""
+    async def test_continues_after_batch_failure(self, tmp_path: Path) -> None:
+        """If a batch errors, subsequent days are still processed."""
         releases: list[dict[str, object]] = [
             {"tag_name": "v2025.04.03-planes-readsb-prod-0"},
             {"tag_name": "v2025.04.02-planes-readsb-prod-0"},
@@ -772,16 +823,20 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=False),
             ),
             patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
                 side_effect=mock_dapr,
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
 
-        # Apr 1 and Apr 2 processed (Apr 2 fails); Apr 3 must not be attempted
+        # All three dates attempted; Apr 2 fails but Apr 3 is still processed.
         assert date(2025, 4, 1) in processed_dates
         assert date(2025, 4, 2) in processed_dates
-        assert date(2025, 4, 3) not in processed_dates
+        assert date(2025, 4, 3) in processed_dates
 
     async def test_lookback_days_skips_old_batches(self, tmp_path: Path) -> None:
         """Releases older than lookback_days are not processed."""
@@ -795,6 +850,10 @@ class TestCheckAndRunNewBatches:
             patch(
                 "adsb_server.ingestion.scheduler._get_releases",
                 new=AsyncMock(return_value=releases),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
             ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
@@ -820,6 +879,10 @@ class TestCheckAndRunNewBatches:
             patch(
                 "adsb_server.ingestion.scheduler._get_releases",
                 new=get_releases_mock,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -855,18 +918,114 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=True),
             ),
             patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
                 new=AsyncMock(),
             ),
+            patch("adsb_server.ingestion.scheduler.date") as mock_date,
         ):
-            with patch("adsb_server.ingestion.scheduler.date") as mock_date:
-                mock_date.today.return_value = date(2025, 4, 3)
-                await check_and_run_new_batches(AsyncMock(), tmp_path)
+            mock_date.today.return_value = date(2025, 4, 3)
+            await check_and_run_new_batches(AsyncMock(), tmp_path)
 
         # Only year 2025 should have been queried; 2024 never reached
         queried_years = [call.args[1] for call in get_releases_mock.call_args_list]
         assert 2025 in queried_years
         assert 2024 not in queried_years
+
+    async def test_errored_batch_and_follow_up_requeued(
+        self, tmp_path: Path
+    ) -> None:
+        """An errored batch and the day after are both reprocessed on the next run.
+
+        Scan order (newest-first): Apr 3 (succeeded, in force_dates), Apr 2 (errored),
+        Apr 1 (succeeded, stops scan). Expected processing: Apr 2 and Apr 3.
+        """
+        releases: list[dict[str, object]] = [
+            {"tag_name": "v2025.04.03-planes-readsb-prod-0"},  # succeeded follow-up
+            {"tag_name": "v2025.04.02-planes-readsb-prod-0"},  # errored
+            {"tag_name": "v2025.04.01-planes-readsb-prod-0"},  # succeeded, stops scan
+        ]
+        processed_dates: list[date] = []
+
+        async def mock_dapr(
+            conn: object,
+            client: object,
+            year: int,
+            tag: str,
+            batch_date: date,
+            cache_dir: object,
+            keep_traces: bool = False,
+        ) -> bool:
+            processed_dates.append(batch_date)
+            return True
+
+        async def mock_get_releases(
+            client: object, year: int, page: int = 1
+        ) -> list[dict[str, object]]:
+            return releases if year == 2025 and page == 1 else []
+
+        # Apr 3 is succeeded (follow-up of errored Apr 2); Apr 2 is errored;
+        # Apr 1 is the stop point.
+        def is_already_processed(conn: object, batch_date: date) -> bool:
+            return batch_date in {date(2025, 4, 3), date(2025, 4, 1)}
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_releases",
+                side_effect=mock_get_releases,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._is_batch_already_processed",
+                side_effect=is_already_processed,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value={date(2025, 4, 2)}),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                side_effect=mock_dapr,
+            ),
+        ):
+            await check_and_run_new_batches(AsyncMock(), tmp_path)
+
+        assert date(2025, 4, 2) in processed_dates, "errored batch not reprocessed"
+        assert date(2025, 4, 3) in processed_dates, "follow-up of errored batch not reprocessed"
+        assert date(2025, 4, 1) not in processed_dates, "stop-point batch should not be processed"
+        assert processed_dates == sorted(processed_dates), "batches processed out of order"
+
+
+# ---------------------------------------------------------------------------
+# _get_errored_dates
+# ---------------------------------------------------------------------------
+
+
+class TestGetErroredDates:
+    async def test_returns_set_of_errored_dates(self) -> None:
+        conn = AsyncMock()
+        conn.fetch.return_value = [
+            {"batch_date": date(2025, 4, 1)},
+            {"batch_date": date(2025, 4, 3)},
+        ]
+
+        result = await _get_errored_dates(conn)
+
+        assert result == {date(2025, 4, 1), date(2025, 4, 3)}
+
+    async def test_returns_empty_set_when_no_errored(self) -> None:
+        conn = AsyncMock()
+        conn.fetch.return_value = []
+
+        result = await _get_errored_dates(conn)
+
+        assert result == set()
 
 
 # ---------------------------------------------------------------------------

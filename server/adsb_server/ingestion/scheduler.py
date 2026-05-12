@@ -7,7 +7,7 @@ import logging
 import re
 import shutil
 from datetime import date, timedelta
-from pathlib import Path  # noqa: TC003
+from pathlib import Path
 
 import asyncpg  # noqa: TC002
 import httpx
@@ -57,9 +57,10 @@ async def _get_releases(
 
 
 async def _is_batch_already_processed(
-    conn: asyncpg.Connection,    batch_date: date,
+    conn: asyncpg.Connection,
+    batch_date: date,
 ) -> bool:
-    """Return True if this batch_date has status 'running' or 'succeeded'."""
+    """Return True if this batch_date has status 'succeeded'."""
     row = await conn.fetchrow(
         "SELECT status FROM ingest_batches WHERE batch_date = $1",
         batch_date,
@@ -68,6 +69,14 @@ async def _is_batch_already_processed(
         return False
     status: str = row["status"]
     return status == "succeeded"
+
+
+async def _get_errored_dates(conn: asyncpg.Connection) -> set[date]:
+    """Return the set of batch dates currently in 'errored' status."""
+    rows = await conn.fetch(
+        "SELECT batch_date FROM ingest_batches WHERE status = 'errored'"
+    )
+    return {row["batch_date"] for row in rows}
 
 
 async def _download_asset(
@@ -90,7 +99,10 @@ async def _download_asset(
         if etag_path.read_text().strip() == updated_at:
             logger.debug("Asset already downloaded and current: %s", dest.name)
             return
-        logger.info("Asset %s has changed on GitHub (updated_at differs) — redownloading", dest.name)
+        logger.info(
+            "Asset %s has changed on GitHub (updated_at differs) — redownloading",
+            dest.name,
+        )
 
     if dest.exists():
         dest.unlink()
@@ -110,7 +122,8 @@ async def _download_asset(
 
 
 async def _download_and_process_release(
-    conn: asyncpg.Connection,    client: httpx.AsyncClient,
+    conn: asyncpg.Connection,
+    client: httpx.AsyncClient,
     year: int,
     tag: str,
     batch_date: date,
@@ -121,12 +134,14 @@ async def _download_and_process_release(
 
     Returns True on success, False on any failure. Downloaded files are kept
     on failure so the next attempt can skip already-verified parts.
+    On failure the batch is marked 'errored' and the release URL is stored so
+    re-runs can detect if a new release has been published for the same date.
     """
     repo = _REPO_TEMPLATE.format(year=year)
-    release_url = f"{_GITHUB_API_BASE}/repos/{repo}/releases/tags/{tag}"
+    release_api_url = f"{_GITHUB_API_BASE}/repos/{repo}/releases/tags/{tag}"
 
     try:
-        resp = await client.get(release_url)
+        resp = await client.get(release_api_url)
         resp.raise_for_status()
         release_data: dict[str, object] = resp.json()
     except httpx.HTTPError:
@@ -169,18 +184,20 @@ async def _download_and_process_release(
         await conn.execute(
             """
             UPDATE ingest_batches
-            SET status='failed', finished_at=NOW(), error_message=$2
+            SET status='errored', finished_at=NOW(), error_message=$2, release_url=$3
             WHERE batch_date=$1
             """,
             batch_date,
             "Batch processing failed; see server logs.",
+            release_api_url,
         )
         # Keep dest_dir so verified downloads can be reused on the next attempt.
         return False
 
 
 async def check_and_run_new_batches(
-    conn: asyncpg.Connection,    cache_dir: Path,
+    conn: asyncpg.Connection,
+    cache_dir: Path,
     lookback_days: int = 0,
     keep_traces: bool = False,
 ) -> None:
@@ -191,10 +208,21 @@ async def check_and_run_new_batches(
     then ingests all discovered batches oldest-first.
 
     If lookback_days > 0, releases older than that many days are ignored.
+
+    Previously errored batches are re-queued automatically.  Their follow-up
+    day (the day immediately after each errored date) is also re-queued so that
+    any in-progress flights which spilled across the boundary are corrected.
+    Processing continues past failures — each failed batch is marked 'errored'
+    and the scheduler moves on to the next pending date.
     """
     today = date.today()
     cutoff = today - timedelta(days=lookback_days) if lookback_days > 0 else None
     years_to_check = [today.year, today.year - 1]
+
+    # Dates that must be (re-)processed even if their status is already 'succeeded':
+    # errored batches and the day after each (to fix in-progress flight data).
+    errored_dates = await _get_errored_dates(conn)
+    force_dates = errored_dates | {d + timedelta(days=1) for d in errored_dates}
 
     async with httpx.AsyncClient(
         timeout=_HTTP_TIMEOUT,
@@ -202,7 +230,8 @@ async def check_and_run_new_batches(
         headers={"Accept": "application/vnd.github+json"},
     ) as client:
         for year in years_to_check:
-            to_process: list[tuple[str, date]] = []
+            # Use a dict to deduplicate by date (newest tag wins via newest-first scan).
+            to_process: dict[date, str] = {}
             page = 1
             stop = False
 
@@ -222,36 +251,43 @@ async def check_and_run_new_batches(
                         break
 
                     if await _is_batch_already_processed(conn, batch_date):
-                        logger.debug("Batch %s already processed, stopping scan", batch_date)
-                        stop = True
-                        break
+                        if batch_date not in force_dates:
+                            logger.debug(
+                                "Batch %s already processed, stopping scan", batch_date
+                            )
+                            stop = True
+                            break
+                        # Succeeded but in force_dates (follow-up of an errored batch):
+                        # queue for reprocessing and keep scanning.
+                        to_process.setdefault(batch_date, tag)
+                        continue
 
-                    to_process.append((tag, batch_date))
+                    to_process.setdefault(batch_date, tag)
 
                 if len(releases) < _GITHUB_RELEASES_PER_PAGE:
                     break
 
                 page += 1
 
-            to_process.sort(key=lambda item: item[1])
-            for tag, batch_date in to_process:
+            for batch_date in sorted(to_process):
+                tag = to_process[batch_date]
                 logger.info("New batch found: %s (tag=%s)", batch_date, tag)
                 ok = await _download_and_process_release(
                     conn, client, year, tag, batch_date, cache_dir,
                     keep_traces=keep_traces,
                 )
                 if not ok:
-                    logger.error(
-                        "Batch %s failed — not processing subsequent days", batch_date
+                    logger.warning(
+                        "Batch %s errored — continuing to next batch", batch_date
                     )
-                    return
 
             if stop:
                 break  # processed release found; all earlier years are also done
 
 
 async def scheduler_loop(
-    conn: asyncpg.Connection,    cache_dir: Path,
+    conn: asyncpg.Connection,
+    cache_dir: Path,
     interval_seconds: int = 1800,
     lookback_days: int = 0,
     keep_traces: bool = False,

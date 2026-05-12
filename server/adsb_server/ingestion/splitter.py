@@ -168,9 +168,7 @@ def _should_gap_split(prev: RawPoint, curr: RawPoint, seg_start_ts: float) -> bo
         return True
     if prev.alt_baro is not None and curr.alt_baro is not None and gap > _AIR_GAP_THRESHOLD:
         return True
-    if curr.ts - seg_start_ts > _MAX_SEGMENT_DURATION:
-        return True
-    return False
+    return curr.ts - seg_start_ts > _MAX_SEGMENT_DURATION
 
 
 def _in_progress_window(seg: list[RawPoint]) -> float:

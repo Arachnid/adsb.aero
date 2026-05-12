@@ -20,40 +20,38 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS postgis"))
+    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS mobilitydb"))
     op.execute(sa.text("CREATE SCHEMA IF NOT EXISTS partman"))
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman"))
 
     # ------------------------------------------------------------------
     # flights — finalised trajectories, partitioned monthly by start_ts
     #
-    # Primary key is (icao24, start_ts). Postgres requires the partition
-    # key to be part of any unique constraint on a partitioned table;
-    # (icao24, start_ts) is the natural compound identity for a flight.
+    # path       tgeompoint — SRID 4326, 3D with Z=pressure-alt-ft;
+    #                         timestamps are the native temporal dimension.
+    # path_tracks tint      — per-instant heading (0–359°), stepwise.
+    # start_point / end_point are derived at query time via startValue(path)
+    # and endValue(path), with expression indexes for radius queries.
     # ------------------------------------------------------------------
     op.execute(
         sa.text("""
         CREATE TABLE flights (
-            icao24            VARCHAR                       NOT NULL,
+            icao24            VARCHAR      NOT NULL,
             callsign          VARCHAR,
             icao_type         VARCHAR,
             emitter_category  VARCHAR,
-            start_ts          TIMESTAMPTZ                   NOT NULL,
-            end_ts            TIMESTAMPTZ                   NOT NULL,
-            start_point       GEOMETRY(POINTZM, 4326)       NOT NULL,
-            end_point         GEOMETRY(POINTZM, 4326)       NOT NULL,
-            path_geom         GEOMETRY(LINESTRINGZM, 4326)  NOT NULL,
-            path_tracks       SMALLINT[]                    NOT NULL DEFAULT '{}',
-            squawk_runs       JSONB                         NOT NULL DEFAULT '[]',
-            raw_point_count   INTEGER                       NOT NULL DEFAULT 0,
-            ingest_batch_date DATE                          NOT NULL,
+            start_ts          TIMESTAMPTZ  NOT NULL,
+            end_ts            TIMESTAMPTZ  NOT NULL,
+            path              tgeompoint   NOT NULL,
+            path_tracks       tint         NOT NULL,
+            squawk_runs       JSONB        NOT NULL DEFAULT '[]',
+            raw_point_count   INTEGER      NOT NULL DEFAULT 0,
+            ingest_batch_date DATE         NOT NULL,
             PRIMARY KEY (icao24, start_ts)
         ) PARTITION BY RANGE (start_ts)
         """)
     )
 
-    # Hand pg_partman the parent table. It creates monthly partitions
-    # from p_start_partition up to now + p_premake months, and the
-    # pg_partman_bgw background worker then keeps rolling them forward.
     op.execute(
         sa.text("""
         SELECT partman.create_parent(
@@ -66,31 +64,42 @@ def upgrade() -> None:
         """)
     )
 
-    # Indexes on the parent cascade to all existing and future partitions.
+    # STBOX GiST index on path — covers X, Y, Z (altitude), T (time) in a
+    # single scan; replaces the old gist_geometry_ops_nd + alt btree indexes.
     op.execute(
         sa.text("""
-        CREATE INDEX flights_path_geom_nd
-            ON flights USING GIST (path_geom gist_geometry_ops_nd)
+        CREATE INDEX flights_path ON flights USING GIST (path)
         """)
     )
-    op.execute(sa.text("CREATE INDEX flights_start_point ON flights USING GIST (start_point)"))
-    op.execute(sa.text("CREATE INDEX flights_end_point   ON flights USING GIST (end_point)"))
+
+    # Expression indexes on the derived start/end points for radius queries.
+    # startValue/endValue return the first/last geometry instant of the tgeompoint.
+    op.execute(
+        sa.text("""
+        CREATE INDEX flights_start_point
+            ON flights USING GIST ((startValue(path)::geometry))
+        """)
+    )
+    op.execute(
+        sa.text("""
+        CREATE INDEX flights_end_point
+            ON flights USING GIST ((endValue(path)::geometry))
+        """)
+    )
+
+    # Btree expression indexes for altitude-range queries when no geometry is
+    # present (trajectory(path) converts the tgeompoint to a PostGIS LineStringZ).
+    op.execute(sa.text("CREATE INDEX flights_alt_min ON flights ((ST_ZMin(trajectory(path)::box3d)))"))
+    op.execute(sa.text("CREATE INDEX flights_alt_max ON flights ((ST_ZMax(trajectory(path)::box3d)))"))
+
     op.execute(sa.text("CREATE INDEX flights_start_ts    ON flights (start_ts)"))
     op.execute(sa.text("CREATE INDEX flights_end_ts      ON flights (end_ts)"))
     op.execute(sa.text("CREATE INDEX flights_icao24      ON flights (icao24)"))
     op.execute(sa.text("CREATE INDEX flights_icao_type   ON flights (icao_type)"))
     op.execute(sa.text("CREATE INDEX flights_emitter_cat ON flights (emitter_category)"))
-    # Expression indexes for altitude-range queries (avoids storing min/max columns).
-    op.execute(sa.text("CREATE INDEX flights_alt_min ON flights ((ST_ZMin(path_geom::box3d)))"))
-    op.execute(sa.text("CREATE INDEX flights_alt_max ON flights ((ST_ZMax(path_geom::box3d)))"))
 
     # ------------------------------------------------------------------
     # flight_staging — raw in-progress points for idempotent re-processing
-    #
-    # One row per batch_date: a zlib-compressed JSON blob containing all
-    # RawFlight objects that were still in-progress at end-of-day.  The
-    # next day's batch reads batch_date-1's blob to reconstruct those
-    # flights, so any day can be re-processed without creating duplicates.
     # ------------------------------------------------------------------
     op.execute(
         sa.text("""
@@ -109,13 +118,14 @@ def upgrade() -> None:
         CREATE TABLE ingest_batches (
             batch_date      DATE    PRIMARY KEY,
             status          VARCHAR NOT NULL
-                                CHECK (status IN ('pending','running','succeeded','failed')),
+                                CHECK (status IN ('pending','running','succeeded','failed','errored')),
             started_at      TIMESTAMPTZ,
             finished_at     TIMESTAMPTZ,
             flight_count    INTEGER,
             error_message   TEXT,
             attempts        INTEGER     NOT NULL DEFAULT 0,
-            last_attempt_at TIMESTAMPTZ
+            last_attempt_at TIMESTAMPTZ,
+            release_url     TEXT
         )
         """)
     )
@@ -127,3 +137,4 @@ def downgrade() -> None:
     op.execute(sa.text("DROP TABLE IF EXISTS flights"))
     op.execute(sa.text("DROP EXTENSION IF EXISTS pg_partman"))
     op.execute(sa.text("DROP SCHEMA IF EXISTS partman CASCADE"))
+    op.execute(sa.text("DROP EXTENSION IF EXISTS mobilitydb"))

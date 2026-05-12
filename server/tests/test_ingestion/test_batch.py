@@ -9,13 +9,14 @@ import gzip
 import io
 import json
 import tarfile
-from datetime import UTC, date, datetime
-from pathlib import Path
+from datetime import date
 from typing import TYPE_CHECKING
 
 import pytest
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import asyncpg
 
 
@@ -258,7 +259,7 @@ async def test_run_batch_serialization_roundtrip(
     conn: asyncpg.Connection,
     tmp_path: Path,
 ) -> None:
-    """Batch writes correct WKT geometry and path_tracks to DB."""
+    """Batch writes correct tgeompoint path and tint path_tracks to DB."""
     from adsb_server.ingestion.batch import run_batch
 
     tarball_dir = _make_tarball_dir(tmp_path, ["ff1122"])
@@ -268,10 +269,11 @@ async def test_run_batch_serialization_roundtrip(
     assert count == 1
 
     row = await conn.fetchrow(
-        "SELECT path_tracks, squawk_runs FROM flights WHERE icao24 = 'ff1122'"
+        "SELECT asText(path_tracks) AS pt, squawk_runs FROM flights WHERE icao24 = 'ff1122'"
     )
     assert row is not None
-    assert isinstance(row["path_tracks"], list)
+    # tint text starts with '[' (sequence notation)
+    assert row["pt"].startswith("[")
     runs = json.loads(row["squawk_runs"])
     assert isinstance(runs, list)
 

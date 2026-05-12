@@ -5,10 +5,9 @@ from __future__ import annotations
 import base64
 import json
 from datetime import date, datetime
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
-
 
 # ---------------------------------------------------------------------------
 # Response geometry types
@@ -51,7 +50,7 @@ class FlightSummary(BaseModel):
         examples=["aabbcc"],
     )
     callsign: str | None = Field(
-        description="Most common callsign observed during the flight, or null if none was broadcast.",
+        description="Most common callsign observed during the flight, or null if none was broadcast.",  # noqa: E501
         examples=["BAW123"],
     )
     icao_type: str | None = Field(
@@ -111,7 +110,7 @@ class FlightDetail(FlightSummary):
     )
     path_tracks: list[int] | None = Field(
         default=None,
-        description="Magnetic track (heading) in degrees 0–359 for each vertex in `path.coordinates`. "
+        description="Magnetic track (heading) in degrees 0-359 for each vertex in `path.coordinates`. "  # noqa: E501
         "Same length as `coordinates`. Omitted when `include_path` is false.",
         examples=[[90, 315, 315]],
     )
@@ -136,7 +135,9 @@ class FlightDetail(FlightSummary):
 class QueryResponse(BaseModel):
     """Paginated list of flights matching a query."""
 
-    flights: list[FlightDetail] = Field(description="Flights on this page, ordered by `start_ts` descending then `icao24` descending.")
+    flights: list[FlightDetail] = Field(
+        description="Flights on this page, ordered by `start_ts` descending then `icao24` descending."  # noqa: E501
+    )
     cursor: str | None = Field(
         description="Opaque continuation token. Pass unchanged as `cursor` in the next request "
         "to retrieve the next page. `null` when there are no more results."
@@ -192,7 +193,7 @@ class GeoJSONMultiLineString(BaseModel):
     """GeoJSON MultiLineString geometry."""
 
     type: Literal["MultiLineString"]
-    coordinates: list[list[list[float]]] = Field(description="Array of LineString coordinate arrays.")
+    coordinates: list[list[list[float]]] = Field(description="Array of LineString coordinate arrays.")  # noqa: E501
 
 
 class GeoJSONPolygon(BaseModel):
@@ -209,7 +210,7 @@ class GeoJSONMultiPolygon(BaseModel):
     """GeoJSON MultiPolygon geometry."""
 
     type: Literal["MultiPolygon"]
-    coordinates: list[list[list[list[float]]]] = Field(description="Array of Polygon coordinate arrays.")
+    coordinates: list[list[list[list[float]]]] = Field(description="Array of Polygon coordinate arrays.")  # noqa: E501
 
 
 class CircleGeometry(BaseModel):
@@ -228,16 +229,16 @@ class GeoJSONGeometryCollection(BaseModel):
 
 
 # Plain union (no Pydantic metadata) — use this in non-field type annotations.
-AnyGeometry = Union[
-    GeoJSONPoint,
-    GeoJSONMultiPoint,
-    GeoJSONLineString,
-    GeoJSONMultiLineString,
-    GeoJSONPolygon,
-    GeoJSONMultiPolygon,
-    GeoJSONGeometryCollection,
-    CircleGeometry,
-]
+AnyGeometry = (
+    GeoJSONPoint
+    | GeoJSONMultiPoint
+    | GeoJSONLineString
+    | GeoJSONMultiLineString
+    | GeoJSONPolygon
+    | GeoJSONMultiPolygon
+    | GeoJSONGeometryCollection
+    | CircleGeometry
+)
 
 # Discriminated union for use as a Pydantic model field.
 Geometry = Annotated[AnyGeometry, Field(discriminator="type")]
@@ -272,14 +273,14 @@ class SpatioTemporalValue(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _require_at_least_one(self) -> "SpatioTemporalValue":
+    def _require_at_least_one(self) -> SpatioTemporalValue:
         if self.geometry is None and self.time_from is None and self.time_to is None:
             raise ValueError("at least one of geometry, time_from, or time_to must be set")
         return self
 
 
 class SpatioTemporalAltitudeValue(BaseModel):
-    """Spatial, altitude, and/or temporal filter — used by trajectory_intersects / within / disjoint.
+    """Spatial, altitude, and/or temporal filter for trajectory predicates.
 
     At least one constraint must be provided.
     """
@@ -311,7 +312,7 @@ class SpatioTemporalAltitudeValue(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _require_at_least_one(self) -> "SpatioTemporalAltitudeValue":
+    def _require_at_least_one(self) -> SpatioTemporalAltitudeValue:
         if (
             self.geometry is None
             and self.altitude_min_ft is None
@@ -324,25 +325,25 @@ class SpatioTemporalAltitudeValue(BaseModel):
 
 
 class TrajectoryIntersects(BaseModel):
-    """Flights whose simplified path crosses the given geometry and/or were active during the given time window."""
+    """Flights whose simplified path crosses the given geometry and/or were active during the given time window."""  # noqa: E501
 
     trajectory_intersects: SpatioTemporalAltitudeValue
 
 
 class TrajectoryWithin(BaseModel):
-    """Flights whose entire simplified path lies within the given geometry and/or were active during the given time window."""
+    """Flights whose entire simplified path lies within the given geometry and/or were active during the given time window."""  # noqa: E501
 
     trajectory_within: SpatioTemporalAltitudeValue
 
 
 class TrajectoryDisjoint(BaseModel):
-    """Flights whose simplified path does not intersect the given geometry and/or were active during the given time window."""
+    """Flights whose simplified path does not intersect the given geometry and/or were active during the given time window."""  # noqa: E501
 
     trajectory_disjoint: SpatioTemporalAltitudeValue
 
 
 class StartsWithin(BaseModel):
-    """Flights whose departure point falls within the given geometry and/or departs within the given time window."""
+    """Flights whose departure point falls within the given geometry and/or departs within the given time window."""  # noqa: E501
 
     starts_within: SpatioTemporalValue = Field(
         description="Spatial and/or temporal constraints on the departure point and time."
@@ -350,7 +351,7 @@ class StartsWithin(BaseModel):
 
 
 class EndsWithin(BaseModel):
-    """Flights whose arrival point falls within the given geometry and/or arrives within the given time window."""
+    """Flights whose arrival point falls within the given geometry and/or arrives within the given time window."""  # noqa: E501
 
     ends_within: SpatioTemporalValue = Field(
         description="Spatial and/or temporal constraints on the arrival point and time."
@@ -388,12 +389,12 @@ class CallsignMatches(BaseModel):
 class DurationValue(BaseModel):
     """Bounds for a flight duration filter. Both bounds are optional."""
 
-    min_s: float | None = Field(default=None, description="Minimum duration in seconds (inclusive).")
-    max_s: float | None = Field(default=None, description="Maximum duration in seconds (inclusive).")
+    min_s: float | None = Field(default=None, description="Minimum duration in seconds (inclusive).")  # noqa: E501
+    max_s: float | None = Field(default=None, description="Maximum duration in seconds (inclusive).")  # noqa: E501
 
 
 class Duration(BaseModel):
-    """Flights whose duration (`end_ts − start_ts`) falls within the given bounds."""
+    """Flights whose duration (`end_ts - start_ts`) falls within the given bounds."""
 
     duration: DurationValue
 
@@ -414,7 +415,7 @@ class AndPredicate(BaseModel):
 class OrPredicate(BaseModel):
     """At least one child predicate must be true (logical OR)."""
 
-    or_: list[Predicate] = Field(alias="or", description="At least one of these predicates must match.")
+    or_: list[Predicate] = Field(alias="or", description="At least one of these predicates must match.")  # noqa: E501
 
     model_config = {"populate_by_name": True}
 
@@ -431,20 +432,20 @@ class NotPredicate(BaseModel):
 # Union of all predicate types
 # ---------------------------------------------------------------------------
 
-Predicate = Union[
-    TrajectoryIntersects,
-    TrajectoryWithin,
-    TrajectoryDisjoint,
-    StartsWithin,
-    EndsWithin,
-    IcaoType,
-    EmitterCategory,
-    CallsignMatches,
-    Duration,
-    AndPredicate,
-    OrPredicate,
-    NotPredicate,
-]
+Predicate = (
+    TrajectoryIntersects
+    | TrajectoryWithin
+    | TrajectoryDisjoint
+    | StartsWithin
+    | EndsWithin
+    | IcaoType
+    | EmitterCategory
+    | CallsignMatches
+    | Duration
+    | AndPredicate
+    | OrPredicate
+    | NotPredicate
+)
 
 # Rebuild models that reference Predicate recursively
 AndPredicate.model_rebuild()
@@ -474,6 +475,6 @@ class QueryRequest(BaseModel):
     )
     include_path: bool = Field(
         default=True,
-        description="Whether to include `path`, `timestamps`, `path_tracks`, and `squawk_runs` in each result. "
+        description="Whether to include `path`, `timestamps`, `path_tracks`, and `squawk_runs` in each result. "  # noqa: E501
         "Set to `false` for lightweight listing queries where trajectory data is not needed.",
     )

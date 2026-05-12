@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
-from httpx import AsyncClient
+from typing import TYPE_CHECKING
 
+import pytest
+
+if TYPE_CHECKING:
+    from httpx import AsyncClient
 
 pytestmark = pytest.mark.asyncio
 
@@ -40,9 +43,8 @@ async def test_starts_within_time_filter(api_client: AsyncClient) -> None:
         json={
             "match": {
                 "starts_within": {
-                    "type": "TimeRange",
-                    "from": "2025-04-01T09:00:00Z",
-                    "to": "2025-04-01T11:00:00Z",
+                    "time_from": "2025-04-01T09:00:00Z",
+                    "time_to": "2025-04-01T11:00:00Z",
                 }
             }
         },
@@ -81,7 +83,7 @@ async def test_aircraft_filter(api_client: AsyncClient) -> None:
 async def test_ends_within_manchester(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
-        json={"match": {"ends_within": MANCHESTER_CIRCLE}},
+        json={"match": {"ends_within": {"geometry": MANCHESTER_CIRCLE}}},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -138,7 +140,7 @@ async def test_cursor_pagination(api_client: AsyncClient) -> None:
 
 
 async def test_duration_filter(api_client: AsyncClient) -> None:
-    # Flight A: 10:00–12:00 = 7200s; Flight B: 06:00–09:00 = 10800s
+    # Flight A: 10:00-12:00 = 7200s; Flight B: 06:00-09:00 = 10800s
     # min_s=9000 should return only flight B
     resp = await api_client.post(
         "/api/v1/query",
@@ -183,7 +185,7 @@ async def test_trajectory_disjoint_uk(api_client: AsyncClient) -> None:
 
 
 async def test_trajectory_intersects_altitude_band(api_client: AsyncClient) -> None:
-    # Flight A cruises at 35000–36000 ft; altitude_min_ft=34000 should match.
+    # Flight A cruises at 35000-36000 ft; altitude_min_ft=34000 should match.
     resp = await api_client.post(
         "/api/v1/query",
         json={
@@ -209,7 +211,7 @@ async def test_starts_within_polygon(api_client: AsyncClient) -> None:
     }
     resp = await api_client.post(
         "/api/v1/query",
-        json={"match": {"starts_within": london_box}},
+        json={"match": {"starts_within": {"geometry": london_box}}},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -225,9 +227,8 @@ async def test_ends_within_time_range(api_client: AsyncClient) -> None:
         json={
             "match": {
                 "ends_within": {
-                    "type": "TimeRange",
-                    "from": "2025-04-01T08:00:00Z",
-                    "to": "2025-04-01T10:00:00Z",
+                    "time_from": "2025-04-01T08:00:00Z",
+                    "time_to": "2025-04-01T10:00:00Z",
                 }
             }
         },
