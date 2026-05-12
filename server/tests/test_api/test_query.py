@@ -214,6 +214,46 @@ async def test_squawk_filter_no_match_returns_empty(api_client: AsyncClient) -> 
     assert data["flights"] == []
 
 
+async def test_squawk_filter_with_geometry_correlated(api_client: AsyncClient) -> None:
+    # Flight A flies London→Manchester with squawk "1234" throughout.
+    # A polygon around Manchester contains the end of the flight.
+    # squawk "1234" applies when the path is in Manchester → should match.
+    manchester_box = {
+        "type": "Polygon",
+        "coordinates": [[[-3, 53], [-1.5, 53], [-1.5, 54], [-3, 54], [-3, 53]]],
+    }
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={
+            "trajectory_intersects": {"geometry": manchester_box, "squawk_codes": ["1234"]}
+        }),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+
+
+async def test_squawk_filter_geometry_no_squawk_match_at_location(
+    api_client: AsyncClient,
+) -> None:
+    # Same Manchester polygon, but squawk "7700" — Flight A never had this code.
+    # Verifies the correlated SQL correctly returns no results.
+    manchester_box = {
+        "type": "Polygon",
+        "coordinates": [[[-3, 53], [-1.5, 53], [-1.5, 54], [-3, 54], [-3, 53]]],
+    }
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={
+            "trajectory_intersects": {"geometry": manchester_box, "squawk_codes": ["7700"]}
+        }),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["flights"] == []
+
+
 async def test_trajectory_intersects_altitude_band(api_client: AsyncClient) -> None:
     # Flight A cruises at 35000-36000 ft; altitude_min_ft=34000 should match.
     resp = await api_client.post(

@@ -75,7 +75,7 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
         FLIGHT_A_ICAO, FLIGHT_A_CALLSIGN, FLIGHT_A_TYPE, FLIGHT_A_EMITTER,
         FLIGHT_A_START_TS, FLIGHT_A_END_TS,
         FLIGHT_A_PATH, FLIGHT_A_TRACKS,
-        ttext_seq([(1743501600.0, "1234")]), 30, date(2025, 4, 1),
+        ttext_seq([(1743501600.0, "1234"), (1743508800.0, "1234")]), 30, date(2025, 4, 1),
     )
     await pool.execute(
         INSERT_FLIGHT,
