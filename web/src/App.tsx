@@ -94,6 +94,7 @@ export function App(): React.ReactElement {
 
   const [viewportVersion, setViewportVersion] = useState(0);
   const [lastRunVersion, setLastRunVersion] = useState<number | null>(null);
+  const [lastRunGroup, setLastRunGroup] = useState<FilterGroup | null>(null);
 
   const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
   const [queryFlights, setQueryFlights] = useState<FlightDetail[] | null>(null);
@@ -155,6 +156,7 @@ export function App(): React.ReactElement {
 
   const handleRun = useCallback((): void => {
     setLastRunVersion(viewportVersion);
+    setLastRunGroup(rootGroup);
     queryAbortRef.current?.abort();
     const ctrl = new AbortController();
     queryAbortRef.current = ctrl;
@@ -211,9 +213,10 @@ export function App(): React.ReactElement {
 
   const mapGeometries = useMemo(() => collectGeometries(rootGroup), [rootGroup]);
   const hasViewport = anyViewportFilter(rootGroup);
-  const showRerunChip = hasViewport && lastRunVersion !== null && viewportVersion !== lastRunVersion;
-
   const predCount = countPredicates(rootGroup);
+  const queryStructureChanged = lastRunGroup !== null && rootGroup !== lastRunGroup;
+  const viewportChanged = hasViewport && lastRunVersion !== null && viewportVersion !== lastRunVersion;
+  const showRerunChip = predCount > 0 && (queryStructureChanged || viewportChanged);
   const filterMeta = predCount === 0
     ? "no filters"
     : String(predCount) + " filter" + (predCount !== 1 ? "s" : "");

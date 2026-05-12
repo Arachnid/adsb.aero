@@ -79,12 +79,12 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
     return { id, kind: "group", mode: kind === "group_all" ? "all" : "any", items: [] };
   }
   if (kind === "starts_within" || kind === "ends_within") {
-    return { id, kind, shape: "none", lat: null, lng: null, radiusNm: 25, polygon: null, timeFrom: "", timeTo: "" };
+    return { id, kind, shape: "none", lat: null, lng: null, radiusNm: 2, polygon: null, timeFrom: "", timeTo: "" };
   }
   if (kind === "region") {
     return {
       id, kind, regionName: "Region " + String(regionCount + 1), shape: "none",
-      polygon: null, lat: null, lng: null, radiusNm: 25,
+      polygon: null, lat: null, lng: null, radiusNm: 2,
       altMin: null, altMax: null, timeFrom: "", timeTo: "",
     };
   }
