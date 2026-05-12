@@ -34,8 +34,16 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
             style={{
               height: 8,
               borderRadius: 2,
+              // Stop positions reflect the power-curve mapping (ALT_CURVE=0.4):
+              // each colour stop's actual altitude as % of 40 000 ft.
               background:
-                "linear-gradient(to right, #e26464, #f0a04d, #f0e066, #6ed3a3, #6ea8ff, #9b6ef0)",
+                "linear-gradient(to right," +
+                " #e26464 0%," +
+                " #f0a04d 1.8%," +
+                " #f0e066 10.1%," +
+                " #6ed3a3 27.9%," +
+                " #6ea8ff 57.2%," +
+                " #9b6ef0 100%)",
               marginBottom: 4,
             }}
           />

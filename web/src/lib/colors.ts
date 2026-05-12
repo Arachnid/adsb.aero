@@ -16,27 +16,30 @@ function lerpColor(a: RGBA, b: RGBA, t: number): RGBA {
   ];
 }
 
-// Altitude gradient: blue (ground) → cyan → green → yellow → red (high cruise).
-const ALT_STOPS: [number, RGBA][] = [
-  [0, [30, 120, 255, 220]],
-  [10000, [0, 200, 220, 220]],
-  [20000, [40, 190, 40, 220]],
-  [30000, [230, 190, 0, 220]],
-  [40000, [220, 50, 30, 220]],
+// Altitude gradient: red (ground) → orange → yellow → green → blue → purple (high cruise).
+// Matches the legend. Evenly spaced in curved space (see altToColor).
+const ALT_MAX = 40000;
+const ALT_CURVE = 0.4; // exponent < 1 stretches low-altitude distinctions
+const ALT_STOPS: RGBA[] = [
+  [226, 100, 100, 220], // 0 ft   — red
+  [240, 160,  77, 220], // ~3k ft — orange
+  [240, 224, 102, 220], // ~9k ft — yellow
+  [110, 211, 163, 220], // ~19k ft — green
+  [110, 168, 255, 220], // ~32k ft — blue
+  [155, 110, 240, 220], // 40k+ ft — purple
 ];
 
 export function altToColor(altFt: number): RGBA {
-  const last = ALT_STOPS.at(-1);
-  const clamped = Math.max(0, Math.min(altFt, last?.[0] ?? 40000));
-  for (let i = 0; i < ALT_STOPS.length - 1; i++) {
-    const entry = ALT_STOPS[i];
-    const next = ALT_STOPS[i + 1];
-    if (!entry || !next) continue;
-    const [lo, ca] = entry;
-    const [hi, cb] = next;
-    if (clamped <= hi) return lerpColor(ca, cb, (clamped - lo) / (hi - lo));
-  }
-  return last?.[1] ?? [220, 50, 30, 220];
+  const clamped = Math.max(0, Math.min(altFt, ALT_MAX));
+  // Apply power curve so low-altitude differences are visually exaggerated.
+  const t = Math.pow(clamped / ALT_MAX, ALT_CURVE) * (ALT_STOPS.length - 1);
+  const lo = Math.floor(t);
+  const hi = Math.min(lo + 1, ALT_STOPS.length - 1);
+  const frac = t - lo;
+  const a = ALT_STOPS[lo];
+  const b = ALT_STOPS[hi];
+  if (!a || !b) return ALT_STOPS[ALT_STOPS.length - 1] ?? [155, 110, 240, 220];
+  return lerpColor(a, b, frac);
 }
 
 // Emitter category palette (ADS-B category codes).
