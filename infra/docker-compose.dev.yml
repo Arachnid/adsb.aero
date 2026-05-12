@@ -14,6 +14,7 @@ services:
     working_dir: /app
     # pnpm install is fast on subsequent starts because node_modules lives in a named volume
     command: sh -c "corepack enable && pnpm install && pnpm dev"
+    restart: unless-stopped
     volumes:
       - ../web:/app
       - vite_node_modules:/app/node_modules
