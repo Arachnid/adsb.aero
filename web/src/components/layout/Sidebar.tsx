@@ -81,9 +81,7 @@ export function Sidebar({
       </div>
 
       {toolbar !== undefined && (
-        <div style={{ flexShrink: 0, padding: "0 12px 10px", position: "relative" }}>
-          {toolbar}
-        </div>
+        <div style={{ flexShrink: 0, padding: "0 12px 10px", position: "relative" }}>{toolbar}</div>
       )}
 
       {footer !== undefined && (

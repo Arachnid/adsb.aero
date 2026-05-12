@@ -47,7 +47,16 @@ export function Topbar({
       }}
     >
       {/* Brand */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 13, letterSpacing: "-0.01em" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontWeight: 600,
+          fontSize: 13,
+          letterSpacing: "-0.01em",
+        }}
+      >
         <span
           style={{
             width: 8,
@@ -77,13 +86,13 @@ export function Topbar({
 
       <SegLabel>Basemap</SegLabel>
       <Seg>
-        <SegBtn active={basemap === "dark"} onClick={() => onBasemap("dark")} title="Dark">
+        <SegBtn active={basemap === "dark"} onClick={() => { onBasemap("dark"); }} title="Dark">
           <Moon />
         </SegBtn>
-        <SegBtn active={basemap === "light"} onClick={() => onBasemap("light")} title="Light">
+        <SegBtn active={basemap === "light"} onClick={() => { onBasemap("light"); }} title="Light">
           <Sun />
         </SegBtn>
-        <SegBtn active={basemap === "sat"} onClick={() => onBasemap("sat")} title="Satellite">
+        <SegBtn active={basemap === "sat"} onClick={() => { onBasemap("sat"); }} title="Satellite">
           <Satellite />
         </SegBtn>
       </Seg>
@@ -92,9 +101,15 @@ export function Topbar({
 
       <SegLabel>Color by</SegLabel>
       <Seg>
-        <SegBtn active={colorMode === "alt"} onClick={() => onColorMode("alt")}>Altitude</SegBtn>
-        <SegBtn active={colorMode === "cat"} onClick={() => onColorMode("cat")}>Category</SegBtn>
-        <SegBtn active={colorMode === "tod"} onClick={() => onColorMode("tod")}>Time</SegBtn>
+        <SegBtn active={colorMode === "alt"} onClick={() => { onColorMode("alt"); }}>
+          Altitude
+        </SegBtn>
+        <SegBtn active={colorMode === "cat"} onClick={() => { onColorMode("cat"); }}>
+          Category
+        </SegBtn>
+        <SegBtn active={colorMode === "tod"} onClick={() => { onColorMode("tod"); }}>
+          Time
+        </SegBtn>
       </Seg>
 
       <Sep />

@@ -1,4 +1,10 @@
-import { GeoJSONSource, Map as MaplibreMap, MapMouseEvent, setWorkerUrl, StyleSpecification } from "maplibre-gl";
+import {
+  GeoJSONSource,
+  Map as MaplibreMap,
+  MapMouseEvent,
+  setWorkerUrl,
+  StyleSpecification,
+} from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 import { MapboxOverlay } from "@deck.gl/mapbox";
@@ -30,9 +36,12 @@ const SAT_STYLE: StyleSpecification = {
   sources: {
     "esri-sat": {
       type: "raster",
-      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      ],
       tileSize: 256,
-      attribution: "Tiles &copy; Esri &mdash; Esri, DigitalGlobe, GeoEye, USDA, USGS, and the GIS User Community",
+      attribution:
+        "Tiles &copy; Esri &mdash; Esri, DigitalGlobe, GeoEye, USDA, USGS, and the GIS User Community",
       maxzoom: 19,
     },
   },
@@ -51,10 +60,26 @@ export type { MapGeometry } from "../../lib/queryGeometry";
 // Minimal inline GeoJSON types to avoid @types/geojson dependency issues.
 type Coord = [number, number];
 type GeoFeat =
-  | { type: "Feature"; properties: Record<string, string>; geometry: { type: "Polygon"; coordinates: Coord[][] } }
-  | { type: "Feature"; properties: Record<string, never>; geometry: { type: "Point"; coordinates: Coord } }
-  | { type: "Feature"; properties: Record<string, never>; geometry: { type: "LineString"; coordinates: Coord[] } }
-  | { type: "Feature"; properties: { label: string; color: string; rotation: number }; geometry: { type: "Point"; coordinates: Coord } };
+  | {
+      type: "Feature";
+      properties: Record<string, string>;
+      geometry: { type: "Polygon"; coordinates: Coord[][] };
+    }
+  | {
+      type: "Feature";
+      properties: Record<string, never>;
+      geometry: { type: "Point"; coordinates: Coord };
+    }
+  | {
+      type: "Feature";
+      properties: Record<string, never>;
+      geometry: { type: "LineString"; coordinates: Coord[] };
+    }
+  | {
+      type: "Feature";
+      properties: { label: string; color: string; rotation: number };
+      geometry: { type: "Point"; coordinates: Coord };
+    };
 type GeoFC = { type: "FeatureCollection"; features: GeoFeat[] };
 
 const EMPTY_FC: GeoFC = { type: "FeatureCollection", features: [] };
@@ -75,12 +100,18 @@ function approxCircle(lng: number, lat: number, radiusKm: number): Coord[] {
 function topEdgeInfo(pts: Coord[]): { center: Coord; rotation: number } {
   const n = pts.length;
   let bestAvgLat = -Infinity;
-  let bestA: Coord = [0, 0], bestB: Coord = [0, 0];
+  let bestA: Coord = [0, 0],
+    bestB: Coord = [0, 0];
   for (let i = 0; i < n; i++) {
-    const a = pts[i]!;
-    const b = pts[(i + 1) % n]!;
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    if (!a || !b) continue;
     const avgLat = (a[1] + b[1]) / 2;
-    if (avgLat > bestAvgLat) { bestAvgLat = avgLat; bestA = a; bestB = b; }
+    if (avgLat > bestAvgLat) {
+      bestAvgLat = avgLat;
+      bestA = a;
+      bestB = b;
+    }
   }
   const center: Coord = [(bestA[0] + bestB[0]) / 2, bestAvgLat];
   // text-rotate is clockwise from east (horizontal); bearing is clockwise from north, so subtract 90.
@@ -106,7 +137,13 @@ function buildFillFC(geoms: MapGeometry[]): GeoFC {
         ring = approxCircle(g.lng, g.lat, g.radiusNm * 1.852);
       }
       if (!ring) return [];
-      return [{ type: "Feature", properties: { color: g.color }, geometry: { type: "Polygon", coordinates: [ring] } }];
+      return [
+        {
+          type: "Feature",
+          properties: { color: g.color },
+          geometry: { type: "Polygon", coordinates: [ring] },
+        },
+      ];
     }),
   };
 }
@@ -125,7 +162,13 @@ function buildLabelFC(geoms: MapGeometry[]): GeoFC {
         center = [g.lng, g.lat + (g.radiusNm * 1.852) / 111.32];
       }
       if (!center) return [];
-      return [{ type: "Feature", properties: { label: g.label, color: g.color, rotation }, geometry: { type: "Point", coordinates: center } }];
+      return [
+        {
+          type: "Feature",
+          properties: { label: g.label, color: g.color, rotation },
+          geometry: { type: "Point", coordinates: center },
+        },
+      ];
     }),
   };
 }
@@ -134,25 +177,56 @@ function buildDraftFC(pts: Coord[]): GeoFC {
   return {
     type: "FeatureCollection",
     features: [
-      ...pts.map((p): GeoFeat => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p } })),
+      ...pts.map(
+        (p): GeoFeat => ({
+          type: "Feature",
+          properties: {},
+          geometry: { type: "Point", coordinates: p },
+        }),
+      ),
       ...(pts.length >= 2
-        ? [{ type: "Feature" as const, properties: {} as Record<string, never>, geometry: { type: "LineString" as const, coordinates: pts } }]
+        ? [
+            {
+              type: "Feature" as const,
+              properties: {} as Record<string, never>,
+              geometry: { type: "LineString" as const, coordinates: pts },
+            },
+          ]
         : []),
     ],
   };
 }
 
 function setSource(src: GeoJSONSource | undefined, data: GeoFC): void {
-  src?.setData(data as Parameters<GeoJSONSource["setData"]>[0]);
+  src?.setData(data);
 }
 
 function initOverlays(map: MaplibreMap, geoms: MapGeometry[]): void {
-  map.addSource("filter-geoms", { type: "geojson", data: buildFillFC(geoms) as Parameters<GeoJSONSource["setData"]>[0] });
-  map.addSource("filter-labels", { type: "geojson", data: buildLabelFC(geoms) as Parameters<GeoJSONSource["setData"]>[0] });
-  map.addSource("draft", { type: "geojson", data: EMPTY_FC as Parameters<GeoJSONSource["setData"]>[0] });
+  map.addSource("filter-geoms", {
+    type: "geojson",
+    data: buildFillFC(geoms) as Parameters<GeoJSONSource["setData"]>[0],
+  });
+  map.addSource("filter-labels", {
+    type: "geojson",
+    data: buildLabelFC(geoms) as Parameters<GeoJSONSource["setData"]>[0],
+  });
+  map.addSource("draft", {
+    type: "geojson",
+    data: EMPTY_FC as Parameters<GeoJSONSource["setData"]>[0],
+  });
 
-  map.addLayer({ id: "filter-fill", type: "fill", source: "filter-geoms", paint: { "fill-color": ["get", "color"], "fill-opacity": 0.15 } });
-  map.addLayer({ id: "filter-line", type: "line", source: "filter-geoms", paint: { "line-color": ["get", "color"], "line-width": 2 } });
+  map.addLayer({
+    id: "filter-fill",
+    type: "fill",
+    source: "filter-geoms",
+    paint: { "fill-color": ["get", "color"], "fill-opacity": 0.15 },
+  });
+  map.addLayer({
+    id: "filter-line",
+    type: "line",
+    source: "filter-geoms",
+    paint: { "line-color": ["get", "color"], "line-width": 2 },
+  });
   map.addLayer({
     id: "filter-label",
     type: "symbol",
@@ -183,7 +257,12 @@ function initOverlays(map: MaplibreMap, geoms: MapGeometry[]): void {
     type: "circle",
     source: "draft",
     filter: ["==", "$type", "Point"],
-    paint: { "circle-radius": 4, "circle-color": "#ffffff", "circle-stroke-width": 1.5, "circle-stroke-color": "#000000" },
+    paint: {
+      "circle-radius": 4,
+      "circle-color": "#ffffff",
+      "circle-stroke-width": 1.5,
+      "circle-stroke-color": "#000000",
+    },
   });
 }
 
@@ -238,7 +317,9 @@ export function MapView({
   // Persists the main flight layers so the hover-dot effect can append without rebuilding them.
   const mainLayersRef = useRef<(LineLayer<Seg> | ScatterplotLayer<FlightDetail>)[]>([]);
 
-  const [mapTooltip, setMapTooltip] = useState<{ x: number; y: number; altFt: number } | null>(null);
+  const [mapTooltip, setMapTooltip] = useState<{ x: number; y: number; altFt: number } | null>(
+    null,
+  );
   const setMapTooltipRef = useRef(setMapTooltip);
   setMapTooltipRef.current = setMapTooltip;
 
@@ -254,14 +335,17 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getSource("filter-geoms")) return;
-    setSource(map.getSource("filter-geoms") as GeoJSONSource | undefined, buildFillFC(geometries));
-    setSource(map.getSource("filter-labels") as GeoJSONSource | undefined, buildLabelFC(geometries));
+    setSource(map.getSource("filter-geoms"), buildFillFC(geometries));
+    setSource(
+      map.getSource("filter-labels"),
+      buildLabelFC(geometries),
+    );
   }, [geometries]);
 
   useEffect(() => {
     if (!drawingActive) {
       drawPointsRef.current = [];
-      setSource(mapRef.current?.getSource("draft") as GeoJSONSource | undefined, EMPTY_FC);
+      setSource(mapRef.current?.getSource("draft"), EMPTY_FC);
     }
   }, [drawingActive]);
 
@@ -292,7 +376,7 @@ export function MapView({
       if (drawingRef.current) {
         const pts: Coord[] = [...drawPointsRef.current, [lng, lat]];
         drawPointsRef.current = pts;
-        setSource(map.getSource("draft") as GeoJSONSource | undefined, buildDraftFC(pts));
+        setSource(map.getSource("draft"), buildDraftFC(pts));
       }
     };
 
@@ -302,16 +386,18 @@ export function MapView({
       const { lat, lng } = e.lngLat;
       const pts: Coord[] = [...drawPointsRef.current, [lng, lat]];
       drawPointsRef.current = [];
-      setSource(map.getSource("draft") as GeoJSONSource | undefined, EMPTY_FC);
+      setSource(map.getSource("draft"), EMPTY_FC);
       if (pts.length >= 3) onDrawRef.current(pts);
     };
 
     const getBounds = (): MapBounds => {
-      const b = map.getBounds().toArray() as [[number, number], [number, number]];
+      const b = map.getBounds().toArray();
       return [b[0][0], b[0][1], b[1][0], b[1][1]];
     };
 
-    const onMoveEndHandler = (): void => { onMoveEndRef.current?.(getBounds()); };
+    const onMoveEndHandler = (): void => {
+      onMoveEndRef.current?.(getBounds());
+    };
 
     const setupOverlays = (): void => {
       if (!map.getSource("filter-geoms")) {
@@ -319,15 +405,23 @@ export function MapView({
       }
     };
 
-    const onLoadHandler = (): void => { onMoveEndRef.current?.(getBounds()); };
+    const onLoadHandler = (): void => {
+      onMoveEndRef.current?.(getBounds());
+    };
 
-    if (map.isStyleLoaded()) { setupOverlays(); onLoadHandler(); }
-    map.on("style.load", () => { setupOverlays(); onLoadHandler(); });
+    if (map.isStyleLoaded()) {
+      setupOverlays();
+      onLoadHandler();
+    }
+    map.on("style.load", (): void => {
+      setupOverlays();
+      onLoadHandler();
+    });
     map.on("click", onClick);
     map.on("dblclick", onDblClick);
     map.on("moveend", onMoveEndHandler);
     const overlay = new MapboxOverlay({
-      onClick: (info) => {
+      onClick: (info): void => {
         if (pickingRef.current || drawingRef.current) return;
         if (info.picked) {
           onSelectRef.current((info.object as Seg).flightId);
@@ -335,7 +429,7 @@ export function MapView({
           onSelectRef.current(null);
         }
       },
-      onHover: (info) => {
+      onHover: (info): void => {
         const canvas = mapRef.current?.getCanvas();
         if (!canvas || pickingRef.current || drawingRef.current) return;
         canvas.style.cursor = info.picked ? "pointer" : "";
@@ -378,7 +472,8 @@ export function MapView({
       const coords = f.path?.coordinates;
       if (!coords || coords.length < 2) return [];
       return coords.slice(0, -1).map((c, i): Seg => {
-        const next = coords[i + 1]!;
+        // slice(0,-1) guarantees i+1 < coords.length
+        const next = coords[i + 1] ?? c;
         return {
           from: [c[0], c[1]],
           to: [next[0], next[1]],
@@ -396,24 +491,25 @@ export function MapView({
 
     const getColor = (s: Seg): RGBA => {
       const base =
-        colorMode === "alt" ? altToColor(s.altMid)
-        : colorMode === "cat" ? catToColor(s.cat)
-        : todToColor(s.startTs);
+        colorMode === "alt"
+          ? altToColor(s.altMid)
+          : colorMode === "cat"
+            ? catToColor(s.cat)
+            : todToColor(s.startTs);
       if (hasSel && s.flightId !== selectedFlightId) {
         return [base[0], base[1], base[2], Math.round(base[3] * 0.2)];
       }
       return base;
     };
 
-    const getWidth = (s: Seg): number =>
-      hasSel && s.flightId === selectedFlightId ? 4 : 2.5;
+    const getWidth = (s: Seg): number => (hasSel && s.flightId === selectedFlightId ? 4 : 2.5);
 
     const layers = [
       new LineLayer<Seg>({
         id: "flights-lines",
         data: segments,
-        getSourcePosition: (s) => s.from,
-        getTargetPosition: (s) => s.to,
+        getSourcePosition: (s): [number, number] => s.from,
+        getTargetPosition: (s): [number, number] => s.to,
         getColor,
         getWidth,
         widthUnits: "pixels",
@@ -422,18 +518,24 @@ export function MapView({
       new ScatterplotLayer<FlightDetail>({
         id: "flights-starts",
         data: flights,
-        getPosition: (f) => [f.start_point.coordinates[0], f.start_point.coordinates[1]],
-        getFillColor: (f) => hasSel && f.flight_id !== selectedFlightId
-          ? [60, 200, 80, 46] : [60, 200, 80, 230],
+        getPosition: (f): [number, number] => [
+          f.start_point.coordinates[0],
+          f.start_point.coordinates[1],
+        ],
+        getFillColor: (f): RGBA =>
+          hasSel && f.flight_id !== selectedFlightId ? [60, 200, 80, 46] : [60, 200, 80, 230],
         getRadius: 3,
         radiusUnits: "pixels",
       }),
       new ScatterplotLayer<FlightDetail>({
         id: "flights-ends",
         data: flights,
-        getPosition: (f) => [f.end_point.coordinates[0], f.end_point.coordinates[1]],
-        getFillColor: (f) => hasSel && f.flight_id !== selectedFlightId
-          ? [220, 60, 60, 46] : [220, 60, 60, 230],
+        getPosition: (f): [number, number] => [
+          f.end_point.coordinates[0],
+          f.end_point.coordinates[1],
+        ],
+        getFillColor: (f): RGBA =>
+          hasSel && f.flight_id !== selectedFlightId ? [220, 60, 60, 46] : [220, 60, 60, 230],
         getRadius: 3,
         radiusUnits: "pixels",
       }),
@@ -460,7 +562,7 @@ export function MapView({
         new ScatterplotLayer<[number, number]>({
           id: "flight-hover-dot",
           data: dot,
-          getPosition: (d) => d,
+          getPosition: (d): [number, number] => d,
           getFillColor: [255, 255, 255, 230],
           getLineColor: [110, 168, 255, 255],
           stroked: true,
@@ -477,7 +579,9 @@ export function MapView({
     const map = mapRef.current;
     if (!map) return;
     const url = STYLES[basemap];
-    const applyStyle = (): void => { map.setStyle(url); };
+    const applyStyle = (): void => {
+      map.setStyle(url);
+    };
     if (map.isStyleLoaded()) {
       map.setStyle(url);
     } else {

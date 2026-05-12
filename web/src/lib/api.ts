@@ -28,7 +28,13 @@ async function parseError(res: Response): Promise<never> {
 
 export async function postQuery(
   match: QueryRequest["match"],
-  opts: { startFrom: string; startTo: string; cursor?: string | null; limit?: number; signal?: AbortSignal },
+  opts: {
+    startFrom: string;
+    startTo: string;
+    cursor?: string | null;
+    limit?: number;
+    signal?: AbortSignal;
+  },
 ): Promise<QueryResponse> {
   const body: QueryRequest = {
     start_from: opts.startFrom,

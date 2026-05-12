@@ -29,7 +29,7 @@ def upgrade() -> None:
     #
     # path       tgeompoint — SRID 4326, 3D with Z=pressure-alt-ft;
     #                         timestamps are the native temporal dimension.
-    # path_tracks tint      — per-instant heading (0–359°), stepwise.
+    # path_tracks tint      — per-instant heading (0-359°), stepwise.
     # start_point / end_point are derived at query time via startValue(path)
     # and endValue(path), with expression indexes for radius queries.
     # ------------------------------------------------------------------
@@ -89,8 +89,12 @@ def upgrade() -> None:
 
     # Btree expression indexes for altitude-range queries when no geometry is
     # present (trajectory(path) converts the tgeompoint to a PostGIS LineStringZ).
-    op.execute(sa.text("CREATE INDEX flights_alt_min ON flights ((ST_ZMin(trajectory(path)::box3d)))"))
-    op.execute(sa.text("CREATE INDEX flights_alt_max ON flights ((ST_ZMax(trajectory(path)::box3d)))"))
+    op.execute(sa.text(
+        "CREATE INDEX flights_alt_min ON flights ((ST_ZMin(trajectory(path)::box3d)))"
+    ))
+    op.execute(sa.text(
+        "CREATE INDEX flights_alt_max ON flights ((ST_ZMax(trajectory(path)::box3d)))"
+    ))
 
     op.execute(sa.text("CREATE INDEX flights_start_ts    ON flights (start_ts)"))
     op.execute(sa.text("CREATE INDEX flights_end_ts      ON flights (end_ts)"))
@@ -118,7 +122,9 @@ def upgrade() -> None:
         CREATE TABLE ingest_batches (
             batch_date      DATE    PRIMARY KEY,
             status          VARCHAR NOT NULL
-                                CHECK (status IN ('pending','running','succeeded','failed','errored')),
+                                CHECK (status IN (
+                                    'pending','running','succeeded','failed','errored'
+                                )),
             started_at      TIMESTAMPTZ,
             finished_at     TIMESTAMPTZ,
             flight_count    INTEGER,

@@ -148,11 +148,15 @@ class DataRange(BaseModel):
     """Date range of available flight data."""
 
     first_date: date | None = Field(
-        description="Earliest date for which flight data is available, or null if the table is empty.",
+        description=(
+            "Earliest date for which flight data is available, or null if the table is empty."
+        ),
         examples=["2025-01-01"],
     )
     last_date: date | None = Field(
-        description="Most recent date for which flight data is available, or null if the table is empty.",
+        description=(
+            "Most recent date for which flight data is available, or null if the table is empty."
+        ),
         examples=["2026-05-01"],
     )
 
@@ -505,9 +509,9 @@ class QueryRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_start_range(self) -> "QueryRequest":
+    def _validate_start_range(self) -> QueryRequest:
         if self.start_to <= self.start_from:
             raise ValueError("start_to must be strictly after start_from")
         if self.start_to - self.start_from > _MAX_DATE_RANGE:
-            raise ValueError("date range (start_to − start_from) must not exceed 7 days")
+            raise ValueError("date range (start_to - start_from) must not exceed 7 days")
         return self

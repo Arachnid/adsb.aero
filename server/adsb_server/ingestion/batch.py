@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path  # noqa: TC003
 from typing import Any
 
-import asyncpg  # noqa: TC002
+import asyncpg
 
 from adsb_server.geometry.simplify import simplify_flight
 from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq

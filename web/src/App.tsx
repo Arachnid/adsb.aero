@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapView, MapBounds, HoveredPoint } from "./components/map/MapView";
-import { anyViewportFilter, collectGeometries, MapGeometry } from "./lib/queryGeometry";
+import { anyViewportFilter, collectGeometries } from "./lib/queryGeometry";
 import { Topbar } from "./components/layout/Topbar";
 import { Sidebar } from "./components/layout/Sidebar";
 import {
@@ -63,16 +63,26 @@ function ToggleButton({
         backdropFilter: "blur(14px)",
         WebkitBackdropFilter: "blur(14px)",
         border: "1px solid var(--line-1)",
-        borderRadius: isLeft ? "0 var(--radius-2) var(--radius-2) 0" : "var(--radius-2) 0 0 var(--radius-2)",
+        borderRadius: isLeft
+          ? "0 var(--radius-2) var(--radius-2) 0"
+          : "var(--radius-2) 0 0 var(--radius-2)",
         boxShadow: "var(--shadow-2)",
         cursor: "pointer",
         color: "var(--fg-2)",
         padding: 0,
       }}
     >
-      {isLeft
-        ? collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />
-        : collapsed ? <ChevronLeft size={13} /> : <ChevronRight size={13} />}
+      {isLeft ? (
+        collapsed ? (
+          <ChevronRight size={13} />
+        ) : (
+          <ChevronLeft size={13} />
+        )
+      ) : collapsed ? (
+        <ChevronLeft size={13} />
+      ) : (
+        <ChevronRight size={13} />
+      )}
     </button>
   );
 }
@@ -118,14 +128,18 @@ export function App(): React.ReactElement {
   }, [theme]);
 
   useEffect(() => {
-    getDataRange().then((dr) => {
-      setDataRange(dr);
-      if (dr.last_date) {
-        const last = new Date(dr.last_date + "T00:00:00Z");
-        last.setUTCDate(last.getUTCDate() - 6);
-        setGlobalDateRange({ from: last.toISOString().slice(0, 10), to: dr.last_date });
-      }
-    }).catch(() => { /* non-critical */ });
+    getDataRange()
+      .then((dr) => {
+        setDataRange(dr);
+        if (dr.last_date) {
+          const last = new Date(dr.last_date + "T00:00:00Z");
+          last.setUTCDate(last.getUTCDate() - 6);
+          setGlobalDateRange({ from: last.toISOString().slice(0, 10), to: dr.last_date });
+        }
+      })
+      .catch(() => {
+        /* non-critical */
+      });
   }, []);
 
   const handleTheme = (): void => {
@@ -152,11 +166,16 @@ export function App(): React.ReactElement {
     const id = pickingId;
     setRootGroup((g) =>
       updatePredInGroup(g, id, (p: UIPredicate) => {
-        if (p.kind === "starts_within" || p.kind === "ends_within" || p.kind === "region" || p.kind === "always_within") {
+        if (
+          p.kind === "starts_within" ||
+          p.kind === "ends_within" ||
+          p.kind === "region" ||
+          p.kind === "always_within"
+        ) {
           return { ...p, lat, lng };
         }
         return p;
-      })
+      }),
     );
     setPickingId(null);
   };
@@ -166,11 +185,16 @@ export function App(): React.ReactElement {
     const id = drawingId;
     setRootGroup((g) =>
       updatePredInGroup(g, id, (p: UIPredicate) => {
-        if (p.kind === "starts_within" || p.kind === "ends_within" || p.kind === "region" || p.kind === "always_within") {
+        if (
+          p.kind === "starts_within" ||
+          p.kind === "ends_within" ||
+          p.kind === "region" ||
+          p.kind === "always_within"
+        ) {
           return { ...p, polygon: points };
         }
         return p;
-      })
+      }),
     );
     setDrawingId(null);
   };
@@ -241,12 +265,13 @@ export function App(): React.ReactElement {
   const hasViewport = anyViewportFilter(rootGroup);
   const predCount = countPredicates(rootGroup);
   const queryStructureChanged = lastRunGroup !== null && rootGroup !== lastRunGroup;
-  const viewportChanged = hasViewport && lastRunVersion !== null && viewportVersion !== lastRunVersion;
+  const viewportChanged =
+    hasViewport && lastRunVersion !== null && viewportVersion !== lastRunVersion;
   const dateRangeOk = isDateRangeValid(globalDateRange);
-  const showRerunChip = dateRangeOk && isGroupValid(rootGroup) && (queryStructureChanged || viewportChanged);
-  const filterMeta = predCount === 0
-    ? "no filters"
-    : String(predCount) + " filter" + (predCount !== 1 ? "s" : "");
+  const showRerunChip =
+    dateRangeOk && isGroupValid(rootGroup) && (queryStructureChanged || viewportChanged);
+  const filterMeta =
+    predCount === 0 ? "no filters" : String(predCount) + " filter" + (predCount !== 1 ? "s" : "");
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
@@ -299,7 +324,9 @@ export function App(): React.ReactElement {
         colorMode={colorMode}
         onColorMode={setColorMode}
         airspaceOn={airspaceOn}
-        onToggleAirspace={() => { setAirspaceOn((v) => !v); }}
+        onToggleAirspace={() => {
+          setAirspaceOn((v) => !v);
+        }}
         theme={theme}
         onTheme={handleTheme}
       />
@@ -333,13 +360,26 @@ export function App(): React.ReactElement {
           dateRange={dataRange}
         />
       </Sidebar>
-      <ToggleButton side="left" collapsed={leftCollapsed} onToggle={() => { setLeftCollapsed((v) => !v); }} />
+      <ToggleButton
+        side="left"
+        collapsed={leftCollapsed}
+        onToggle={() => {
+          setLeftCollapsed((v) => !v);
+        }}
+      />
 
       <Sidebar
         side="right"
         collapsed={rightCollapsed}
         title="Results"
-        meta={queryFlights === null ? "—" : String(queryFlights.length) + (queryCursor ? "+" : "") + " flight" + (queryFlights.length !== 1 ? "s" : "")}
+        meta={
+          queryFlights === null
+            ? "—"
+            : String(queryFlights.length) +
+              (queryCursor ? "+" : "") +
+              " flight" +
+              (queryFlights.length !== 1 ? "s" : "")
+        }
       >
         <ResultsPanel
           flights={queryFlights}
@@ -353,7 +393,13 @@ export function App(): React.ReactElement {
           onHoverPoint={setHoveredPoint}
         />
       </Sidebar>
-      <ToggleButton side="right" collapsed={rightCollapsed} onToggle={() => { setRightCollapsed((v) => !v); }} />
+      <ToggleButton
+        side="right"
+        collapsed={rightCollapsed}
+        onToggle={() => {
+          setRightCollapsed((v) => !v);
+        }}
+      />
 
       <Legend colorMode={colorMode} />
     </div>

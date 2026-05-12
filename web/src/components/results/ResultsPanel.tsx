@@ -24,7 +24,7 @@ function fmtEndTime(endIso: string, startDate: string): string {
   const t = fmtTime(endIso);
   if (endDate === startDate) return t;
   const diff = Math.round((Date.parse(endDate) - Date.parse(startDate)) / 86400000);
-  return `${t} (+${diff}d)`;
+  return `${t} (+${String(diff)}d)`;
 }
 
 type ListItem =
@@ -56,7 +56,9 @@ function SparklineChart({
 }): React.ReactElement | null {
   if (coords.length < 2) return null;
 
-  const W = 200, H = 28, PAD = 2;
+  const W = 200,
+    H = 28,
+    PAD = 2;
   const n = coords.length;
   const alts = coords.map((c) => c[2]);
   const minAlt = Math.min(...alts);
@@ -65,14 +67,23 @@ function SparklineChart({
 
   const toX = (i: number): number => PAD + (i / (n - 1)) * (W - PAD * 2);
   const toY = (alt: number): number => PAD + (1 - (alt - minAlt) / range) * (H - PAD * 2);
+  const n2s = (x: number): string => x.toFixed(3);
 
-  const polyPoints = alts.map((alt, i) => `${toX(i)},${toY(alt)}`).join(" ");
+  const firstAlt = alts[0] ?? 0;
+  const polyPoints = alts.map((alt, i) => `${n2s(toX(i))},${n2s(toY(alt))}`).join(" ");
   const fillD =
-    `M ${toX(0)},${toY(alts[0]!)} ` +
-    alts.slice(1).map((alt, i) => `L ${toX(i + 1)},${toY(alt)}`).join(" ") +
-    ` L ${toX(n - 1)},${H} L ${toX(0)},${H} Z`;
+    `M ${n2s(toX(0))},${n2s(toY(firstAlt))} ` +
+    alts
+      .slice(1)
+      .map((alt, i) => `L ${n2s(toX(i + 1))},${n2s(toY(alt))}`)
+      .join(" ") +
+    ` L ${n2s(toX(n - 1))},${String(H)} L ${n2s(toX(0))},${String(H)} Z`;
 
   const activeIdx = hoveredIdx !== null && hoveredIdx >= 0 && hoveredIdx < n ? hoveredIdx : null;
+  const activeAlt = activeIdx !== null ? (alts[activeIdx] ?? 0) : 0;
+  const activeHx = activeIdx !== null ? toX(activeIdx) : 0;
+  const activeHy = activeIdx !== null ? toY(activeAlt) : 0;
+  const tooltipLeft = activeIdx !== null ? `${((toX(activeIdx) / W) * 100).toFixed(2)}%` : "0%";
 
   return (
     <div style={{ position: "relative", marginTop: 5 }}>
@@ -80,7 +91,7 @@ function SparklineChart({
         <div
           style={{
             position: "absolute",
-            left: `${(toX(activeIdx) / W) * 100}%`,
+            left: tooltipLeft,
             bottom: "100%",
             transform: "translateX(-50%)",
             marginBottom: 2,
@@ -96,33 +107,50 @@ function SparklineChart({
             boxShadow: "var(--shadow-1)",
           }}
         >
-          {Math.round(alts[activeIdx]!).toLocaleString()} ft
+          {Math.round(activeAlt).toLocaleString()} ft
         </div>
       )}
       <svg
-        viewBox={`0 0 ${W} ${H}`}
+        viewBox="0 0 200 28"
         preserveAspectRatio="none"
         style={{ width: "100%", height: 20, display: "block" }}
-        onMouseMove={(e) => {
+        onMouseMove={(e): void => {
           const rect = e.currentTarget.getBoundingClientRect();
           const x = e.clientX - rect.left;
           const idx = Math.min(n - 1, Math.max(0, Math.round((x / rect.width) * (n - 1))));
           onHoverIdx(idx);
         }}
-        onMouseLeave={() => onHoverIdx(null)}
+        onMouseLeave={(): void => {
+          onHoverIdx(null);
+        }}
       >
         <path d={fillD} fill="rgba(110,168,255,0.15)" stroke="none" />
-        <polyline points={polyPoints} fill="none" stroke="rgba(110,168,255,0.8)" strokeWidth="1.5" />
-        {activeIdx !== null && (() => {
-          const hx = toX(activeIdx);
-          const hy = toY(alts[activeIdx]!);
-          return (
-            <g>
-              <line x1={hx} y1={PAD} x2={hx} y2={H - PAD} stroke="rgba(110,168,255,0.6)" strokeWidth="1" />
-              <circle cx={hx} cy={hy} r={2.5} style={{ fill: "var(--bg-1)" }} stroke="rgb(110,168,255)" strokeWidth="1.5" />
-            </g>
-          );
-        })()}
+        <polyline
+          points={polyPoints}
+          fill="none"
+          stroke="rgba(110,168,255,0.8)"
+          strokeWidth="1.5"
+        />
+        {activeIdx !== null && (
+          <g>
+            <line
+              x1={activeHx}
+              y1={PAD}
+              x2={activeHx}
+              y2={H - PAD}
+              stroke="rgba(110,168,255,0.6)"
+              strokeWidth="1"
+            />
+            <circle
+              cx={activeHx}
+              cy={activeHy}
+              r={2.5}
+              style={{ fill: "var(--bg-1)" }}
+              stroke="rgb(110,168,255)"
+              strokeWidth="1.5"
+            />
+          </g>
+        )}
       </svg>
     </div>
   );
@@ -143,7 +171,9 @@ export function ResultsPanel({
 
   useEffect(() => {
     if (!selectedFlightId || !scrollRef.current) return;
-    const el = scrollRef.current.querySelector<HTMLElement>(`[data-flight-id="${selectedFlightId}"]`);
+    const el = scrollRef.current.querySelector<HTMLElement>(
+      `[data-flight-id="${selectedFlightId}"]`,
+    );
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [selectedFlightId]);
 
@@ -157,7 +187,9 @@ export function ResultsPanel({
 
   if (flights === null && !loading) {
     return (
-      <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--fg-3)", fontSize: 12 }}>
+      <div
+        style={{ textAlign: "center", padding: "40px 20px", color: "var(--fg-3)", fontSize: 12 }}
+      >
         <div style={{ marginBottom: 8, opacity: 0.4 }}>
           <Plane size={32} />
         </div>
@@ -169,7 +201,9 @@ export function ResultsPanel({
 
   if (flights !== null && flights.length === 0 && !loading) {
     return (
-      <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--fg-3)", fontSize: 12 }}>
+      <div
+        style={{ textAlign: "center", padding: "40px 20px", color: "var(--fg-3)", fontSize: 12 }}
+      >
         <div>No flights matched.</div>
       </div>
     );
@@ -202,16 +236,31 @@ export function ResultsPanel({
               key={item.flight.flight_id}
               flight={item.flight}
               selected={item.flight.flight_id === selectedFlightId}
-              onClick={() => { onSelectFlight?.(item.flight.flight_id === selectedFlightId ? null : item.flight.flight_id); }}
-              hoveredPointIdx={hoveredPoint?.flightId === item.flight.flight_id ? hoveredPoint.pointIdx : null}
+              onClick={() => {
+                onSelectFlight?.(
+                  item.flight.flight_id === selectedFlightId ? null : item.flight.flight_id,
+                );
+              }}
+              hoveredPointIdx={
+                hoveredPoint?.flightId === item.flight.flight_id ? hoveredPoint.pointIdx : null
+              }
               onHoverPointIdx={(idx) => {
-                onHoverPoint?.(idx !== null ? { flightId: item.flight.flight_id, pointIdx: idx } : null);
+                onHoverPoint?.(
+                  idx !== null ? { flightId: item.flight.flight_id, pointIdx: idx } : null,
+                );
               }}
             />
-          )
+          ),
         )}
         {loading && (
-          <div style={{ padding: "12px 16px", color: "var(--fg-3)", fontSize: 12, textAlign: "center" }}>
+          <div
+            style={{
+              padding: "12px 16px",
+              color: "var(--fg-3)",
+              fontSize: 12,
+              textAlign: "center",
+            }}
+          >
             Loading…
           </div>
         )}
@@ -271,8 +320,16 @@ function FlightRow({
         cursor: "pointer",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontWeight: 600, color: "var(--fg-1)", fontFamily: "var(--font-mono, monospace)" }}>
+      <div
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}
+      >
+        <span
+          style={{
+            fontWeight: 600,
+            color: "var(--fg-1)",
+            fontFamily: "var(--font-mono, monospace)",
+          }}
+        >
           {label}
         </span>
         <span style={{ color: "var(--fg-3)", fontSize: 11, whiteSpace: "nowrap" }}>{sub}</span>
@@ -281,11 +338,7 @@ function FlightRow({
         {fmtTime(flight.start_ts)} → {fmtEndTime(flight.end_ts, flight.start_ts.slice(0, 10))}
       </div>
       {coords && (
-        <SparklineChart
-          coords={coords}
-          hoveredIdx={hoveredPointIdx}
-          onHoverIdx={onHoverPointIdx}
-        />
+        <SparklineChart coords={coords} hoveredIdx={hoveredPointIdx} onHoverIdx={onHoverPointIdx} />
       )}
     </div>
   );

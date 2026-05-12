@@ -9,7 +9,7 @@ import shutil
 from datetime import date, timedelta
 from pathlib import Path
 
-import asyncpg  # noqa: TC002
+import asyncpg
 import httpx
 
 from adsb_server.ingestion.batch import run_batch

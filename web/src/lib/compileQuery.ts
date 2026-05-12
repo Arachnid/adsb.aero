@@ -14,16 +14,16 @@ type ApiGeometry = NonNullable<SpatioTemporalValue["geometry"]>;
  * `bounds` is the current map viewport as [west, south, east, north] and is
  * required to resolve any "viewport" shape predicates.
  */
-export function compileGroup(
-  group: FilterGroup,
-  bounds: MapBounds | null,
-): Predicate | null {
+export function compileGroup(group: FilterGroup, bounds: MapBounds | null): Predicate | null {
   const children = group.items
     .map((item) => (item.kind === "group" ? compileGroup(item, bounds) : compilePred(item, bounds)))
     .filter((p): p is Predicate => p !== null);
 
   if (children.length === 0) return null;
-  if (children.length === 1) return children[0]!;
+  if (children.length === 1) {
+    const only = children[0];
+    if (only !== undefined) return only;
+  }
   return group.mode === "all" ? { and: children } : { or: children };
 }
 
@@ -34,7 +34,10 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
       if (pred.icaoTypes.length > 0) parts.push({ icao_type: pred.icaoTypes });
       if (pred.emitters.length > 0) parts.push({ emitter_category: pred.emitters });
       if (parts.length === 0) return null;
-      if (parts.length === 1) return parts[0]!;
+      if (parts.length === 1) {
+        const only = parts[0];
+        if (only !== undefined) return only;
+      }
       return { and: parts };
     }
 
@@ -78,7 +81,15 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
 }
 
 function buildSpatioTemporal(
-  pred: { shape: string; lat: number | null; lng: number | null; radiusNm: number; polygon: [number, number][] | null; timeFrom: string; timeTo: string },
+  pred: {
+    shape: string;
+    lat: number | null;
+    lng: number | null;
+    radiusNm: number;
+    polygon: [number, number][] | null;
+    timeFrom: string;
+    timeTo: string;
+  },
   bounds: MapBounds | null,
 ): SpatioTemporalValue | null {
   const geom = shapeToGeometry(pred, bounds);
@@ -93,7 +104,13 @@ function buildSpatioTemporal(
 }
 
 function shapeToGeometry(
-  pred: { shape: string; lat: number | null; lng: number | null; radiusNm: number; polygon: [number, number][] | null },
+  pred: {
+    shape: string;
+    lat: number | null;
+    lng: number | null;
+    radiusNm: number;
+    polygon: [number, number][] | null;
+  },
   bounds: MapBounds | null,
 ): ApiGeometry | null {
   switch (pred.shape) {
@@ -111,7 +128,18 @@ function shapeToGeometry(
     case "viewport": {
       if (!bounds) return null;
       const [w, s, e, n] = bounds;
-      return { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] };
+      return {
+        type: "Polygon",
+        coordinates: [
+          [
+            [w, s],
+            [e, s],
+            [e, n],
+            [w, n],
+            [w, s],
+          ],
+        ],
+      };
     }
 
     default: // "none"

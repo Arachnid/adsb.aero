@@ -96,7 +96,7 @@ class TestTrajectoryIntersects:
         assert "atStbox" not in sql
         assert "stbox" not in sql
 
-    def test_geometry_altitude_min_uses_atStbox_cte(self) -> None:
+    def test_geometry_altitude_min_uses_atstbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -116,7 +116,7 @@ class TestTrajectoryIntersects:
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
         assert 10000.0 in params
 
-    def test_geometry_altitude_max_uses_atStbox_cte(self) -> None:
+    def test_geometry_altitude_max_uses_atstbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -131,7 +131,7 @@ class TestTrajectoryIntersects:
         assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
         assert 40000.0 in params
 
-    def test_geometry_both_altitude_bounds_uses_atStbox_cte(self) -> None:
+    def test_geometry_both_altitude_bounds_uses_atstbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -252,7 +252,7 @@ class TestTrajectoryWithin:
         assert "ST_Within(trajectory(path)," in sql
         assert "atStbox" not in sql
 
-    def test_altitude_bounds_uses_atStbox_cte(self) -> None:
+    def test_altitude_bounds_uses_atstbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryWithin(
             trajectory_within=SpatioTemporalAltitudeValue(

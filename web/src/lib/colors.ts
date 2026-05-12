@@ -18,32 +18,36 @@ function lerpColor(a: RGBA, b: RGBA, t: number): RGBA {
 
 // Altitude gradient: blue (ground) → cyan → green → yellow → red (high cruise).
 const ALT_STOPS: [number, RGBA][] = [
-  [0,     [30,  120, 255, 220]],
-  [10000, [0,   200, 220, 220]],
-  [20000, [40,  190, 40,  220]],
-  [30000, [230, 190, 0,   220]],
-  [40000, [220, 50,  30,  220]],
+  [0, [30, 120, 255, 220]],
+  [10000, [0, 200, 220, 220]],
+  [20000, [40, 190, 40, 220]],
+  [30000, [230, 190, 0, 220]],
+  [40000, [220, 50, 30, 220]],
 ];
 
 export function altToColor(altFt: number): RGBA {
-  const clamped = Math.max(0, Math.min(altFt, ALT_STOPS.at(-1)![0]));
+  const last = ALT_STOPS.at(-1);
+  const clamped = Math.max(0, Math.min(altFt, last?.[0] ?? 40000));
   for (let i = 0; i < ALT_STOPS.length - 1; i++) {
-    const [lo, ca] = ALT_STOPS[i]!;
-    const [hi, cb] = ALT_STOPS[i + 1]!;
+    const entry = ALT_STOPS[i];
+    const next = ALT_STOPS[i + 1];
+    if (!entry || !next) continue;
+    const [lo, ca] = entry;
+    const [hi, cb] = next;
     if (clamped <= hi) return lerpColor(ca, cb, (clamped - lo) / (hi - lo));
   }
-  return ALT_STOPS.at(-1)![1];
+  return last?.[1] ?? [220, 50, 30, 220];
 }
 
 // Emitter category palette (ADS-B category codes).
 const CAT_COLORS: Partial<Record<string, RGBA>> = {
   A1: [120, 180, 255, 220], // light aircraft
-  A2: [60,  130, 240, 220], // small
-  A3: [30,  80,  200, 220], // large
-  A4: [140, 60,  220, 220], // high vortex large
-  A5: [220, 60,  60,  220], // heavy
-  A6: [240, 160, 20,  220], // high performance
-  A7: [50,  180, 80,  220], // rotorcraft
+  A2: [60, 130, 240, 220], // small
+  A3: [30, 80, 200, 220], // large
+  A4: [140, 60, 220, 220], // high vortex large
+  A5: [220, 60, 60, 220], // heavy
+  A6: [240, 160, 20, 220], // high performance
+  A7: [50, 180, 80, 220], // rotorcraft
 };
 const CAT_DEFAULT: RGBA = [160, 160, 160, 220];
 

@@ -38,8 +38,8 @@ class CompiledPredicate(str):
         cls,
         where: str,
         ctes: list[tuple[str, str]] | None = None,
-    ) -> "CompiledPredicate":
-        instance: "CompiledPredicate" = super().__new__(cls, where)
+    ) -> CompiledPredicate:
+        instance: CompiledPredicate = super().__new__(cls, where)
         instance.ctes = ctes if ctes is not None else []
         return instance
 
@@ -87,13 +87,17 @@ def _build_stbox_sql(
         ceiling = f"{alt_max_p}::float8" if alt_max_p is not None else "'99999'::float8"
         box3d = (
             f"ST_3DMakeBox("
-            f"ST_SetSRID(ST_MakePoint(ST_XMin({geom_alias}), ST_YMin({geom_alias}), {floor}), 4326), "
-            f"ST_SetSRID(ST_MakePoint(ST_XMax({geom_alias}), ST_YMax({geom_alias}), {ceiling}), 4326)"
+            f"ST_SetSRID(ST_MakePoint("
+            f"ST_XMin({geom_alias}), ST_YMin({geom_alias}), {floor}), 4326), "
+            f"ST_SetSRID(ST_MakePoint("
+            f"ST_XMax({geom_alias}), ST_YMax({geom_alias}), {ceiling}), 4326)"
             f")"
         )
         if has_time:
-            t_min = f"{time_from_p}::timestamptz" if time_from_p is not None else "'-infinity'::timestamptz"
-            t_max = f"{time_to_p}::timestamptz" if time_to_p is not None else "'infinity'::timestamptz"
+            inf = "'-infinity'::timestamptz"
+            sup = "'infinity'::timestamptz"
+            t_min = f"{time_from_p}::timestamptz" if time_from_p is not None else inf
+            t_max = f"{time_to_p}::timestamptz" if time_to_p is not None else sup
             return f"stbox({box3d}, span({t_min}, {t_max}, true, false))"
         return f"stbox({box3d})"
 

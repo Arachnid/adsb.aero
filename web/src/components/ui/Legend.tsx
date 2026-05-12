@@ -34,7 +34,8 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
             style={{
               height: 8,
               borderRadius: 2,
-              background: "linear-gradient(to right, #e26464, #f0a04d, #f0e066, #6ed3a3, #6ea8ff, #9b6ef0)",
+              background:
+                "linear-gradient(to right, #e26464, #f0a04d, #f0e066, #6ed3a3, #6ea8ff, #9b6ef0)",
               marginBottom: 4,
             }}
           />
@@ -71,12 +72,17 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
           <LegendRow swatch="#9b6ef0">18–24</LegendRow>
         </>
       )}
-
     </div>
   );
 }
 
-function LegendTitle({ children, style }: { children: string; style?: React.CSSProperties }): React.ReactElement {
+function LegendTitle({
+  children,
+  style,
+}: {
+  children: string;
+  style?: React.CSSProperties;
+}): React.ReactElement {
   return (
     <div
       style={{
