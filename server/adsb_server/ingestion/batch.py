@@ -298,18 +298,16 @@ async def run_batch(
                     continue
 
             staging_entry = staging.pop(icao24, None)
-            if staging_entry is not None:
-                merged = staging_entry.points + new_points
-                merged.sort(key=lambda p: p.ts)
-                deduped: list[RawPoint] = []
-                last_ts: float | None = None
-                for p in merged:
-                    if p.ts != last_ts:
-                        deduped.append(p)
-                        last_ts = p.ts
-                all_points = deduped
-            else:
-                all_points = sorted(new_points, key=lambda p: p.ts)
+            base = staging_entry.points if staging_entry is not None else []
+            merged = base + new_points
+            merged.sort(key=lambda p: p.ts)
+            deduped: list[RawPoint] = []
+            last_ts: float | None = None
+            for p in merged:
+                if p.ts != last_ts:
+                    deduped.append(p)
+                    last_ts = p.ts
+            all_points = deduped
 
             if not all_points:
                 continue
