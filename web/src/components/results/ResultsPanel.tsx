@@ -12,8 +12,34 @@ interface ResultsPanelProps {
   onSelectFlight?: (id: string | null) => void;
 }
 
-function fmt(iso: string): string {
-  return iso.replace("T", " ").replace(/\.\d+Z$/, "Z").replace(/Z$/, " UTC");
+function fmtTime(iso: string): string {
+  return iso.slice(11, 19) + " UTC";
+}
+
+function fmtEndTime(endIso: string, startDate: string): string {
+  const endDate = endIso.slice(0, 10);
+  const t = fmtTime(endIso);
+  if (endDate === startDate) return t;
+  const diff = Math.round((Date.parse(endDate) - Date.parse(startDate)) / 86400000);
+  return `${t} (+${diff}d)`;
+}
+
+type ListItem =
+  | { type: "divider"; date: string; key: string }
+  | { type: "flight"; flight: FlightDetail };
+
+function buildList(flights: FlightDetail[]): ListItem[] {
+  const items: ListItem[] = [];
+  let lastDate = "";
+  for (const f of flights) {
+    const date = f.start_ts.slice(0, 10);
+    if (date !== lastDate) {
+      items.push({ type: "divider", date, key: "div-" + date });
+      lastDate = date;
+    }
+    items.push({ type: "flight", flight: f });
+  }
+  return items;
 }
 
 export function ResultsPanel({ flights, loading, error, hasMore, onLoadMore, selectedFlightId, onSelectFlight }: ResultsPanelProps): React.ReactElement {
@@ -56,14 +82,34 @@ export function ResultsPanel({ flights, loading, error, hasMore, onLoadMore, sel
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto" }}>
-        {(flights ?? []).map((f) => (
-          <FlightRow
-            key={f.flight_id}
-            flight={f}
-            selected={f.flight_id === selectedFlightId}
-            onClick={() => { onSelectFlight?.(f.flight_id === selectedFlightId ? null : f.flight_id); }}
-          />
-        ))}
+        {buildList(flights ?? []).map((item) =>
+          item.type === "divider" ? (
+            <div
+              key={item.key}
+              style={{
+                position: "sticky",
+                top: 0,
+                padding: "4px 14px",
+                background: "var(--bg-2)",
+                borderBottom: "1px solid var(--line-1)",
+                fontSize: 11,
+                fontWeight: 600,
+                color: "var(--fg-3)",
+                letterSpacing: "0.04em",
+                zIndex: 1,
+              }}
+            >
+              {item.date}
+            </div>
+          ) : (
+            <FlightRow
+              key={item.flight.flight_id}
+              flight={item.flight}
+              selected={item.flight.flight_id === selectedFlightId}
+              onClick={() => { onSelectFlight?.(item.flight.flight_id === selectedFlightId ? null : item.flight.flight_id); }}
+            />
+          )
+        )}
         {loading && (
           <div style={{ padding: "12px 16px", color: "var(--fg-3)", fontSize: 12, textAlign: "center" }}>
             Loading…
@@ -119,7 +165,7 @@ function FlightRow({ flight, selected, onClick }: { flight: FlightDetail; select
         <span style={{ color: "var(--fg-3)", fontSize: 11, whiteSpace: "nowrap" }}>{sub}</span>
       </div>
       <div style={{ color: "var(--fg-3)", marginTop: 2 }}>
-        {fmt(flight.start_ts)} → {fmt(flight.end_ts)}
+        {fmtTime(flight.start_ts)} → {fmtEndTime(flight.end_ts, flight.start_ts.slice(0, 10))}
       </div>
     </div>
   );
