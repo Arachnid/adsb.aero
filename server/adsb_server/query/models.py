@@ -327,6 +327,12 @@ class SpatioTemporalAltitudeValue(BaseModel):
         description="Exclusive upper bound: the flight must have started by this time "
         "(start_ts < time_to).",
     )
+    squawk_codes: list[str] | None = Field(
+        default=None,
+        description="Transponder squawk codes to match (OR semantics). "
+        "Returns flights that broadcast any of these codes at any point during the flight.",
+        examples=[["7700", "7600"]],
+    )
 
     @model_validator(mode="after")
     def _require_at_least_one(self) -> SpatioTemporalAltitudeValue:
@@ -336,6 +342,7 @@ class SpatioTemporalAltitudeValue(BaseModel):
             and self.altitude_max_ft is None
             and self.time_from is None
             and self.time_to is None
+            and not self.squawk_codes
         ):
             raise ValueError("at least one constraint must be set")
         return self
@@ -351,12 +358,6 @@ class TrajectoryWithin(BaseModel):
     """Flights whose entire simplified path lies within the given geometry and/or were active during the given time window."""  # noqa: E501
 
     trajectory_within: SpatioTemporalAltitudeValue
-
-
-class TrajectoryDisjoint(BaseModel):
-    """Flights whose simplified path does not intersect the given geometry and/or were active during the given time window."""  # noqa: E501
-
-    trajectory_disjoint: SpatioTemporalAltitudeValue
 
 
 class StartsWithin(BaseModel):
@@ -452,7 +453,6 @@ class NotPredicate(BaseModel):
 Predicate = (
     TrajectoryIntersects
     | TrajectoryWithin
-    | TrajectoryDisjoint
     | StartsWithin
     | EndsWithin
     | IcaoType

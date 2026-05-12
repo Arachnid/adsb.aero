@@ -64,6 +64,7 @@ interface IntersectsPred extends BasePred {
   altMax: number | null;
   timeFrom: string;
   timeTo: string;
+  squawkCodes: string[];
 }
 interface AlwaysWithinPred extends BasePred {
   kind: "always_within";
@@ -77,6 +78,7 @@ interface AlwaysWithinPred extends BasePred {
   altMax: number | null;
   timeFrom: string;
   timeTo: string;
+  squawkCodes: string[];
 }
 interface CallsignPred extends BasePred {
   kind: "callsign";
@@ -138,6 +140,7 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
       altMax: null,
       timeFrom: "",
       timeTo: "",
+      squawkCodes: [],
     };
   }
   if (kind === "aircraft") {
@@ -393,7 +396,11 @@ export function isPredValid(pred: UIPredicate): boolean {
     case "region":
     case "always_within": {
       const hasConstraint =
-        pred.timeFrom !== "" || pred.timeTo !== "" || pred.altMin !== null || pred.altMax !== null;
+        pred.timeFrom !== "" ||
+        pred.timeTo !== "" ||
+        pred.altMin !== null ||
+        pred.altMax !== null ||
+        pred.squawkCodes.length > 0;
       if (pred.shape === "none") return hasConstraint;
       if (pred.shape === "viewport") return true;
       if (pred.shape === "circle") {
@@ -876,6 +883,8 @@ function RegionCard({
 }): React.ReactElement {
   const [altOpen, setAltOpen] = useState(pred.altMin !== null || pred.altMax !== null);
   const [timeOpen, setTimeOpen] = useState(pred.timeFrom !== "" || pred.timeTo !== "");
+  const [squawkOpen, setSquawkOpen] = useState(pred.squawkCodes.length > 0);
+  const [squawkInput, setSquawkInput] = useState("");
 
   const handleShapeChange = (s: Shape): void => {
     onChange({ ...pred, shape: s });
@@ -889,6 +898,19 @@ function RegionCard({
   const toggleTime = (checked: boolean): void => {
     if (!checked) onChange({ ...pred, timeFrom: "", timeTo: "" });
     setTimeOpen(checked);
+  };
+
+  const toggleSquawk = (checked: boolean): void => {
+    if (!checked) onChange({ ...pred, squawkCodes: [] });
+    setSquawkOpen(checked);
+  };
+
+  const addSquawkCode = (raw: string): void => {
+    const code = raw.trim();
+    if (code && !pred.squawkCodes.includes(code)) {
+      onChange({ ...pred, squawkCodes: [...pred.squawkCodes, code] });
+    }
+    setSquawkInput("");
   };
 
   return (
@@ -1044,6 +1066,58 @@ function RegionCard({
               minDate={dateRange?.first_date ?? undefined}
               maxDate={dateRange?.last_date ?? undefined}
             />
+          </div>
+        )}
+      </div>
+      <div className="optional-group" style={{ marginTop: 4 }}>
+        <label className="optional-group-label">
+          <input
+            type="checkbox"
+            checked={squawkOpen}
+            onChange={(e) => {
+              toggleSquawk(e.target.checked);
+            }}
+          />
+          Squawk filter
+        </label>
+        {squawkOpen && (
+          <div className="optional-group-body">
+            <div className="chip-group">
+              {pred.squawkCodes.map((code) => (
+                <span key={code} className="chip">
+                  {code}
+                  <button
+                    onClick={() => {
+                      onChange({
+                        ...pred,
+                        squawkCodes: pred.squawkCodes.filter((c) => c !== code),
+                      });
+                    }}
+                    aria-label="Remove"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <input
+                className="text-field mono"
+                placeholder="e.g. 7700"
+                value={squawkInput}
+                style={{ width: 80 }}
+                onChange={(e) => {
+                  setSquawkInput(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === ",") {
+                    e.preventDefault();
+                    addSquawkCode(squawkInput);
+                  }
+                }}
+                onBlur={() => {
+                  if (squawkInput.trim()) addSquawkCode(squawkInput);
+                }}
+              />
+            </div>
           </div>
         )}
       </div>

@@ -178,17 +178,40 @@ async def test_trajectory_within_uk(api_client: AsyncClient) -> None:
     assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
 
 
-async def test_trajectory_disjoint_uk(api_client: AsyncClient) -> None:
-    # Flight B (Paris→Rome) is entirely outside the UK.
+async def test_not_trajectory_intersects_as_disjoint(api_client: AsyncClient) -> None:
+    # Equivalent to the removed trajectory_disjoint: NOT intersects(UK) → Flight B only.
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={"trajectory_disjoint": {"geometry": UK_BBOX}}),
+        json=qbody(match={"not": {"trajectory_intersects": {"geometry": UK_BBOX}}}),
     )
     assert resp.status_code == 200
     data = resp.json()
     flight_ids = {f["flight_id"] for f in data["flights"]}
     assert "ddeeff:2025-04-01T06:00:00Z" in flight_ids
     assert "aabbcc:2025-04-01T10:00:00Z" not in flight_ids
+
+
+async def test_squawk_filter_matches_flight_with_code(api_client: AsyncClient) -> None:
+    # Flight A has squawk "1234"; Flight B has no squawk.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_intersects": {"squawk_codes": ["1234"]}}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+
+
+async def test_squawk_filter_no_match_returns_empty(api_client: AsyncClient) -> None:
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_intersects": {"squawk_codes": ["7700"]}}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["flights"] == []
 
 
 async def test_trajectory_intersects_altitude_band(api_client: AsyncClient) -> None:

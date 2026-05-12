@@ -75,34 +75,34 @@ describe("isPredValid", () => {
 
   describe("region", () => {
     it("none shape invalid without time", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "none", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" })).toBe(false);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "none", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] })).toBe(false);
     });
     it("none shape valid with time", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "none", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "2025-01-01T00:00", timeTo: "" })).toBe(true);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "none", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "2025-01-01T00:00", timeTo: "", squawkCodes: [] })).toBe(true);
     });
     it("viewport always valid", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "viewport", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" })).toBe(true);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "viewport", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] })).toBe(true);
     });
     it("circle invalid without coordinates", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" })).toBe(false);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] })).toBe(false);
     });
     it("circle valid with coordinates", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: 51.5, lng: -0.1, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" })).toBe(true);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: 51.5, lng: -0.1, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] })).toBe(true);
     });
     it("polygon invalid without polygon", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "polygon", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" })).toBe(false);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "polygon", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] })).toBe(false);
     });
     it("polygon valid with 3+ points", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "polygon", lat: null, lng: null, radiusNm: 25, polygon: POLYGON, altMin: null, altMax: null, timeFrom: "", timeTo: "" })).toBe(true);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "polygon", lat: null, lng: null, radiusNm: 25, polygon: POLYGON, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] })).toBe(true);
     });
     it("invalid when altMin > altMax", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: 51.5, lng: -0.1, radiusNm: 25, polygon: null, altMin: 40000, altMax: 10000, timeFrom: "", timeTo: "" })).toBe(false);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: 51.5, lng: -0.1, radiusNm: 25, polygon: null, altMin: 40000, altMax: 10000, timeFrom: "", timeTo: "", squawkCodes: [] })).toBe(false);
     });
     it("valid when altMin === altMax", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: 51.5, lng: -0.1, radiusNm: 25, polygon: null, altMin: 35000, altMax: 35000, timeFrom: "", timeTo: "" })).toBe(true);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: 51.5, lng: -0.1, radiusNm: 25, polygon: null, altMin: 35000, altMax: 35000, timeFrom: "", timeTo: "", squawkCodes: [] })).toBe(true);
     });
     it("valid when only altMin set", () => {
-      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: 51.5, lng: -0.1, radiusNm: 25, polygon: null, altMin: 35000, altMax: null, timeFrom: "", timeTo: "" })).toBe(true);
+      expect(isPredValid({ id: "1", kind: "region", regionName: "R", shape: "circle", lat: 51.5, lng: -0.1, radiusNm: 25, polygon: null, altMin: 35000, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] })).toBe(true);
     });
   });
 });
@@ -189,8 +189,8 @@ describe("computeLabels", () => {
 
   it("region uses 'Ever' base name", () => {
     const g = group(
-      { id: "r1", kind: "region", regionName: "R", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" },
-      { id: "r2", kind: "region", regionName: "R", shape: "polygon", lat: null, lng: null, radiusNm: 25, polygon: POLYGON, altMin: null, altMax: null, timeFrom: "", timeTo: "" },
+      { id: "r1", kind: "region", regionName: "R", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] },
+      { id: "r2", kind: "region", regionName: "R", shape: "polygon", lat: null, lng: null, radiusNm: 25, polygon: POLYGON, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] },
     );
     const labels = computeLabels(g);
     expect(labels.get("r1")).toBe("Ever 1");
@@ -199,7 +199,7 @@ describe("computeLabels", () => {
 
   it("always_within uses 'Always' base name", () => {
     const g = group(
-      { id: "a1", kind: "always_within", regionName: "R", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" },
+      { id: "a1", kind: "always_within", regionName: "R", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] },
     );
     const labels = computeLabels(g);
     expect(labels.get("a1")).toBe("Always 1");
@@ -207,7 +207,7 @@ describe("computeLabels", () => {
 
   it("numbering is independent per type", () => {
     const g = group(
-      { id: "r1", kind: "region", regionName: "R", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" },
+      { id: "r1", kind: "region", regionName: "R", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] },
       { id: "s1", kind: "starts_within", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, timeFrom: "", timeTo: "" },
     );
     const labels = computeLabels(g);
@@ -330,7 +330,7 @@ describe("anyViewportFilter", () => {
   });
 
   it("detects viewport in nested group", () => {
-    const inner = group({ id: "1", kind: "region", regionName: "R", shape: "viewport", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" });
+    const inner = group({ id: "1", kind: "region", regionName: "R", shape: "viewport", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] });
     expect(anyViewportFilter(group(inner))).toBe(true);
   });
 });

@@ -178,7 +178,7 @@ describe("region", () => {
     const g = group({
       id: "1", kind: "region", regionName: "R", shape: "circle",
       lat: 51.5, lng: -0.1, radiusNm: 20,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
+      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
     });
     expect(compileGroup(g, null)).toEqual({
       trajectory_intersects: {
@@ -191,7 +191,7 @@ describe("region", () => {
     const g = group({
       id: "1", kind: "region", regionName: "R", shape: "circle",
       lat: 51.5, lng: -0.1, radiusNm: 20,
-      polygon: null, altMin: 10000, altMax: 40000, timeFrom: "", timeTo: "",
+      polygon: null, altMin: 10000, altMax: 40000, timeFrom: "", timeTo: "", squawkCodes: [],
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
     expect(result.trajectory_intersects.altitude_min_ft).toBe(10000);
@@ -202,7 +202,7 @@ describe("region", () => {
     const g = group({
       id: "1", kind: "region", regionName: "R", shape: "circle",
       lat: 51.5, lng: -0.1, radiusNm: 20,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
+      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
     expect("altitude_min_ft" in result.trajectory_intersects).toBe(false);
@@ -213,7 +213,7 @@ describe("region", () => {
     const g = group({
       id: "1", kind: "region", regionName: "R", shape: "none",
       lat: null, lng: null, radiusNm: 25,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
+      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
     });
     expect(compileGroup(g, null)).toEqual({ trajectory_intersects: {} });
   });
@@ -223,11 +223,32 @@ describe("region", () => {
       id: "1", kind: "region", regionName: "R", shape: "none",
       lat: null, lng: null, radiusNm: 25,
       polygon: null, altMin: null, altMax: null,
-      timeFrom: "2025-03-15T06:00", timeTo: "2025-03-15T18:00",
+      timeFrom: "2025-03-15T06:00", timeTo: "2025-03-15T18:00", squawkCodes: [],
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
     expect(result.trajectory_intersects.time_from).toBe("2025-03-15T06:00:00Z");
     expect(result.trajectory_intersects.time_to).toBe("2025-03-15T18:00:00Z");
+  });
+
+  it("includes squawk_codes when non-empty", () => {
+    const g = group({
+      id: "1", kind: "region", regionName: "R", shape: "none",
+      lat: null, lng: null, radiusNm: 25,
+      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
+      squawkCodes: ["7700", "7600"],
+    });
+    const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
+    expect(result.trajectory_intersects.squawk_codes).toEqual(["7700", "7600"]);
+  });
+
+  it("omits squawk_codes when empty", () => {
+    const g = group({
+      id: "1", kind: "region", regionName: "R", shape: "none",
+      lat: null, lng: null, radiusNm: 25,
+      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+    });
+    const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
+    expect("squawk_codes" in result.trajectory_intersects).toBe(false);
   });
 });
 
@@ -238,7 +259,7 @@ describe("always_within", () => {
     const g = group({
       id: "1", kind: "always_within", regionName: "R", shape: "circle",
       lat: 51.5, lng: -0.1, radiusNm: 20,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
+      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
     });
     expect(compileGroup(g, null)).toEqual({
       trajectory_within: {
@@ -252,13 +273,24 @@ describe("always_within", () => {
       id: "1", kind: "always_within", regionName: "R", shape: "circle",
       lat: 51.5, lng: -0.1, radiusNm: 20,
       polygon: null, altMin: 5000, altMax: 30000,
-      timeFrom: "2025-04-01T00:00", timeTo: "2025-04-01T12:00",
+      timeFrom: "2025-04-01T00:00", timeTo: "2025-04-01T12:00", squawkCodes: [],
     });
     const result = compileGroup(g, null) as { trajectory_within: Record<string, unknown> };
     expect(result.trajectory_within.altitude_min_ft).toBe(5000);
     expect(result.trajectory_within.altitude_max_ft).toBe(30000);
     expect(result.trajectory_within.time_from).toBe("2025-04-01T00:00:00Z");
     expect(result.trajectory_within.time_to).toBe("2025-04-01T12:00:00Z");
+  });
+
+  it("includes squawk_codes when non-empty", () => {
+    const g = group({
+      id: "1", kind: "always_within", regionName: "R", shape: "none",
+      lat: null, lng: null, radiusNm: 25,
+      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
+      squawkCodes: ["1200"],
+    });
+    const result = compileGroup(g, null) as { trajectory_within: Record<string, unknown> };
+    expect(result.trajectory_within.squawk_codes).toEqual(["1200"]);
   });
 });
 

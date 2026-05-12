@@ -281,6 +281,7 @@ describe("QueryBuilderBody", () => {
       altMax: null,
       timeFrom: "",
       timeTo: "",
+      squawkCodes: [] as string[],
     };
 
     it("shows altitude checkbox even when shape=none", () => {
@@ -316,6 +317,19 @@ describe("QueryBuilderBody", () => {
       const group = makeGroup([{ ...basePred, shape: "viewport" as const }]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
       expect(screen.getByText("Ever")).toBeDefined();
+    });
+
+    it("shows Squawk filter checkbox", () => {
+      const group = makeGroup([basePred]);
+      render(<QueryBuilderBody {...bodyProps(group)} />);
+      expect(screen.getByText("Squawk filter")).toBeDefined();
+    });
+
+    it("shows squawk input after checking Squawk filter", () => {
+      const group = makeGroup([basePred]);
+      render(<QueryBuilderBody {...bodyProps(group)} />);
+      fireEvent.click(screen.getByLabelText("Squawk filter"));
+      expect(screen.getByPlaceholderText("e.g. 7700")).toBeDefined();
     });
   });
 

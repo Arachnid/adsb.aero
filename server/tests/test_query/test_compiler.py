@@ -23,7 +23,6 @@ from adsb_server.query.models import (
     SpatioTemporalAltitudeValue,
     SpatioTemporalValue,
     StartsWithin,
-    TrajectoryDisjoint,
     TrajectoryIntersects,
     TrajectoryWithin,
 )
@@ -298,42 +297,76 @@ class TestTrajectoryWithin:
 
 
 # ---------------------------------------------------------------------------
-# trajectory_disjoint — NOT eIntersects
+# squawk filter — squawk_seq EXISTS check
 # ---------------------------------------------------------------------------
 
 
-class TestTrajectoryDisjoint:
-    def test_geometry_only_uses_not_eintersects(self) -> None:
+class TestSquawkFilter:
+    def test_squawk_codes_only(self) -> None:
         params: list = []
-        pred = TrajectoryDisjoint(
-            trajectory_disjoint=SpatioTemporalAltitudeValue(geometry=_POLYGON)
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(squawk_codes=["7700"])
         )
         sql = compile_predicate(pred, params)
-        assert "NOT eIntersects(path," in sql
+        assert "squawk_seq IS NOT NULL" in sql
+        assert "EXISTS" in sql
+        assert "getValue(_inst)" in sql
+        assert ["7700"] in params
 
-    def test_altitude_bounds_use_trajectory_btree(self) -> None:
+    def test_squawk_codes_multiple(self) -> None:
         params: list = []
-        pred = TrajectoryDisjoint(
-            trajectory_disjoint=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, altitude_max_ft=18000
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                squawk_codes=["7700", "7600", "7500"]
             )
         )
         sql = compile_predicate(pred, params)
-        assert "NOT eIntersects(path," in sql
-        assert "ST_ZMin(trajectory(path)::box3d)" in sql
-        assert "stbox" not in sql  # no STBOX prism for disjoint
+        assert "squawk_seq IS NOT NULL" in sql
+        assert ["7700", "7600", "7500"] in params
 
-    def test_time_bounds_propagated(self) -> None:
+    def test_squawk_codes_with_geometry(self) -> None:
         params: list = []
-        pred = TrajectoryDisjoint(
-            trajectory_disjoint=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, time_from=_T1, time_to=_T2
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, squawk_codes=["7700"]
             )
         )
         sql = compile_predicate(pred, params)
-        assert "NOT eIntersects(path," in sql
-        assert "end_ts >=" in sql
-        assert "start_ts <" in sql
+        assert "eIntersects(path," in sql
+        assert "squawk_seq IS NOT NULL" in sql
+        assert ["7700"] in params
+
+    def test_squawk_codes_none_not_emitted(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON)
+        )
+        sql = compile_predicate(pred, params)
+        assert "squawk_seq" not in sql
+        assert "EXISTS" not in sql
+
+    def test_empty_squawk_codes_not_required(self) -> None:
+        # squawk_codes=[] should be treated the same as None (no constraint)
+        with pytest.raises(ValueError, match="at least one constraint"):
+            SpatioTemporalAltitudeValue(squawk_codes=[])
+
+    def test_squawk_codes_with_trajectory_within(self) -> None:
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(squawk_codes=["1200"])
+        )
+        sql = compile_predicate(pred, params)
+        assert "squawk_seq IS NOT NULL" in sql
+        assert ["1200"] in params
+
+    def test_squawk_codes_param_count(self) -> None:
+        # squawk_codes alone = 1 param (the list itself, asyncpg sends as text[])
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(squawk_codes=["7700"])
+        )
+        compile_predicate(pred, params)
+        assert len(params) == 1
 
 
 # ---------------------------------------------------------------------------

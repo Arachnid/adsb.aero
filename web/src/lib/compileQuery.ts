@@ -62,6 +62,7 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
         ...(pred.altMax !== null ? { altitude_max_ft: pred.altMax } : {}),
         ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
         ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
+        ...(pred.squawkCodes.length > 0 ? { squawk_codes: pred.squawkCodes } : {}),
       };
       return { trajectory_intersects: v };
     }
@@ -74,6 +75,7 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
         ...(pred.altMax !== null ? { altitude_max_ft: pred.altMax } : {}),
         ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
         ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
+        ...(pred.squawkCodes.length > 0 ? { squawk_codes: pred.squawkCodes } : {}),
       };
       return { trajectory_within: v };
     }

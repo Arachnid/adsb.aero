@@ -110,7 +110,6 @@ export interface components {
       and: (
         | components["schemas"]["TrajectoryIntersects"]
         | components["schemas"]["TrajectoryWithin"]
-        | components["schemas"]["TrajectoryDisjoint"]
         | components["schemas"]["StartsWithin"]
         | components["schemas"]["EndsWithin"]
         | components["schemas"]["IcaoType"]
@@ -548,7 +547,6 @@ export interface components {
       not:
         | components["schemas"]["TrajectoryIntersects"]
         | components["schemas"]["TrajectoryWithin"]
-        | components["schemas"]["TrajectoryDisjoint"]
         | components["schemas"]["StartsWithin"]
         | components["schemas"]["EndsWithin"]
         | components["schemas"]["IcaoType"]
@@ -571,7 +569,6 @@ export interface components {
       or: (
         | components["schemas"]["TrajectoryIntersects"]
         | components["schemas"]["TrajectoryWithin"]
-        | components["schemas"]["TrajectoryDisjoint"]
         | components["schemas"]["StartsWithin"]
         | components["schemas"]["EndsWithin"]
         | components["schemas"]["IcaoType"]
@@ -609,7 +606,6 @@ export interface components {
       match?:
         | components["schemas"]["TrajectoryIntersects"]
         | components["schemas"]["TrajectoryWithin"]
-        | components["schemas"]["TrajectoryDisjoint"]
         | components["schemas"]["StartsWithin"]
         | components["schemas"]["EndsWithin"]
         | components["schemas"]["IcaoType"]
@@ -697,6 +693,12 @@ export interface components {
        * @description Exclusive upper bound: the flight must have started by this time (start_ts < time_to).
        */
       time_to?: string | null;
+      /**
+       * Squawk Codes
+       * @description Transponder squawk codes to match (OR semantics). Returns flights that broadcast any of these codes at any point during the flight.
+       * @example ["7700", "7600"]
+       */
+      squawk_codes?: string[] | null;
     };
     /**
      * SpatioTemporalValue
@@ -739,13 +741,6 @@ export interface components {
     StartsWithin: {
       /** @description Spatial and/or temporal constraints on the departure point and time. */
       starts_within: components["schemas"]["SpatioTemporalValue"];
-    };
-    /**
-     * TrajectoryDisjoint
-     * @description Flights whose simplified path does not intersect the given geometry and/or were active during the given time window.
-     */
-    TrajectoryDisjoint: {
-      trajectory_disjoint: components["schemas"]["SpatioTemporalAltitudeValue"];
     };
     /**
      * TrajectoryIntersects

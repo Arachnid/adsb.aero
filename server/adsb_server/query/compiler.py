@@ -18,7 +18,6 @@ from adsb_server.query.models import (
     Predicate,
     SpatioTemporalAltitudeValue,
     StartsWithin,
-    TrajectoryDisjoint,
     TrajectoryIntersects,
     TrajectoryWithin,
 )
@@ -112,7 +111,7 @@ def _compile_spatial_path(
 ) -> CompiledPredicate:
     """Compile a trajectory predicate using MobilityDB operators.
 
-    spatial_fn is one of "ST_Intersects", "ST_Within", "ST_Disjoint".
+    spatial_fn is one of "ST_Intersects", "ST_Within".
 
     When geometry is combined with altitude or time constraints, a CTE is emitted
     that computes the geometry and its STBOX once.  The WHERE fragment references
@@ -127,10 +126,6 @@ def _compile_spatial_path(
       path && STBOX pre-filters via the GiST index; atStbox IS NOT NULL confirms
       the path has instants in the window; ST_Within(trajectory(path), geom)
       verifies the entire path lies inside the geometry.
-
-    trajectory_disjoint:
-      NOT eIntersects(path, geom).  No STBOX (negative lookup can't use the
-      index); altitude/time fall back to btree expression indexes.
     """
     parts: list[str] = []
     ctes: list[tuple[str, str]] = []
@@ -146,11 +141,7 @@ def _compile_spatial_path(
     if v.geometry is not None:
         geom_sql = _compile_geometry_sql(v.geometry, params)
 
-        if spatial_fn == "ST_Disjoint":
-            # Disjoint: no index-friendly STBOX for negative lookups; btree altitude below.
-            parts.append(f"NOT eIntersects(path, {geom_sql})")
-
-        elif has_time or has_alt:
+        if has_time or has_alt:
             # CTE name is unique because len(params) grows monotonically across the
             # entire compile call; each spatial predicate with a CTE adds at least one
             # param before reaching this point.
@@ -184,8 +175,8 @@ def _compile_spatial_path(
             else:  # ST_Intersects
                 parts.append(f"eIntersects(path, {geom_sql})")
 
-    # Altitude via btree expression indexes when there is no geometry, or for disjoint.
-    if v.geometry is None or spatial_fn == "ST_Disjoint":
+    # Altitude via btree expression indexes when there is no geometry.
+    if v.geometry is None:
         if alt_min_p is not None:
             parts.append(f"ST_ZMax(trajectory(path)::box3d) >= {alt_min_p}::float8")
         if alt_max_p is not None:
@@ -196,6 +187,17 @@ def _compile_spatial_path(
         parts.append(f"end_ts >= {time_from_p}")
     if time_to_p is not None:
         parts.append(f"start_ts < {time_to_p}")
+
+    # Squawk filter: the flight must have broadcast any of the given codes.
+    if v.squawk_codes:
+        codes_p = _p(params, v.squawk_codes)
+        parts.append(
+            f"squawk_seq IS NOT NULL"
+            f" AND EXISTS ("
+            f"SELECT 1 FROM unnest(instants(squawk_seq)) AS _inst"
+            f" WHERE getValue(_inst) = ANY({codes_p}::text[])"
+            f")"
+        )
 
     where = " AND ".join(parts) if parts else "TRUE"
     return CompiledPredicate(where, ctes=ctes)
@@ -226,9 +228,6 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> CompiledPredicate:
 
     if isinstance(pred, TrajectoryWithin):
         return _compile_spatial_path("ST_Within", pred.trajectory_within, params)
-
-    if isinstance(pred, TrajectoryDisjoint):
-        return _compile_spatial_path("ST_Disjoint", pred.trajectory_disjoint, params)
 
     if isinstance(pred, StartsWithin):
         v = pred.starts_within
