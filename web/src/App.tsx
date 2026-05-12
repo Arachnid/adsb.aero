@@ -228,6 +228,8 @@ export function App(): React.ReactElement {
         onDrawComplete={handleDrawComplete}
         geometries={mapGeometries}
         onMoveEnd={handleMoveEnd}
+        flights={queryFlights}
+        colorMode={colorMode}
       />
 
       {showRerunChip && (

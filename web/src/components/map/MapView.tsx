@@ -1,11 +1,25 @@
 import { GeoJSONSource, Map as MaplibreMap, MapMouseEvent, setWorkerUrl, StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
+import { MapboxOverlay } from "@deck.gl/mapbox";
+import { LineLayer, ScatterplotLayer } from "@deck.gl/layers";
+import type { FlightDetail } from "../../lib/api";
+import { altToColor, catToColor, todToColor, type RGBA } from "../../lib/colors";
 
 import workerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 setWorkerUrl(workerUrl);
 
 type Basemap = "dark" | "light" | "sat";
+type ColorMode = "alt" | "cat" | "tod";
+
+// Precomputed segment for LineLayer — one per adjacent vertex pair in a path.
+type Seg = {
+  from: [number, number];
+  to: [number, number];
+  altMid: number;
+  cat: string | null;
+  startTs: string;
+};
 
 const SAT_STYLE: StyleSpecification = {
   version: 8,
@@ -181,6 +195,8 @@ interface MapViewProps {
   onDrawComplete: (points: [number, number][]) => void;
   geometries: MapGeometry[];
   onMoveEnd?: (bounds: MapBounds) => void;
+  flights: FlightDetail[] | null;
+  colorMode: ColorMode;
 }
 
 export function MapView({
@@ -191,9 +207,12 @@ export function MapView({
   onDrawComplete,
   geometries,
   onMoveEnd,
+  flights,
+  colorMode,
 }: MapViewProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
+  const deckRef = useRef<MapboxOverlay | null>(null);
   const pickingRef = useRef(pickingActive);
   const drawingRef = useRef(drawingActive);
   const drawPointsRef = useRef<Coord[]>([]);
@@ -284,6 +303,9 @@ export function MapView({
     map.on("click", onClick);
     map.on("dblclick", onDblClick);
     map.on("moveend", onMoveEndHandler);
+    const overlay = new MapboxOverlay({ layers: [] });
+    map.addControl(overlay);
+    deckRef.current = overlay;
     mapRef.current = map;
 
     return (): void => {
@@ -292,9 +314,70 @@ export function MapView({
       map.off("moveend", onMoveEndHandler);
       map.remove();
       mapRef.current = null;
+      deckRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const overlay = deckRef.current;
+    if (!overlay) return;
+
+    if (!flights?.length) {
+      overlay.setProps({ layers: [] });
+      return;
+    }
+
+    const segments: Seg[] = flights.flatMap((f) => {
+      const coords = f.path?.coordinates;
+      if (!coords || coords.length < 2) return [];
+      return coords.slice(0, -1).map((c, i): Seg => {
+        const next = coords[i + 1]!;
+        return {
+          from: [c[0], c[1]],
+          to: [next[0], next[1]],
+          altMid: (c[2] + next[2]) / 2,
+          cat: f.emitter_category ?? null,
+          startTs: f.start_ts,
+        };
+      });
+    });
+
+    const getColor = (s: Seg): RGBA =>
+      colorMode === "alt" ? altToColor(s.altMid)
+      : colorMode === "cat" ? catToColor(s.cat)
+      : todToColor(s.startTs);
+
+    overlay.setProps({
+      layers: [
+        new LineLayer<Seg>({
+          id: "flights-lines",
+          data: segments,
+          getSourcePosition: (s) => s.from,
+          getTargetPosition: (s) => s.to,
+          getColor,
+          getWidth: 1.5,
+          widthUnits: "pixels",
+        }),
+        new ScatterplotLayer<FlightDetail>({
+          id: "flights-starts",
+          data: flights,
+          getPosition: (f) => [f.start_point.coordinates[0], f.start_point.coordinates[1]],
+          getFillColor: [60, 200, 80, 230],
+          getRadius: 3,
+          radiusUnits: "pixels",
+        }),
+        new ScatterplotLayer<FlightDetail>({
+          id: "flights-ends",
+          data: flights,
+          getPosition: (f) => [f.end_point.coordinates[0], f.end_point.coordinates[1]],
+          getFillColor: [220, 60, 60, 230],
+          getRadius: 3,
+          radiusUnits: "pixels",
+        }),
+      ],
+    });
+  }, [flights, colorMode]);
 
   useEffect(() => {
     const map = mapRef.current;
