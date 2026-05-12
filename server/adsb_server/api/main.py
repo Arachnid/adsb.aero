@@ -8,7 +8,7 @@ import re
 import textwrap
 from collections.abc import AsyncGenerator  # noqa: TC003
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
@@ -19,6 +19,7 @@ from adsb_server.config import get_settings
 from adsb_server.db.pool import create_pool
 from adsb_server.query.compiler import CompiledPredicate, compile_predicate
 from adsb_server.query.models import (
+    DataRange,
     FlightDetail,
     GeoJSONLineStringZ,
     GeoJSONPointZ,
@@ -211,6 +212,22 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
 async def health() -> dict[str, str]:
     """Return `{"status": "ok"}` when the server is running."""
     return {"status": "ok"}
+
+
+@router.get(
+    "/data-range",
+    response_model=DataRange,
+    summary="Data availability range",
+    description="Return the earliest and latest dates for which flight data exists in the archive.",
+)
+async def get_data_range(request: Request) -> DataRange:
+    pool = await get_pool(request)
+    row = await pool.fetchrow(
+        "SELECT MIN(start_ts)::date AS first_date, MAX(end_ts)::date AS last_date FROM flights"
+    )
+    first: date | None = row["first_date"] if row else None
+    last: date | None = row["last_date"] if row else None
+    return DataRange(first_date=first, last_date=last)
 
 
 @router.post(

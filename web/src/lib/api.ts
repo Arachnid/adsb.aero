@@ -3,6 +3,7 @@ import type { components } from "../types/api";
 export type FlightDetail = components["schemas"]["FlightDetail"];
 export type QueryRequest = components["schemas"]["QueryRequest"];
 export type QueryResponse = components["schemas"]["QueryResponse"];
+export type DataRange = components["schemas"]["DataRange"];
 
 export class ApiError extends Error {
   constructor(
@@ -54,4 +55,10 @@ export async function getFlight(
   });
   if (!res.ok) await parseError(res);
   return res.json() as Promise<FlightDetail>;
+}
+
+export async function getDataRange(): Promise<DataRange> {
+  const res = await fetch("/api/v1/data-range");
+  if (!res.ok) await parseError(res);
+  return res.json() as Promise<DataRange>;
 }

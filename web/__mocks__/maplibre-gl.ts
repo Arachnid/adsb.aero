@@ -20,6 +20,8 @@ const mockMap = {
   unproject: vi.fn(() => ({ lng: 0, lat: 0 })),
   fitBounds: vi.fn(),
   setCenter: vi.fn(),
+  addControl: vi.fn(),
+  setStyle: vi.fn(),
 };
 
 export const Map = vi.fn(() => mockMap);

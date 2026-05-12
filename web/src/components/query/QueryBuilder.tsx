@@ -1,5 +1,24 @@
 import { useEffect, useId, useRef, useState } from "react";
+import {
+  DatePicker,
+  DateInput,
+  DateSegment,
+  Group,
+  Button,
+  Popover,
+  Dialog,
+  Calendar,
+  CalendarGrid,
+  CalendarGridBody,
+  CalendarGridHeader,
+  CalendarHeaderCell,
+  CalendarCell,
+  Heading,
+} from "react-aria-components";
+import { parseDate, parseDateTime } from "@internationalized/date";
+import type { CalendarDate, CalendarDateTime } from "@internationalized/date";
 import { Braces, Circle, Pin, Plane, Play, Plus, Polygon, Text, Viewport, X } from "../Icons";
+import type { DataRange } from "../../lib/api";
 
 // ===== Types =====
 
@@ -183,6 +202,71 @@ function PredCard({
 
 function FieldLabel({ children }: { children: React.ReactNode }): React.ReactElement {
   return <div className="field-label">{children}</div>;
+}
+
+function DateTimeField({
+  label,
+  value,
+  onChange,
+  minDate,
+  maxDate,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  minDate: string | undefined;
+  maxDate: string | undefined;
+}): React.ReactElement {
+  let dateTimeValue: CalendarDateTime | null = null;
+  if (value.length >= 16) {
+    try { dateTimeValue = parseDateTime(value + ":00"); } catch { /* invalid */ }
+  }
+
+  const handleChange = (d: CalendarDateTime | null): void => {
+    onChange(d ? d.toString().slice(0, 16) : "");
+  };
+
+  const minValue = minDate !== undefined ? parseDate(minDate) : undefined;
+  const maxValue = maxDate !== undefined ? parseDate(maxDate) : undefined;
+
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <DatePicker<CalendarDateTime>
+        granularity="minute"
+        value={dateTimeValue}
+        onChange={handleChange}
+        {...(minValue !== undefined ? { minValue } : {})}
+        {...(maxValue !== undefined ? { maxValue } : {})}
+      >
+        <Group className="datetime-date-group">
+          <DateInput className="datetime-date-input">
+            {(segment) => <DateSegment segment={segment} />}
+          </DateInput>
+          <Button className="datetime-cal-btn">▾</Button>
+        </Group>
+        <Popover className="datetime-popover">
+          <Dialog>
+            <Calendar>
+              <header className="datetime-cal-header">
+                <Button slot="previous">◀</Button>
+                <Heading />
+                <Button slot="next">▶</Button>
+              </header>
+              <CalendarGrid>
+                <CalendarGridHeader>
+                  {(day) => <CalendarHeaderCell>{day}</CalendarHeaderCell>}
+                </CalendarGridHeader>
+                <CalendarGridBody>
+                  {(date) => <CalendarCell date={date} />}
+                </CalendarGridBody>
+              </CalendarGrid>
+            </Calendar>
+          </Dialog>
+        </Popover>
+      </DatePicker>
+    </div>
+  );
 }
 
 type Shape = "none" | "circle" | "polygon" | "viewport";
@@ -399,6 +483,7 @@ function PointRadiusCard({
   onArmDraw,
   isDrawing,
   name,
+  dateRange,
 }: {
   pred: StartsWithinPred | EndsWithinPred;
   onChange: (p: StartsWithinPred | EndsWithinPred) => void;
@@ -408,6 +493,7 @@ function PointRadiusCard({
   onArmDraw: () => void;
   isDrawing: boolean;
   name: string;
+  dateRange: DataRange | null;
 }): React.ReactElement {
   return (
     <PredCard icon={<Pin />} name={name} onRemove={onRemove} invalid={!isPredValid(pred)}>
@@ -469,21 +555,21 @@ function PointRadiusCard({
         </div>
       ) : null}
       <div style={{ marginTop: 4 }}>
-        <FieldLabel>From</FieldLabel>
-        <input
-          className="text-field mono"
-          type="datetime-local"
+        <DateTimeField
+          label="From"
           value={pred.timeFrom}
-          onChange={(e) => { onChange({ ...pred, timeFrom: e.target.value }); }}
+          onChange={(v) => { onChange({ ...pred, timeFrom: v }); }}
+          minDate={dateRange?.first_date ?? undefined}
+          maxDate={dateRange?.last_date ?? undefined}
         />
       </div>
       <div>
-        <FieldLabel>To</FieldLabel>
-        <input
-          className="text-field mono"
-          type="datetime-local"
+        <DateTimeField
+          label="To"
           value={pred.timeTo}
-          onChange={(e) => { onChange({ ...pred, timeTo: e.target.value }); }}
+          onChange={(v) => { onChange({ ...pred, timeTo: v }); }}
+          minDate={dateRange?.first_date ?? undefined}
+          maxDate={dateRange?.last_date ?? undefined}
         />
       </div>
     </PredCard>
@@ -499,6 +585,7 @@ function IntersectsCard({
   onArmPicker,
   isPicking,
   name,
+  dateRange,
 }: {
   pred: IntersectsPred;
   onChange: (p: IntersectsPred) => void;
@@ -508,6 +595,7 @@ function IntersectsCard({
   onArmPicker: () => void;
   isPicking: boolean;
   name: string;
+  dateRange: DataRange | null;
 }): React.ReactElement {
   return (
     <PredCard icon={<Polygon />} name={name} onRemove={onRemove} invalid={!isPredValid(pred)}>
@@ -597,21 +685,21 @@ function IntersectsCard({
         </div>
       )}
       <div style={{ marginTop: 4 }}>
-        <FieldLabel>From</FieldLabel>
-        <input
-          className="text-field mono"
-          type="datetime-local"
+        <DateTimeField
+          label="From"
           value={pred.timeFrom}
-          onChange={(e) => { onChange({ ...pred, timeFrom: e.target.value }); }}
+          onChange={(v) => { onChange({ ...pred, timeFrom: v }); }}
+          minDate={dateRange?.first_date ?? undefined}
+          maxDate={dateRange?.last_date ?? undefined}
         />
       </div>
       <div>
-        <FieldLabel>To</FieldLabel>
-        <input
-          className="text-field mono"
-          type="datetime-local"
+        <DateTimeField
+          label="To"
           value={pred.timeTo}
-          onChange={(e) => { onChange({ ...pred, timeTo: e.target.value }); }}
+          onChange={(v) => { onChange({ ...pred, timeTo: v }); }}
+          minDate={dateRange?.first_date ?? undefined}
+          maxDate={dateRange?.last_date ?? undefined}
         />
       </div>
     </PredCard>
@@ -700,6 +788,7 @@ function PredicateRenderer({
   onArmDraw,
   isDrawing,
   name,
+  dateRange,
 }: {
   pred: UIPredicate;
   onChange: (p: UIPredicate) => void;
@@ -709,6 +798,7 @@ function PredicateRenderer({
   onArmDraw: () => void;
   isDrawing: boolean;
   name: string;
+  dateRange: DataRange | null;
 }): React.ReactElement | null {
   switch (pred.kind) {
     case "aircraft":
@@ -725,6 +815,7 @@ function PredicateRenderer({
           onArmDraw={onArmDraw}
           isDrawing={isDrawing}
           name={name}
+          dateRange={dateRange}
         />
       );
     case "region":
@@ -738,6 +829,7 @@ function PredicateRenderer({
           onArmPicker={onArmPicker}
           isPicking={isPicking}
           name={name}
+          dateRange={dateRange}
         />
       );
     case "callsign":
@@ -758,6 +850,7 @@ interface GroupBlockProps {
   regionCount: number;
   labels: Map<string, string>;
   noAddFilter?: boolean;
+  dateRange: DataRange | null;
 }
 
 function GroupBlock({
@@ -771,6 +864,7 @@ function GroupBlock({
   regionCount,
   labels,
   noAddFilter,
+  dateRange,
 }: GroupBlockProps): React.ReactElement {
   const updateChild = (childId: string, next: QueryItem): void => {
     onChange({ ...group, items: group.items.map((item) => (item.id === childId ? next : item)) });
@@ -845,6 +939,7 @@ function GroupBlock({
               drawingId={drawingId}
               regionCount={regionCount}
               labels={labels}
+              dateRange={dateRange}
             />
           ) : (
             <PredicateRenderer
@@ -857,6 +952,7 @@ function GroupBlock({
               onArmDraw={() => { onArmDraw(item.id); }}
               isDrawing={drawingId === item.id}
               name={labels.get(item.id) ?? (item.kind === "aircraft" ? "Aircraft" : "Callsign")}
+              dateRange={dateRange}
             />
           )
         )}
@@ -875,6 +971,7 @@ export interface QueryBuilderBodyProps {
   pickingId: string | null;
   onArmDraw: (id: string) => void;
   drawingId: string | null;
+  dateRange: DataRange | null;
 }
 
 export function computeLabels(group: FilterGroup): Map<string, string> {
@@ -915,6 +1012,7 @@ export function QueryBuilderBody({
   pickingId,
   onArmDraw,
   drawingId,
+  dateRange,
 }: QueryBuilderBodyProps): React.ReactElement {
   return (
     <GroupBlock
@@ -927,6 +1025,7 @@ export function QueryBuilderBody({
       regionCount={countRegions(rootGroup)}
       labels={computeLabels(rootGroup)}
       noAddFilter
+      dateRange={dateRange}
     />
   );
 }

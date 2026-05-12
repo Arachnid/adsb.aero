@@ -24,6 +24,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/data-range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Data availability range
+         * @description Return the earliest and latest dates for which flight data exists in the archive.
+         */
+        get: operations["get_data_range_api_v1_data_range_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/query": {
         parameters: {
             query?: never;
@@ -123,8 +143,26 @@ export interface components {
             radius: number;
         };
         /**
+         * DataRange
+         * @description Date range of available flight data.
+         */
+        DataRange: {
+            /**
+             * First Date
+             * @description Earliest date for which flight data is available, or null if the table is empty.
+             * @example 2025-01-01
+             */
+            first_date: string | null;
+            /**
+             * Last Date
+             * @description Most recent date for which flight data is available, or null if the table is empty.
+             * @example 2026-05-01
+             */
+            last_date: string | null;
+        };
+        /**
          * Duration
-         * @description Flights whose duration (`end_ts − start_ts`) falls within the given bounds.
+         * @description Flights whose duration (`end_ts - start_ts`) falls within the given bounds.
          */
         Duration: {
             duration: components["schemas"]["DurationValue"];
@@ -280,7 +318,7 @@ export interface components {
             timestamps?: number[] | null;
             /**
              * Path Tracks
-             * @description Magnetic track (heading) in degrees 0–359 for each vertex in `path.coordinates`. Same length as `coordinates`. Omitted when `include_path` is false.
+             * @description Magnetic track (heading) in degrees 0-359 for each vertex in `path.coordinates`. Same length as `coordinates`. Omitted when `include_path` is false.
              * @example [
              *       90,
              *       315,
@@ -555,7 +593,7 @@ export interface components {
         };
         /**
          * SpatioTemporalAltitudeValue
-         * @description Spatial, altitude, and/or temporal filter — used by trajectory_intersects / within / disjoint.
+         * @description Spatial, altitude, and/or temporal filter for trajectory predicates.
          *
          *     At least one constraint must be provided.
          */
@@ -678,6 +716,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    get_data_range_api_v1_data_range_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataRange"];
                 };
             };
         };

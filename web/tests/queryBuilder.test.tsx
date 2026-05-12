@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+
+vi.mock("react-aria-components");
 import {
   QueryBuilderFooter,
   QueryBuilderAddMenu,
@@ -28,6 +30,7 @@ function bodyProps(group: FilterGroup, onChange = vi.fn()) {
     pickingId: null,
     onArmDraw: noop as (id: string) => void,
     drawingId: null,
+    dateRange: null,
   };
 }
 
@@ -232,15 +235,11 @@ describe("QueryBuilderBody", () => {
       expect(screen.getByText("Uses current map viewport")).toBeDefined();
     });
 
-    it("updates timeFrom via From input", () => {
+    it("updates timeFrom via From datetime input", () => {
       const onChange = vi.fn();
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
-      const inputs = screen.getAllByDisplayValue("");
-      const datetimeInputs = inputs.filter(
-        (el) => (el as HTMLInputElement).type === "datetime-local"
-      );
-      fireEvent.change(datetimeInputs[0], { target: { value: "2024-01-01T00:00" } });
+      fireEvent.change(screen.getAllByPlaceholderText("YYYY-MM-DDTHH:MM")[0], { target: { value: "2024-01-01T00:00" } });
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
       const pred = updated.items[0];
       expect(pred.kind === "starts_within" && pred.timeFrom).toBe("2024-01-01T00:00");

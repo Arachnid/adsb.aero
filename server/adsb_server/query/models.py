@@ -144,6 +144,19 @@ class QueryResponse(BaseModel):
     )
 
 
+class DataRange(BaseModel):
+    """Date range of available flight data."""
+
+    first_date: date | None = Field(
+        description="Earliest date for which flight data is available, or null if the table is empty.",
+        examples=["2025-01-01"],
+    )
+    last_date: date | None = Field(
+        description="Most recent date for which flight data is available, or null if the table is empty.",
+        examples=["2026-05-01"],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Cursor encoding / decoding
 # ---------------------------------------------------------------------------

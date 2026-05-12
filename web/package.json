@@ -21,9 +21,11 @@
     "@deck.gl/layers": "^9.1",
     "@deck.gl/mapbox": "^9.3.2",
     "@deck.gl/react": "^9.1",
+    "@internationalized/date": "^3.12.1",
     "@tanstack/react-query": "^5.62",
     "maplibre-gl": "^5.0",
     "react": "^19.0",
+    "react-aria-components": "^1.17.0",
     "react-dom": "^19.0"
   },
   "pnpm": {

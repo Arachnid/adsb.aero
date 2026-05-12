@@ -56,3 +56,11 @@ async def test_get_flight_not_found(api_client: AsyncClient) -> None:
 async def test_get_flight_malformed_id(api_client: AsyncClient) -> None:
     resp = await api_client.get("/api/v1/flights/notavalidid")
     assert resp.status_code == 422
+
+
+async def test_get_data_range(api_client: AsyncClient) -> None:
+    resp = await api_client.get("/api/v1/data-range")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["first_date"] == "2025-04-01"
+    assert data["last_date"] == "2025-04-01"

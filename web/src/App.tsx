@@ -6,6 +6,7 @@ import { Sidebar } from "./components/layout/Sidebar";
 import {
   countPredicates,
   FilterGroup,
+  isGroupValid,
   makeId,
   QueryBuilderAddMenu,
   QueryBuilderBody,
@@ -17,7 +18,7 @@ import { ResultsPanel } from "./components/results/ResultsPanel";
 import { Legend } from "./components/ui/Legend";
 import { ChevronLeft, ChevronRight } from "./components/Icons";
 import { compileGroup } from "./lib/compileQuery";
-import { postQuery, FlightDetail, ApiError } from "./lib/api";
+import { postQuery, getDataRange, FlightDetail, ApiError, DataRange } from "./lib/api";
 
 type Basemap = "dark" | "light" | "sat";
 type ColorMode = "alt" | "cat" | "tod";
@@ -96,6 +97,8 @@ export function App(): React.ReactElement {
   const [lastRunVersion, setLastRunVersion] = useState<number | null>(null);
   const [lastRunGroup, setLastRunGroup] = useState<FilterGroup | null>(null);
 
+  const [dataRange, setDataRange] = useState<DataRange | null>(null);
+
   const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
   const [queryFlights, setQueryFlights] = useState<FlightDetail[] | null>(null);
   const [queryCursor, setQueryCursor] = useState<string | null>(null);
@@ -106,6 +109,10 @@ export function App(): React.ReactElement {
   useEffect(() => {
     document.documentElement.dataset["theme"] = theme;
   }, [theme]);
+
+  useEffect(() => {
+    getDataRange().then(setDataRange).catch(() => { /* non-critical */ });
+  }, []);
 
   const handleTheme = (): void => {
     setTheme((t) => {
@@ -216,7 +223,7 @@ export function App(): React.ReactElement {
   const predCount = countPredicates(rootGroup);
   const queryStructureChanged = lastRunGroup !== null && rootGroup !== lastRunGroup;
   const viewportChanged = hasViewport && lastRunVersion !== null && viewportVersion !== lastRunVersion;
-  const showRerunChip = predCount > 0 && (queryStructureChanged || viewportChanged);
+  const showRerunChip = predCount > 0 && isGroupValid(rootGroup) && (queryStructureChanged || viewportChanged);
   const filterMeta = predCount === 0
     ? "no filters"
     : String(predCount) + " filter" + (predCount !== 1 ? "s" : "");
@@ -293,6 +300,7 @@ export function App(): React.ReactElement {
           pickingId={pickingId}
           onArmDraw={armDraw}
           drawingId={drawingId}
+          dateRange={dataRange}
         />
       </Sidebar>
       <ToggleButton side="left" collapsed={leftCollapsed} onToggle={() => { setLeftCollapsed((v) => !v); }} />

@@ -29,6 +29,25 @@
         }
       }
     },
+    "/api/v1/data-range": {
+      "get": {
+        "summary": "Data availability range",
+        "description": "Return the earliest and latest dates for which flight data exists in the archive.",
+        "operationId": "get_data_range_api_v1_data_range_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataRange"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/query": {
       "post": {
         "summary": "Query flights",
@@ -334,6 +353,49 @@
         "title": "CircleGeometry",
         "description": "Circle geometry extension (not part of the GeoJSON standard)."
       },
+      "DataRange": {
+        "properties": {
+          "first_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Date",
+            "description": "Earliest date for which flight data is available, or null if the table is empty.",
+            "examples": [
+              "2025-01-01"
+            ]
+          },
+          "last_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Date",
+            "description": "Most recent date for which flight data is available, or null if the table is empty.",
+            "examples": [
+              "2026-05-01"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "first_date",
+          "last_date"
+        ],
+        "title": "DataRange",
+        "description": "Date range of available flight data."
+      },
       "Duration": {
         "properties": {
           "duration": {
@@ -345,7 +407,7 @@
           "duration"
         ],
         "title": "Duration",
-        "description": "Flights whose duration (`end_ts \u2212 start_ts`) falls within the given bounds."
+        "description": "Flights whose duration (`end_ts - start_ts`) falls within the given bounds."
       },
       "DurationValue": {
         "properties": {
@@ -592,7 +654,7 @@
               }
             ],
             "title": "Path Tracks",
-            "description": "Magnetic track (heading) in degrees 0\u2013359 for each vertex in `path.coordinates`. Same length as `coordinates`. Omitted when `include_path` is false.",
+            "description": "Magnetic track (heading) in degrees 0-359 for each vertex in `path.coordinates`. Same length as `coordinates`. Omitted when `include_path` is false.",
             "examples": [
               [
                 90,
@@ -1329,7 +1391,7 @@
         },
         "type": "object",
         "title": "SpatioTemporalAltitudeValue",
-        "description": "Spatial, altitude, and/or temporal filter \u2014 used by trajectory_intersects / within / disjoint.\n\nAt least one constraint must be provided."
+        "description": "Spatial, altitude, and/or temporal filter for trajectory predicates.\n\nAt least one constraint must be provided."
       },
       "SpatioTemporalValue": {
         "properties": {
