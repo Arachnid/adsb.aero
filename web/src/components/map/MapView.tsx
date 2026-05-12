@@ -10,13 +10,13 @@ import { useEffect, useRef, useState } from "react";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { LineLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { FlightDetail } from "../../lib/api";
-import { altToColor, catToColor, todToColor, type RGBA } from "../../lib/colors";
+import { altToColor, catToColor, squawkToColor, todToColor, type RGBA } from "../../lib/colors";
 
 import workerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 setWorkerUrl(workerUrl);
 
 type Basemap = "dark" | "light" | "sat";
-type ColorMode = "alt" | "cat" | "tod";
+type ColorMode = "alt" | "cat" | "tod" | "sqk";
 
 // Precomputed segment for LineLayer — one per adjacent vertex pair in a path.
 type Seg = {
@@ -25,10 +25,22 @@ type Seg = {
   altMid: number;
   altFt: number;
   cat: string | null;
+  squawk: string | null;
   startTs: string;
   flightId: string;
   pointIdx: number;
 };
+
+// Return the active squawk code at unix timestamp ts, or null if none applies.
+// runs must be sorted ascending by timestamp (as returned by the API).
+function squawkAt(runs: [number, string][], ts: number): string | null {
+  let code: string | null = null;
+  for (const [runTs, c] of runs) {
+    if (runTs <= ts) code = c;
+    else break;
+  }
+  return code;
+}
 
 const SAT_STYLE: StyleSpecification = {
   version: 8,
@@ -471,15 +483,18 @@ export function MapView({
     const segments: Seg[] = flights.flatMap((f) => {
       const coords = f.path?.coordinates;
       if (!coords || coords.length < 2) return [];
+      const runs = f.squawk_runs ?? [];
       return coords.slice(0, -1).map((c, i): Seg => {
         // slice(0,-1) guarantees i+1 < coords.length
         const next = coords[i + 1] ?? c;
+        const ts = f.timestamps?.[i] ?? 0;
         return {
           from: [c[0], c[1]],
           to: [next[0], next[1]],
           altMid: (c[2] + next[2]) / 2,
           altFt: c[2],
           cat: f.emitter_category ?? null,
+          squawk: squawkAt(runs, ts),
           startTs: f.start_ts,
           flightId: f.flight_id,
           pointIdx: i,
@@ -495,7 +510,9 @@ export function MapView({
           ? altToColor(s.altMid)
           : colorMode === "cat"
             ? catToColor(s.cat)
-            : todToColor(s.startTs);
+            : colorMode === "sqk"
+              ? squawkToColor(s.squawk)
+              : todToColor(s.startTs);
       if (hasSel && s.flightId !== selectedFlightId) {
         return [base[0], base[1], base[2], Math.round(base[3] * 0.2)];
       }

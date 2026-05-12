@@ -1,7 +1,7 @@
 import { Layers, Moon, Satellite, Sun } from "../Icons";
 
 type Basemap = "dark" | "light" | "sat";
-type ColorMode = "alt" | "cat" | "tod";
+type ColorMode = "alt" | "cat" | "tod" | "sqk";
 type Theme = "dark" | "light";
 
 interface TopbarProps {
@@ -109,6 +109,9 @@ export function Topbar({
         </SegBtn>
         <SegBtn active={colorMode === "tod"} onClick={() => { onColorMode("tod"); }}>
           Time
+        </SegBtn>
+        <SegBtn active={colorMode === "sqk"} onClick={() => { onColorMode("sqk"); }}>
+          Squawk
         </SegBtn>
       </Seg>
 

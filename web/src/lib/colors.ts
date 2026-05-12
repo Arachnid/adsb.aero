@@ -42,6 +42,23 @@ export function altToColor(altFt: number): RGBA {
   return lerpColor(a, b, frac);
 }
 
+// Squawk palette — emergency codes use warm/saturated colours; conspicuity
+// codes use cool colours; ATC-assigned discrete codes fall back to gray.
+const SQUAWK_COLORS: Record<string, RGBA> = {
+  "7500": [255,  40, 200, 220], // hijack — magenta
+  "7700": [220,  40,  40, 220], // emergency — red
+  "7600": [240, 150,   0, 220], // radio failure — amber
+  "7000": [  0, 210, 220, 220], // VFR conspicuity EU — cyan
+  "1200": [  0, 210, 220, 220], // VFR conspicuity NA — same cyan
+  "2000": [ 60, 200, 100, 220], // IFR conspicuity — soft green
+};
+const SQUAWK_DEFAULT: RGBA = [160, 160, 160, 220];
+
+export function squawkToColor(code: string | null | undefined): RGBA {
+  if (!code) return SQUAWK_DEFAULT;
+  return SQUAWK_COLORS[code] ?? SQUAWK_DEFAULT;
+}
+
 // Emitter category palette (ADS-B category codes).
 const CAT_COLORS: Partial<Record<string, RGBA>> = {
   A1: [120, 180, 255, 220], // light aircraft

@@ -1,4 +1,4 @@
-type ColorMode = "alt" | "cat" | "tod";
+type ColorMode = "alt" | "cat" | "tod" | "sqk";
 
 interface LegendProps {
   colorMode: ColorMode;
@@ -25,7 +25,7 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
       }}
     >
       <LegendTitle>
-        {colorMode === "alt" ? "Altitude (ft)" : colorMode === "cat" ? "Category" : "Time of day"}
+        {colorMode === "alt" ? "Altitude (ft)" : colorMode === "cat" ? "Category" : colorMode === "sqk" ? "Squawk" : "Time of day"}
       </LegendTitle>
 
       {colorMode === "alt" && (
@@ -69,6 +69,17 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
           <LegendRow swatch="#4d8df0">A3 Large</LegendRow>
           <LegendRow swatch="#9b6ef0">A5 Heavy</LegendRow>
           <LegendRow swatch="#f0a04d">A7 Rotor</LegendRow>
+        </>
+      )}
+
+      {colorMode === "sqk" && (
+        <>
+          <LegendRow swatch="#ff28c8">7500 Hijack</LegendRow>
+          <LegendRow swatch="#dc2828">7700 Emergency</LegendRow>
+          <LegendRow swatch="#f09600">7600 Radio fail</LegendRow>
+          <LegendRow swatch="#00d2dc">7000 / 1200 VFR</LegendRow>
+          <LegendRow swatch="#3cc864">2000 IFR</LegendRow>
+          <LegendRow swatch="#a0a0a0">Discrete / none</LegendRow>
         </>
       )}
 

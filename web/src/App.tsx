@@ -25,7 +25,7 @@ import { compileGroup } from "./lib/compileQuery";
 import { postQuery, getDataRange, FlightDetail, ApiError, DataRange } from "./lib/api";
 
 type Basemap = "dark" | "light" | "sat";
-type ColorMode = "alt" | "cat" | "tod";
+type ColorMode = "alt" | "cat" | "tod" | "sqk";
 type Theme = "dark" | "light";
 
 const SIDEBAR_W = 340;
