@@ -1171,6 +1171,7 @@ const FILTER_OPTS: { kind: AddKind; icon: React.ReactNode; label: string; desc: 
 
 function AddFilterMenu({ onAdd }: { onAdd: (kind: AddKind) => void }): React.ReactElement {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(true);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1184,18 +1185,24 @@ function AddFilterMenu({ onAdd }: { onAdd: (kind: AddKind) => void }): React.Rea
     };
   }, [open]);
 
+  const toggle = (): void => {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      setDropUp(rect.top > window.innerHeight - rect.bottom);
+    }
+    setOpen((v) => !v);
+  };
+
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      <button
-        className="add-filter"
-        onClick={() => {
-          setOpen((v) => !v);
-        }}
-      >
+      <button className="add-filter" onClick={toggle}>
         <Plus size={14} /> Add filter
       </button>
       {open && (
-        <div className="add-filter-menu">
+        <div
+          className="add-filter-menu"
+          style={dropUp ? undefined : { bottom: "auto", top: "100%", marginBottom: 0, marginTop: 6 }}
+        >
           {FILTER_OPTS.map((o) => (
             <button
               key={o.kind}
