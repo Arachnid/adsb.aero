@@ -231,6 +231,37 @@ describe("region", () => {
   });
 });
 
+// ---- always_within (trajectory_within) -------------------------------------
+
+describe("always_within", () => {
+  it("circle geometry compiles to trajectory_within", () => {
+    const g = group({
+      id: "1", kind: "always_within", regionName: "R", shape: "circle",
+      lat: 51.5, lng: -0.1, radiusNm: 20,
+      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
+    });
+    expect(compileGroup(g, null)).toEqual({
+      trajectory_within: {
+        geometry: { type: "Circle", coordinates: [-0.1, 51.5], radius: 20 * 1852 },
+      },
+    });
+  });
+
+  it("includes altitude and time fields", () => {
+    const g = group({
+      id: "1", kind: "always_within", regionName: "R", shape: "circle",
+      lat: 51.5, lng: -0.1, radiusNm: 20,
+      polygon: null, altMin: 5000, altMax: 30000,
+      timeFrom: "2025-04-01T00:00", timeTo: "2025-04-01T12:00",
+    });
+    const result = compileGroup(g, null) as { trajectory_within: Record<string, unknown> };
+    expect(result.trajectory_within.altitude_min_ft).toBe(5000);
+    expect(result.trajectory_within.altitude_max_ft).toBe(30000);
+    expect(result.trajectory_within.time_from).toBe("2025-04-01T00:00:00Z");
+    expect(result.trajectory_within.time_to).toBe("2025-04-01T12:00:00Z");
+  });
+});
+
 // ---- boolean combinators ---------------------------------------------------
 
 describe("group combinators", () => {

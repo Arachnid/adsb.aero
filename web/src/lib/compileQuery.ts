@@ -62,6 +62,18 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
       };
       return { trajectory_intersects: v };
     }
+
+    case "always_within": {
+      const geom = shapeToGeometry(pred, bounds);
+      const v: SpatioTemporalAltitudeValue = {
+        ...(geom ? { geometry: geom } : {}),
+        ...(pred.altMin !== null ? { altitude_min_ft: pred.altMin } : {}),
+        ...(pred.altMax !== null ? { altitude_max_ft: pred.altMax } : {}),
+        ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
+        ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
+      };
+      return { trajectory_within: v };
+    }
   }
 }
 

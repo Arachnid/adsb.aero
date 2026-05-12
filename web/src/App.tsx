@@ -150,7 +150,7 @@ export function App(): React.ReactElement {
     const id = pickingId;
     setRootGroup((g) =>
       updatePredInGroup(g, id, (p: UIPredicate) => {
-        if (p.kind === "starts_within" || p.kind === "ends_within" || p.kind === "region") {
+        if (p.kind === "starts_within" || p.kind === "ends_within" || p.kind === "region" || p.kind === "always_within") {
           return { ...p, lat, lng };
         }
         return p;
@@ -164,7 +164,7 @@ export function App(): React.ReactElement {
     const id = drawingId;
     setRootGroup((g) =>
       updatePredInGroup(g, id, (p: UIPredicate) => {
-        if (p.kind === "starts_within" || p.kind === "ends_within" || p.kind === "region") {
+        if (p.kind === "starts_within" || p.kind === "ends_within" || p.kind === "region" || p.kind === "always_within") {
           return { ...p, polygon: points };
         }
         return p;

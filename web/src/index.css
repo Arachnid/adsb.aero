@@ -220,6 +220,34 @@ input.mono {
   flex: 1;
 }
 
+/* ===== Optional group (checkbox-gated section) ===== */
+.optional-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.optional-group-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--fg-2);
+  cursor: pointer;
+  user-select: none;
+}
+.optional-group-label input[type="checkbox"] {
+  width: 12px;
+  height: 12px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.optional-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 17px;
+}
+
 /* ===== Chip multi-select ===== */
 .chip-group {
   display: flex;

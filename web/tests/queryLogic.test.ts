@@ -187,14 +187,22 @@ describe("computeLabels", () => {
     expect(labels.get("c1")).toBe("Starts Within 1");
   });
 
-  it("region uses 'Within' base name", () => {
+  it("region uses 'Ever' base name", () => {
     const g = group(
       { id: "r1", kind: "region", regionName: "R", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" },
       { id: "r2", kind: "region", regionName: "R", shape: "polygon", lat: null, lng: null, radiusNm: 25, polygon: POLYGON, altMin: null, altMax: null, timeFrom: "", timeTo: "" },
     );
     const labels = computeLabels(g);
-    expect(labels.get("r1")).toBe("Within 1");
-    expect(labels.get("r2")).toBe("Within 2");
+    expect(labels.get("r1")).toBe("Ever 1");
+    expect(labels.get("r2")).toBe("Ever 2");
+  });
+
+  it("always_within uses 'Always' base name", () => {
+    const g = group(
+      { id: "a1", kind: "always_within", regionName: "R", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "" },
+    );
+    const labels = computeLabels(g);
+    expect(labels.get("a1")).toBe("Always 1");
   });
 
   it("numbering is independent per type", () => {
@@ -203,7 +211,7 @@ describe("computeLabels", () => {
       { id: "s1", kind: "starts_within", shape: "circle", lat: 51, lng: 0, radiusNm: 10, polygon: null, timeFrom: "", timeTo: "" },
     );
     const labels = computeLabels(g);
-    expect(labels.get("r1")).toBe("Within 1");
+    expect(labels.get("r1")).toBe("Ever 1");
     expect(labels.get("s1")).toBe("Starts Within 1");
   });
 

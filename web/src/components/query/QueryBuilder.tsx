@@ -65,6 +65,19 @@ interface IntersectsPred extends BasePred {
   timeFrom: string;
   timeTo: string;
 }
+interface AlwaysWithinPred extends BasePred {
+  kind: "always_within";
+  regionName: string;
+  shape: "none" | "circle" | "polygon" | "viewport";
+  polygon: [number, number][] | null;
+  lat: number | null;
+  lng: number | null;
+  radiusNm: number;
+  altMin: number | null;
+  altMax: number | null;
+  timeFrom: string;
+  timeTo: string;
+}
 interface CallsignPred extends BasePred {
   kind: "callsign";
   pattern: string;
@@ -75,6 +88,7 @@ export type UIPredicate =
   | StartsWithinPred
   | EndsWithinPred
   | IntersectsPred
+  | AlwaysWithinPred
   | CallsignPred;
 
 export interface FilterGroup {
@@ -98,12 +112,12 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
     return { id, kind: "group", mode: kind === "group_all" ? "all" : "any", items: [] };
   }
   if (kind === "starts_within" || kind === "ends_within") {
-    return { id, kind, shape: "none", lat: null, lng: null, radiusNm: 2, polygon: null, timeFrom: "", timeTo: "" };
+    return { id, kind, shape: "circle", lat: null, lng: null, radiusNm: 25, polygon: null, timeFrom: "", timeTo: "" };
   }
-  if (kind === "region") {
+  if (kind === "region" || kind === "always_within") {
     return {
-      id, kind, regionName: "Region " + String(regionCount + 1), shape: "none",
-      polygon: null, lat: null, lng: null, radiusNm: 2,
+      id, kind, regionName: "Region " + String(regionCount + 1), shape: "polygon",
+      polygon: null, lat: null, lng: null, radiusNm: 25,
       altMin: null, altMax: null, timeFrom: "", timeTo: "",
     };
   }
@@ -329,9 +343,10 @@ export function isPredValid(pred: UIPredicate): boolean {
       if (pred.shape === "circle") return pred.lat !== null && pred.lng !== null;
       return pred.polygon !== null && pred.polygon.length >= 3;
     }
-    case "region": {
-      const hasTime = pred.timeFrom !== "" || pred.timeTo !== "";
-      if (pred.shape === "none") return hasTime;
+    case "region":
+    case "always_within": {
+      const hasConstraint = pred.timeFrom !== "" || pred.timeTo !== "" || pred.altMin !== null || pred.altMax !== null;
+      if (pred.shape === "none") return hasConstraint;
       if (pred.shape === "viewport") return true;
       if (pred.shape === "circle") {
         if (pred.lat === null) return false;
@@ -682,7 +697,6 @@ function PointRadiusCard({
       />
       {pred.shape === "circle" ? (
         <>
-          <MiniMapPreview lat={pred.lat} lng={pred.lng} radiusNm={pred.radiusNm} />
           <div className="slider-row">
             <label>Radius</label>
             <input
@@ -755,7 +769,9 @@ function PointRadiusCard({
   );
 }
 
-function IntersectsCard({
+type RegionLikePred = IntersectsPred | AlwaysWithinPred;
+
+function RegionCard({
   pred,
   onChange,
   onRemove,
@@ -766,8 +782,8 @@ function IntersectsCard({
   name,
   dateRange,
 }: {
-  pred: IntersectsPred;
-  onChange: (p: IntersectsPred) => void;
+  pred: RegionLikePred;
+  onChange: (p: RegionLikePred) => void;
   onRemove: () => void;
   onArmDraw: () => void;
   isDrawing: boolean;
@@ -776,12 +792,26 @@ function IntersectsCard({
   name: string;
   dateRange: DataRange | null;
 }): React.ReactElement {
+  const [altOpen, setAltOpen] = useState(pred.altMin !== null || pred.altMax !== null);
+  const [timeOpen, setTimeOpen] = useState(pred.timeFrom !== "" || pred.timeTo !== "");
+
+  const handleShapeChange = (s: Shape): void => {
+    onChange({ ...pred, shape: s });
+  };
+
+  const toggleAlt = (checked: boolean): void => {
+    if (!checked) onChange({ ...pred, altMin: null, altMax: null });
+    setAltOpen(checked);
+  };
+
+  const toggleTime = (checked: boolean): void => {
+    if (!checked) onChange({ ...pred, timeFrom: "", timeTo: "" });
+    setTimeOpen(checked);
+  };
+
   return (
     <PredCard icon={<Polygon />} name={name} onRemove={onRemove} invalid={!isPredValid(pred)}>
-      <ShapeToggle
-        shape={pred.shape}
-        onChange={(s) => { onChange({ ...pred, shape: s }); }}
-      />
+      <ShapeToggle shape={pred.shape} onChange={handleShapeChange} />
       {pred.shape === "polygon" ? (
         <>
           {pred.polygon ? (
@@ -801,7 +831,6 @@ function IntersectsCard({
         </>
       ) : pred.shape === "circle" ? (
         <>
-          <MiniMapPreview lat={pred.lat} lng={pred.lng} radiusNm={pred.radiusNm} />
           <div className="slider-row">
             <label>Radius</label>
             <input
@@ -835,51 +864,71 @@ function IntersectsCard({
           Uses current map viewport
         </div>
       ) : null}
-      {pred.shape !== "none" && (
-        <div className="pred-row" style={{ marginTop: 4 }}>
-          <div>
-            <FieldLabel>Alt min (ft)</FieldLabel>
-            <input
-              className="text-field mono"
-              type="number"
-              placeholder="0"
-              value={pred.altMin ?? ""}
-              onChange={(e) => {
-                onChange({ ...pred, altMin: e.target.value === "" ? null : +e.target.value });
-              }}
-            />
+      <div className="optional-group" style={{ marginTop: 4 }}>
+        <label className="optional-group-label">
+          <input
+            type="checkbox"
+            checked={altOpen}
+            onChange={(e) => { toggleAlt(e.target.checked); }}
+          />
+          Altitude range
+        </label>
+        {altOpen && (
+          <div className="pred-row optional-group-body">
+            <div>
+              <FieldLabel>Alt min (ft)</FieldLabel>
+              <input
+                className="text-field mono"
+                type="number"
+                placeholder="0"
+                value={pred.altMin ?? ""}
+                onChange={(e) => {
+                  onChange({ ...pred, altMin: e.target.value === "" ? null : +e.target.value });
+                }}
+              />
+            </div>
+            <div>
+              <FieldLabel>Alt max (ft)</FieldLabel>
+              <input
+                className="text-field mono"
+                type="number"
+                placeholder="∞"
+                value={pred.altMax ?? ""}
+                onChange={(e) => {
+                  onChange({ ...pred, altMax: e.target.value === "" ? null : +e.target.value });
+                }}
+              />
+            </div>
           </div>
-          <div>
-            <FieldLabel>Alt max (ft)</FieldLabel>
-            <input
-              className="text-field mono"
-              type="number"
-              placeholder="∞"
-              value={pred.altMax ?? ""}
-              onChange={(e) => {
-                onChange({ ...pred, altMax: e.target.value === "" ? null : +e.target.value });
-              }}
-            />
-          </div>
-        </div>
-      )}
-      <div style={{ marginTop: 4 }}>
-        <DateTimeField
-          label="From"
-          value={pred.timeFrom}
-          onChange={(v) => { onChange({ ...pred, timeFrom: v }); }}
-          minDate={dateRange?.first_date ?? undefined}
-          maxDate={dateRange?.last_date ?? undefined}
-        />
+        )}
       </div>
-      <div>
-        <DateTimeField
-          label="To"
-          value={pred.timeTo}
-          onChange={(v) => { onChange({ ...pred, timeTo: v }); }}
-          minDate={dateRange?.first_date ?? undefined}
-          maxDate={dateRange?.last_date ?? undefined}
-        />
+      <div className="optional-group" style={{ marginTop: 4 }}>
+        <label className="optional-group-label">
+          <input
+            type="checkbox"
+            checked={timeOpen}
+            onChange={(e) => { toggleTime(e.target.checked); }}
+          />
+          Time range
+        </label>
+        {timeOpen && (
+          <div className="optional-group-body">
+            <DateTimeField
+              label="From"
+              value={pred.timeFrom}
+              onChange={(v) => { onChange({ ...pred, timeFrom: v }); }}
+              minDate={dateRange?.first_date ?? undefined}
+              maxDate={dateRange?.last_date ?? undefined}
+            />
+            <DateTimeField
+              label="To"
+              value={pred.timeTo}
+              onChange={(v) => { onChange({ ...pred, timeTo: v }); }}
+              minDate={dateRange?.first_date ?? undefined}
+              maxDate={dateRange?.last_date ?? undefined}
+            />
+          </div>
+        )}
       </div>
     </PredCard>
   );
@@ -915,7 +964,8 @@ const FILTER_OPTS: { kind: AddKind; icon: React.ReactNode; label: string; desc: 
   { kind: "aircraft", icon: <Plane />, label: "Aircraft", desc: "Type, emitter category" },
   { kind: "starts_within", icon: <Pin />, label: "Starts within", desc: "Area, time, or both" },
   { kind: "ends_within", icon: <Pin />, label: "Ends within", desc: "Area, time, or both" },
-  { kind: "region", icon: <Polygon />, label: "Within", desc: "Area, altitude, time" },
+  { kind: "region", icon: <Polygon />, label: "Ever", desc: "Ever intersects area/altitude/time" },
+  { kind: "always_within", icon: <Polygon />, label: "Always", desc: "Always within area/altitude/time" },
   { kind: "callsign", icon: <Text />, label: "Callsign", desc: "Regex match" },
   { kind: "group_all", icon: <Braces />, label: "All of", desc: "All sub-filters must match" },
   { kind: "group_any", icon: <Braces />, label: "Any of", desc: "At least one sub-filter matches" },
@@ -998,8 +1048,9 @@ function PredicateRenderer({
         />
       );
     case "region":
+    case "always_within":
       return (
-        <IntersectsCard
+        <RegionCard
           pred={pred}
           onChange={(p) => { onChange(p); }}
           onRemove={onRemove}
@@ -1052,7 +1103,7 @@ function GroupBlock({
     onChange({ ...group, items: group.items.filter((item) => item.id !== childId) });
   };
   const addChild = (kind: AddKind): void => {
-    const rc = group.items.filter((i) => i.kind === "region").length + regionCount;
+    const rc = group.items.filter((i) => i.kind === "region" || i.kind === "always_within").length + regionCount;
     onChange({ ...group, items: [...group.items, makeItem(kind, rc)] });
   };
 
@@ -1159,11 +1210,12 @@ export function computeLabels(group: FilterGroup): Map<string, string> {
   function walk(g: FilterGroup): void {
     for (const item of g.items) {
       if (item.kind === "group") { walk(item); continue; }
-      if (item.kind !== "starts_within" && item.kind !== "ends_within" && item.kind !== "region") continue;
+      if (item.kind !== "starts_within" && item.kind !== "ends_within" && item.kind !== "region" && item.kind !== "always_within") continue;
       const base =
         item.kind === "starts_within" ? "Starts Within" :
         item.kind === "ends_within" ? "Ends Within" :
-        "Within";
+        item.kind === "region" ? "Ever" :
+        "Always";
       if (item.shape === "none" || item.shape === "viewport") {
         result.set(item.id, base);
       } else {
@@ -1179,7 +1231,7 @@ export function computeLabels(group: FilterGroup): Map<string, string> {
 function countRegions(g: FilterGroup): number {
   return g.items.reduce<number>((n, item) => {
     if (item.kind === "group") return n + countRegions(item);
-    if (item.kind === "region") return n + 1;
+    if (item.kind === "region" || item.kind === "always_within") return n + 1;
     return n;
   }, 0);
 }

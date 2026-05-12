@@ -93,7 +93,8 @@ describe("QueryBuilderAddMenu", () => {
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     expect(screen.getByText("Aircraft")).toBeDefined();
     expect(screen.getByText("Callsign")).toBeDefined();
-    expect(screen.getByText("Within")).toBeDefined();
+    expect(screen.getByText("Ever")).toBeDefined();
+    expect(screen.getByText("Always")).toBeDefined();
   });
 
   it("appends a callsign predicate when Callsign is clicked", () => {
@@ -282,43 +283,39 @@ describe("QueryBuilderBody", () => {
       timeTo: "",
     };
 
-    it("hides altitude inputs when shape=none", () => {
+    it("shows altitude checkbox even when shape=none", () => {
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
+      expect(screen.getByText("Altitude range")).toBeDefined();
       expect(screen.queryByText("Alt min (ft)")).toBeNull();
-      expect(screen.queryByText("Alt max (ft)")).toBeNull();
     });
 
-    it("shows altitude inputs when shape=circle", () => {
-      const group = makeGroup([{ ...basePred, shape: "circle" as const }]);
+    it("shows altitude inputs after checking the altitude checkbox", () => {
+      const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
+      fireEvent.click(screen.getByLabelText("Altitude range"));
       expect(screen.getByText("Alt min (ft)")).toBeDefined();
       expect(screen.getByText("Alt max (ft)")).toBeDefined();
     });
 
-    it("shows altitude inputs when shape=polygon", () => {
-      const group = makeGroup([{ ...basePred, shape: "polygon" as const }]);
-      render(<QueryBuilderBody {...bodyProps(group)} />);
-      expect(screen.getByText("Alt min (ft)")).toBeDefined();
-    });
-
-    it("shows altitude inputs when shape=viewport", () => {
-      const group = makeGroup([{ ...basePred, shape: "viewport" as const }]);
-      render(<QueryBuilderBody {...bodyProps(group)} />);
-      expect(screen.getByText("Alt min (ft)")).toBeDefined();
-    });
-
-    it("always shows From and To time inputs", () => {
+    it("shows Time range checkbox", () => {
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
-      expect(screen.getByText("From")).toBeDefined();
-      expect(screen.getByText("To")).toBeDefined();
+      expect(screen.getByText("Time range")).toBeDefined();
     });
 
-    it("shows Within label for region pred", () => {
+    it("shows From and To inputs after checking the time range checkbox", () => {
+      const group = makeGroup([basePred]);
+      render(<QueryBuilderBody {...bodyProps(group)} />);
+      fireEvent.click(screen.getByLabelText("Time range"));
+      expect(screen.getAllByText("From").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("To").length).toBeGreaterThan(0);
+    });
+
+    it("shows Ever label for region pred", () => {
       const group = makeGroup([{ ...basePred, shape: "viewport" as const }]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
-      expect(screen.getByText("Within")).toBeDefined();
+      expect(screen.getByText("Ever")).toBeDefined();
     });
   });
 

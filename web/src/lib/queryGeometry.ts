@@ -20,13 +20,14 @@ export function collectGeometries(group: FilterGroup): MapGeometry[] {
     for (const item of g.items) {
       if (item.kind === "group") {
         walk(item);
-      } else if (item.kind === "starts_within" || item.kind === "ends_within" || item.kind === "region") {
+      } else if (item.kind === "starts_within" || item.kind === "ends_within" || item.kind === "region" || item.kind === "always_within") {
         if (item.shape === "viewport" || item.shape === "none") continue;
         const color = PALETTE[result.length % PALETTE.length] ?? PALETTE[0] ?? "#3b82f6";
         const baseName =
           item.kind === "starts_within" ? "Starts Within" :
           item.kind === "ends_within" ? "Ends Within" :
-          "Within";
+          item.kind === "region" ? "Ever" :
+          "Always";
         counts[baseName] = (counts[baseName] ?? 0) + 1;
         const label = `${baseName} ${counts[baseName]}`;
         result.push({
@@ -49,7 +50,7 @@ export function collectGeometries(group: FilterGroup): MapGeometry[] {
 export function anyViewportFilter(group: FilterGroup): boolean {
   return group.items.some((item) => {
     if (item.kind === "group") return anyViewportFilter(item);
-    if (item.kind === "starts_within" || item.kind === "ends_within" || item.kind === "region") {
+    if (item.kind === "starts_within" || item.kind === "ends_within" || item.kind === "region" || item.kind === "always_within") {
       return item.shape === "viewport";
     }
     return false;
