@@ -24,12 +24,26 @@ type Seg = {
   to: [number, number];
   altMid: number;
   altFt: number;
+  altFtTo: number;
   cat: string | null;
   squawk: string | null;
   startTs: string;
   flightId: string;
   pointIdx: number;
 };
+
+// Project cursor (lng/lat) onto segment [from, to], return t in [0, 1].
+function projectOntoSegment(
+  from: [number, number],
+  to: [number, number],
+  cursor: [number, number],
+): number {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return 0;
+  return Math.max(0, Math.min(1, ((cursor[0] - from[0]) * dx + (cursor[1] - from[1]) * dy) / lenSq));
+}
 
 // Return the active squawk code at unix timestamp ts, or null if none applies.
 // runs must be sorted ascending by timestamp (as returned by the API).
@@ -329,9 +343,12 @@ export function MapView({
   // Persists the main flight layers so the hover-dot effect can append without rebuilding them.
   const mainLayersRef = useRef<(LineLayer<Seg> | ScatterplotLayer<FlightDetail>)[]>([]);
 
-  const [mapTooltip, setMapTooltip] = useState<{ x: number; y: number; altFt: number } | null>(
-    null,
-  );
+  const [mapTooltip, setMapTooltip] = useState<{
+    x: number;
+    y: number;
+    altFt: number;
+    dotPos: [number, number];
+  } | null>(null);
   const setMapTooltipRef = useRef(setMapTooltip);
   setMapTooltipRef.current = setMapTooltip;
 
@@ -433,6 +450,7 @@ export function MapView({
     map.on("dblclick", onDblClick);
     map.on("moveend", onMoveEndHandler);
     const overlay = new MapboxOverlay({
+      pickingRadius: 8,
       onClick: (info): void => {
         if (pickingRef.current || drawingRef.current) return;
         if (info.picked) {
@@ -447,8 +465,15 @@ export function MapView({
         canvas.style.cursor = info.picked ? "pointer" : "";
         if (info.picked) {
           const seg = info.object as Seg;
+          const cursor = info.coordinate as [number, number] | undefined;
+          const t = cursor ? projectOntoSegment(seg.from, seg.to, cursor) : 0;
+          const altFt = Math.round(seg.altFt + t * (seg.altFtTo - seg.altFt));
+          const dotPos: [number, number] = [
+            seg.from[0] + t * (seg.to[0] - seg.from[0]),
+            seg.from[1] + t * (seg.to[1] - seg.from[1]),
+          ];
           onHoverPointRef.current({ flightId: seg.flightId, pointIdx: seg.pointIdx });
-          setMapTooltipRef.current({ x: info.x, y: info.y, altFt: Math.round(seg.altFt) });
+          setMapTooltipRef.current({ x: info.x, y: info.y, altFt, dotPos });
         } else {
           onHoverPointRef.current(null);
           setMapTooltipRef.current(null);
@@ -493,6 +518,7 @@ export function MapView({
           to: [next[0], next[1]],
           altMid: (c[2] + next[2]) / 2,
           altFt: c[2],
+          altFtTo: next[2],
           cat: f.emitter_category ?? null,
           squawk: squawkAt(runs, ts),
           startTs: f.start_ts,
@@ -567,7 +593,11 @@ export function MapView({
     if (!overlay) return;
 
     const dot: [number, number][] = [];
-    if (hoveredPoint && flights) {
+    if (mapTooltip) {
+      // Map hover: use interpolated position along the segment.
+      dot.push(mapTooltip.dotPos);
+    } else if (hoveredPoint && flights) {
+      // Sparkline hover: snap to the nearest recorded vertex.
       const hf = flights.find((f) => f.flight_id === hoveredPoint.flightId);
       const coord = hf?.path?.coordinates[hoveredPoint.pointIdx];
       if (coord) dot.push([coord[0], coord[1]]);
@@ -590,7 +620,7 @@ export function MapView({
         }),
       ],
     });
-  }, [hoveredPoint, flights]);
+  }, [mapTooltip, hoveredPoint, flights]);
 
   useEffect(() => {
     const map = mapRef.current;
