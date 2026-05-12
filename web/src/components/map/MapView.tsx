@@ -1,6 +1,6 @@
 import { GeoJSONSource, Map as MaplibreMap, MapMouseEvent, setWorkerUrl, StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { LineLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { FlightDetail } from "../../lib/api";
@@ -17,9 +17,11 @@ type Seg = {
   from: [number, number];
   to: [number, number];
   altMid: number;
+  altFt: number;
   cat: string | null;
   startTs: string;
   flightId: string;
+  pointIdx: number;
 };
 
 const SAT_STYLE: StyleSpecification = {
@@ -188,6 +190,8 @@ function initOverlays(map: MaplibreMap, geoms: MapGeometry[]): void {
 // [west, south, east, north] in degrees
 export type MapBounds = [number, number, number, number];
 
+export type HoveredPoint = { flightId: string; pointIdx: number };
+
 interface MapViewProps {
   basemap: Basemap;
   pickingActive: boolean;
@@ -200,6 +204,8 @@ interface MapViewProps {
   colorMode: ColorMode;
   selectedFlightId: string | null;
   onSelectFlight: (id: string | null) => void;
+  hoveredPoint: HoveredPoint | null;
+  onHoverPoint: (p: HoveredPoint | null) => void;
 }
 
 export function MapView({
@@ -214,6 +220,8 @@ export function MapView({
   colorMode,
   selectedFlightId,
   onSelectFlight,
+  hoveredPoint,
+  onHoverPoint,
 }: MapViewProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
@@ -226,6 +234,13 @@ export function MapView({
   const geometriesRef = useRef(geometries);
   const onMoveEndRef = useRef(onMoveEnd);
   const onSelectRef = useRef(onSelectFlight);
+  const onHoverPointRef = useRef(onHoverPoint);
+  // Persists the main flight layers so the hover-dot effect can append without rebuilding them.
+  const mainLayersRef = useRef<(LineLayer<Seg> | ScatterplotLayer<FlightDetail>)[]>([]);
+
+  const [mapTooltip, setMapTooltip] = useState<{ x: number; y: number; altFt: number } | null>(null);
+  const setMapTooltipRef = useRef(setMapTooltip);
+  setMapTooltipRef.current = setMapTooltip;
 
   pickingRef.current = pickingActive;
   drawingRef.current = drawingActive;
@@ -234,6 +249,7 @@ export function MapView({
   geometriesRef.current = geometries;
   onMoveEndRef.current = onMoveEnd;
   onSelectRef.current = onSelectFlight;
+  onHoverPointRef.current = onHoverPoint;
 
   useEffect(() => {
     const map = mapRef.current;
@@ -323,6 +339,14 @@ export function MapView({
         const canvas = mapRef.current?.getCanvas();
         if (!canvas || pickingRef.current || drawingRef.current) return;
         canvas.style.cursor = info.picked ? "pointer" : "";
+        if (info.picked) {
+          const seg = info.object as Seg;
+          onHoverPointRef.current({ flightId: seg.flightId, pointIdx: seg.pointIdx });
+          setMapTooltipRef.current({ x: info.x, y: info.y, altFt: Math.round(seg.altFt) });
+        } else {
+          onHoverPointRef.current(null);
+          setMapTooltipRef.current(null);
+        }
       },
       layers: [],
     });
@@ -359,9 +383,11 @@ export function MapView({
           from: [c[0], c[1]],
           to: [next[0], next[1]],
           altMid: (c[2] + next[2]) / 2,
+          altFt: c[2],
           cat: f.emitter_category ?? null,
           startTs: f.start_ts,
           flightId: f.flight_id,
+          pointIdx: i,
         };
       });
     });
@@ -382,39 +408,70 @@ export function MapView({
     const getWidth = (s: Seg): number =>
       hasSel && s.flightId === selectedFlightId ? 4 : 2.5;
 
+    const layers = [
+      new LineLayer<Seg>({
+        id: "flights-lines",
+        data: segments,
+        getSourcePosition: (s) => s.from,
+        getTargetPosition: (s) => s.to,
+        getColor,
+        getWidth,
+        widthUnits: "pixels",
+        pickable: true,
+      }),
+      new ScatterplotLayer<FlightDetail>({
+        id: "flights-starts",
+        data: flights,
+        getPosition: (f) => [f.start_point.coordinates[0], f.start_point.coordinates[1]],
+        getFillColor: (f) => hasSel && f.flight_id !== selectedFlightId
+          ? [60, 200, 80, 46] : [60, 200, 80, 230],
+        getRadius: 3,
+        radiusUnits: "pixels",
+      }),
+      new ScatterplotLayer<FlightDetail>({
+        id: "flights-ends",
+        data: flights,
+        getPosition: (f) => [f.end_point.coordinates[0], f.end_point.coordinates[1]],
+        getFillColor: (f) => hasSel && f.flight_id !== selectedFlightId
+          ? [220, 60, 60, 46] : [220, 60, 60, 230],
+        getRadius: 3,
+        radiusUnits: "pixels",
+      }),
+    ];
+    mainLayersRef.current = layers;
+    overlay.setProps({ layers });
+  }, [flights, colorMode, selectedFlightId]);
+
+  // Separate effect for the hover dot — avoids rebuilding all segments on every hover move.
+  useEffect(() => {
+    const overlay = deckRef.current;
+    if (!overlay) return;
+
+    const dot: [number, number][] = [];
+    if (hoveredPoint && flights) {
+      const hf = flights.find((f) => f.flight_id === hoveredPoint.flightId);
+      const coord = hf?.path?.coordinates[hoveredPoint.pointIdx];
+      if (coord) dot.push([coord[0], coord[1]]);
+    }
+
     overlay.setProps({
       layers: [
-        new LineLayer<Seg>({
-          id: "flights-lines",
-          data: segments,
-          getSourcePosition: (s) => s.from,
-          getTargetPosition: (s) => s.to,
-          getColor,
-          getWidth,
-          widthUnits: "pixels",
-          pickable: true,
-        }),
-        new ScatterplotLayer<FlightDetail>({
-          id: "flights-starts",
-          data: flights,
-          getPosition: (f) => [f.start_point.coordinates[0], f.start_point.coordinates[1]],
-          getFillColor: (f) => hasSel && f.flight_id !== selectedFlightId
-            ? [60, 200, 80, 46] : [60, 200, 80, 230],
-          getRadius: 3,
+        ...mainLayersRef.current,
+        new ScatterplotLayer<[number, number]>({
+          id: "flight-hover-dot",
+          data: dot,
+          getPosition: (d) => d,
+          getFillColor: [255, 255, 255, 230],
+          getLineColor: [110, 168, 255, 255],
+          stroked: true,
+          getRadius: 6,
+          getLineWidth: 2,
           radiusUnits: "pixels",
-        }),
-        new ScatterplotLayer<FlightDetail>({
-          id: "flights-ends",
-          data: flights,
-          getPosition: (f) => [f.end_point.coordinates[0], f.end_point.coordinates[1]],
-          getFillColor: (f) => hasSel && f.flight_id !== selectedFlightId
-            ? [220, 60, 60, 46] : [220, 60, 60, 230],
-          getRadius: 3,
-          radiusUnits: "pixels",
+          lineWidthUnits: "pixels",
         }),
       ],
     });
-  }, [flights, colorMode, selectedFlightId]);
+  }, [hoveredPoint, flights]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -428,5 +485,32 @@ export function MapView({
     }
   }, [basemap]);
 
-  return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
+  return (
+    <div style={{ position: "absolute", inset: 0 }}>
+      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+      {mapTooltip && (
+        <div
+          style={{
+            position: "absolute",
+            left: mapTooltip.x + 14,
+            top: mapTooltip.y - 14,
+            pointerEvents: "none",
+            background: "color-mix(in oklab, var(--bg-1) 94%, transparent)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            border: "1px solid var(--line-1)",
+            borderRadius: "var(--radius-1)",
+            padding: "3px 7px",
+            fontSize: 11,
+            color: "var(--fg-1)",
+            whiteSpace: "nowrap",
+            zIndex: 10,
+            boxShadow: "var(--shadow-1)",
+          }}
+        >
+          {mapTooltip.altFt.toLocaleString()} ft
+        </div>
+      )}
+    </div>
+  );
 }

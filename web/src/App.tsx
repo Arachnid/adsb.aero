@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MapView, MapBounds } from "./components/map/MapView";
+import { MapView, MapBounds, HoveredPoint } from "./components/map/MapView";
 import { anyViewportFilter, collectGeometries, MapGeometry } from "./lib/queryGeometry";
 import { Topbar } from "./components/layout/Topbar";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -110,6 +110,7 @@ export function App(): React.ReactElement {
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
+  const [hoveredPoint, setHoveredPoint] = useState<HoveredPoint | null>(null);
   const queryAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -189,6 +190,7 @@ export function App(): React.ReactElement {
     setQueryFlights(null);
     setQueryCursor(null);
     setSelectedFlightId(null);
+    setHoveredPoint(null);
     setRightCollapsed(false);
 
     postQuery(match, { startFrom, startTo, signal: ctrl.signal })
@@ -260,6 +262,8 @@ export function App(): React.ReactElement {
         colorMode={colorMode}
         selectedFlightId={selectedFlightId}
         onSelectFlight={setSelectedFlightId}
+        hoveredPoint={hoveredPoint}
+        onHoverPoint={setHoveredPoint}
       />
 
       {showRerunChip && (
@@ -345,6 +349,8 @@ export function App(): React.ReactElement {
           onLoadMore={handleLoadMore}
           selectedFlightId={selectedFlightId}
           onSelectFlight={setSelectedFlightId}
+          hoveredPoint={hoveredPoint}
+          onHoverPoint={setHoveredPoint}
         />
       </Sidebar>
       <ToggleButton side="right" collapsed={rightCollapsed} onToggle={() => { setRightCollapsed((v) => !v); }} />
