@@ -112,7 +112,7 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
     return { id, kind: "group", mode: kind === "group_all" ? "all" : "any", items: [] };
   }
   if (kind === "starts_within" || kind === "ends_within") {
-    return { id, kind, shape: "circle", lat: null, lng: null, radiusNm: 25, polygon: null, timeFrom: "", timeTo: "" };
+    return { id, kind, shape: "circle", lat: null, lng: null, radiusNm: 1, polygon: null, timeFrom: "", timeTo: "" };
   }
   if (kind === "region" || kind === "always_within") {
     return {

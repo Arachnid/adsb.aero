@@ -19,6 +19,7 @@ type Seg = {
   altMid: number;
   cat: string | null;
   startTs: string;
+  flightId: string;
 };
 
 const SAT_STYLE: StyleSpecification = {
@@ -197,6 +198,8 @@ interface MapViewProps {
   onMoveEnd?: (bounds: MapBounds) => void;
   flights: FlightDetail[] | null;
   colorMode: ColorMode;
+  selectedFlightId: string | null;
+  onSelectFlight: (id: string | null) => void;
 }
 
 export function MapView({
@@ -209,6 +212,8 @@ export function MapView({
   onMoveEnd,
   flights,
   colorMode,
+  selectedFlightId,
+  onSelectFlight,
 }: MapViewProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
@@ -220,6 +225,7 @@ export function MapView({
   const onDrawRef = useRef(onDrawComplete);
   const geometriesRef = useRef(geometries);
   const onMoveEndRef = useRef(onMoveEnd);
+  const onSelectRef = useRef(onSelectFlight);
 
   pickingRef.current = pickingActive;
   drawingRef.current = drawingActive;
@@ -227,6 +233,7 @@ export function MapView({
   onDrawRef.current = onDrawComplete;
   geometriesRef.current = geometries;
   onMoveEndRef.current = onMoveEnd;
+  onSelectRef.current = onSelectFlight;
 
   useEffect(() => {
     const map = mapRef.current;
@@ -303,7 +310,22 @@ export function MapView({
     map.on("click", onClick);
     map.on("dblclick", onDblClick);
     map.on("moveend", onMoveEndHandler);
-    const overlay = new MapboxOverlay({ layers: [] });
+    const overlay = new MapboxOverlay({
+      onClick: (info) => {
+        if (pickingRef.current || drawingRef.current) return;
+        if (info.picked) {
+          onSelectRef.current((info.object as Seg).flightId);
+        } else {
+          onSelectRef.current(null);
+        }
+      },
+      onHover: (info) => {
+        const canvas = mapRef.current?.getCanvas();
+        if (!canvas || pickingRef.current || drawingRef.current) return;
+        canvas.style.cursor = info.picked ? "pointer" : "";
+      },
+      layers: [],
+    });
     map.addControl(overlay);
     deckRef.current = overlay;
     mapRef.current = map;
@@ -339,14 +361,26 @@ export function MapView({
           altMid: (c[2] + next[2]) / 2,
           cat: f.emitter_category ?? null,
           startTs: f.start_ts,
+          flightId: f.flight_id,
         };
       });
     });
 
-    const getColor = (s: Seg): RGBA =>
-      colorMode === "alt" ? altToColor(s.altMid)
-      : colorMode === "cat" ? catToColor(s.cat)
-      : todToColor(s.startTs);
+    const hasSel = selectedFlightId !== null;
+
+    const getColor = (s: Seg): RGBA => {
+      const base =
+        colorMode === "alt" ? altToColor(s.altMid)
+        : colorMode === "cat" ? catToColor(s.cat)
+        : todToColor(s.startTs);
+      if (hasSel && s.flightId !== selectedFlightId) {
+        return [base[0], base[1], base[2], Math.round(base[3] * 0.2)];
+      }
+      return base;
+    };
+
+    const getWidth = (s: Seg): number =>
+      hasSel && s.flightId === selectedFlightId ? 4 : 2.5;
 
     overlay.setProps({
       layers: [
@@ -356,14 +390,16 @@ export function MapView({
           getSourcePosition: (s) => s.from,
           getTargetPosition: (s) => s.to,
           getColor,
-          getWidth: 1.5,
+          getWidth,
           widthUnits: "pixels",
+          pickable: true,
         }),
         new ScatterplotLayer<FlightDetail>({
           id: "flights-starts",
           data: flights,
           getPosition: (f) => [f.start_point.coordinates[0], f.start_point.coordinates[1]],
-          getFillColor: [60, 200, 80, 230],
+          getFillColor: (f) => hasSel && f.flight_id !== selectedFlightId
+            ? [60, 200, 80, 46] : [60, 200, 80, 230],
           getRadius: 3,
           radiusUnits: "pixels",
         }),
@@ -371,13 +407,14 @@ export function MapView({
           id: "flights-ends",
           data: flights,
           getPosition: (f) => [f.end_point.coordinates[0], f.end_point.coordinates[1]],
-          getFillColor: [220, 60, 60, 230],
+          getFillColor: (f) => hasSel && f.flight_id !== selectedFlightId
+            ? [220, 60, 60, 46] : [220, 60, 60, 230],
           getRadius: 3,
           radiusUnits: "pixels",
         }),
       ],
     });
-  }, [flights, colorMode]);
+  }, [flights, colorMode, selectedFlightId]);
 
   useEffect(() => {
     const map = mapRef.current;

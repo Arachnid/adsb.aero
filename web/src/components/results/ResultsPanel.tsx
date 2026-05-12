@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Plane } from "../Icons";
 import type { FlightDetail } from "../../lib/api";
 
@@ -7,13 +8,23 @@ interface ResultsPanelProps {
   error: string | null;
   hasMore: boolean;
   onLoadMore: () => void;
+  selectedFlightId?: string | null;
+  onSelectFlight?: (id: string | null) => void;
 }
 
 function fmt(iso: string): string {
   return iso.replace("T", " ").replace(/\.\d+Z$/, "Z").replace(/Z$/, " UTC");
 }
 
-export function ResultsPanel({ flights, loading, error, hasMore, onLoadMore }: ResultsPanelProps): React.ReactElement {
+export function ResultsPanel({ flights, loading, error, hasMore, onLoadMore, selectedFlightId, onSelectFlight }: ResultsPanelProps): React.ReactElement {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!selectedFlightId || !scrollRef.current) return;
+    const el = scrollRef.current.querySelector<HTMLElement>(`[data-flight-id="${selectedFlightId}"]`);
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedFlightId]);
+
   if (error) {
     return (
       <div style={{ padding: "20px 16px", color: "var(--color-red, #e55)", fontSize: 12 }}>
@@ -44,9 +55,14 @@ export function ResultsPanel({ flights, loading, error, hasMore, onLoadMore }: R
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto" }}>
         {(flights ?? []).map((f) => (
-          <FlightRow key={f.flight_id} flight={f} />
+          <FlightRow
+            key={f.flight_id}
+            flight={f}
+            selected={f.flight_id === selectedFlightId}
+            onClick={() => { onSelectFlight?.(f.flight_id === selectedFlightId ? null : f.flight_id); }}
+          />
         ))}
         {loading && (
           <div style={{ padding: "12px 16px", color: "var(--fg-3)", fontSize: 12, textAlign: "center" }}>
@@ -79,16 +95,21 @@ export function ResultsPanel({ flights, loading, error, hasMore, onLoadMore }: R
   );
 }
 
-function FlightRow({ flight }: { flight: FlightDetail }): React.ReactElement {
+function FlightRow({ flight, selected, onClick }: { flight: FlightDetail; selected: boolean; onClick: () => void }): React.ReactElement {
   const label = flight.callsign ?? flight.icao24;
   const sub = [flight.icao_type, flight.emitter_category].filter(Boolean).join(" · ") || "—";
 
   return (
     <div
+      data-flight-id={flight.flight_id}
+      onClick={onClick}
       style={{
         padding: "8px 14px",
         borderBottom: "1px solid var(--line-1)",
+        borderLeft: selected ? "3px solid var(--accent)" : "3px solid transparent",
+        background: selected ? "var(--accent-soft)" : "transparent",
         fontSize: 12,
+        cursor: "pointer",
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>

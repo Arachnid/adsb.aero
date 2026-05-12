@@ -109,6 +109,7 @@ export function App(): React.ReactElement {
   const [queryCursor, setQueryCursor] = useState<string | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
   const queryAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -187,6 +188,7 @@ export function App(): React.ReactElement {
     setQueryError(null);
     setQueryFlights(null);
     setQueryCursor(null);
+    setSelectedFlightId(null);
     setRightCollapsed(false);
 
     postQuery(match, { startFrom, startTo, signal: ctrl.signal })
@@ -256,6 +258,8 @@ export function App(): React.ReactElement {
         onMoveEnd={handleMoveEnd}
         flights={queryFlights}
         colorMode={colorMode}
+        selectedFlightId={selectedFlightId}
+        onSelectFlight={setSelectedFlightId}
       />
 
       {showRerunChip && (
@@ -339,6 +343,8 @@ export function App(): React.ReactElement {
           error={queryError}
           hasMore={queryCursor !== null}
           onLoadMore={handleLoadMore}
+          selectedFlightId={selectedFlightId}
+          onSelectFlight={setSelectedFlightId}
         />
       </Sidebar>
       <ToggleButton side="right" collapsed={rightCollapsed} onToggle={() => { setRightCollapsed((v) => !v); }} />
