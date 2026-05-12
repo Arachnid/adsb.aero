@@ -8,9 +8,12 @@ import re
 import shutil
 from datetime import date, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import asyncpg
 import httpx
+
+if TYPE_CHECKING:
+    import asyncpg
 
 from adsb_server.ingestion.batch import run_batch
 

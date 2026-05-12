@@ -100,7 +100,11 @@ def _most_common_non_null(values: list[str | None]) -> str | None:
 def build_squawk_runs(points: list[RawPoint]) -> list[tuple[float, str]]:
     """
     Build run-length encoding of squawk codes.
-    Emits a new run when squawk changes from the previous non-null value.
+
+    Emits a new run when squawk changes from the previous non-null value,
+    then appends a closing instant at the last point's timestamp so the
+    resulting ttext sequence covers the full flight extent.  Without the
+    closing instant, ttext has no defined value after the final change point.
     """
     runs: list[tuple[float, str]] = []
     last_squawk: str | None = None
@@ -108,6 +112,9 @@ def build_squawk_runs(points: list[RawPoint]) -> list[tuple[float, str]]:
         if p.squawk is not None and p.squawk != last_squawk:
             runs.append((p.ts, p.squawk))
             last_squawk = p.squawk
+    # Add closing instant so ttext covers the flight's full temporal extent.
+    if runs and last_squawk is not None and points[-1].ts != runs[-1][0]:
+        runs.append((points[-1].ts, last_squawk))
     return runs
 
 

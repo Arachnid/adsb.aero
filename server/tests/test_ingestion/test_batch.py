@@ -8,8 +8,9 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import re
 import tarfile
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -18,6 +19,23 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import asyncpg
+
+
+_TTEXT_RE = re.compile(r"([^@,\[\]]+)@([^,\[\]]+)")
+
+
+def _parse_squawk_seq(text: str | None) -> list[tuple[float, str]]:
+    """Parse a MobilityDB ttext WKT string into (unix_ts, squawk_code) pairs."""
+    if not text:
+        return []
+    runs: list[tuple[float, str]] = []
+    for m in _TTEXT_RE.finditer(text):
+        code = m.group(1).strip().strip('"')
+        ts_str = m.group(2).strip()
+        if ts_str.endswith("+00"):
+            ts_str += ":00"
+        runs.append((datetime.fromisoformat(ts_str).replace(tzinfo=UTC).timestamp(), code))
+    return runs
 
 
 def _make_trace_bytes(
@@ -269,12 +287,13 @@ async def test_run_batch_serialization_roundtrip(
     assert count == 1
 
     row = await conn.fetchrow(
-        "SELECT asText(path_tracks) AS pt, squawk_runs FROM flights WHERE icao24 = 'ff1122'"
+        "SELECT asText(path_tracks) AS pt, asText(squawk_seq) AS squawk_seq_text"
+        " FROM flights WHERE icao24 = 'ff1122'"
     )
     assert row is not None
     # tint text starts with '[' (sequence notation)
     assert row["pt"].startswith("[")
-    runs = json.loads(row["squawk_runs"])
+    runs = _parse_squawk_seq(row["squawk_seq_text"])
     assert isinstance(runs, list)
 
 
@@ -402,13 +421,13 @@ async def test_squawk_reconstructed_from_staging(
     await run_batch(conn, tmp2, batch_date_2)
 
     row = await conn.fetchrow(
-        "SELECT squawk_runs FROM flights WHERE icao24 = 'cc0001'"
+        "SELECT asText(squawk_seq) AS squawk_seq_text FROM flights WHERE icao24 = 'cc0001'"
     )
     assert row is not None
-    runs_2 = json.loads(row["squawk_runs"])
+    runs_2 = _parse_squawk_seq(row["squawk_seq_text"])
     squawk_codes = {r[1] for r in runs_2}
-    assert "7700" in squawk_codes, "7700 from batch 1 should survive into finalised squawk_runs"
-    assert "2000" in squawk_codes, "2000 from batch 2 should appear in finalised squawk_runs"
+    assert "7700" in squawk_codes, "7700 from batch 1 should survive into finalised squawk_seq"
+    assert "2000" in squawk_codes, "2000 from batch 2 should appear in finalised squawk_seq"
 
 
 @pytest.mark.asyncio

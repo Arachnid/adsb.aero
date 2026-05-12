@@ -162,7 +162,7 @@ class TestSquawkRuns:
         assert finalized[0].squawk_runs == []
 
     def test_squawk_runs_single_value(self) -> None:
-        """Constant squawk → single run."""
+        """Constant squawk → start entry plus closing instant at flight end."""
         cutoff = 10000.0
         points = [
             _make_point(ts=1000.0, squawk="1234"),
@@ -172,8 +172,10 @@ class TestSquawkRuns:
         header = _make_header()
         finalized, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
-        assert len(finalized[0].squawk_runs) == 1
-        assert finalized[0].squawk_runs[0] == (1000.0, "1234")
+        runs = finalized[0].squawk_runs
+        assert runs[0] == (1000.0, "1234")
+        assert runs[-1][1] == "1234"  # closing instant: same code
+        assert runs[-1][0] > 1000.0   # closing instant: after the start
 
 
 class TestCallsignResolution:

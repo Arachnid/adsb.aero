@@ -23,6 +23,19 @@ def tgeompoint_seq(vertices: list[tuple[float, float, float, float]]) -> str:
     return f"SRID=4326;[{', '.join(instants)}]"
 
 
+def ttext_seq(runs: list[tuple[float, str]]) -> str | None:
+    """Return a MobilityDB ttext sequence string from squawk run-length data.
+
+    runs: list of (unix_ts, squawk_code) pairs (stepwise — squawks don't interpolate).
+    Returns None when runs is empty so the caller can store NULL for flights with no squawk.
+    Output: '[code@ts, ...]'
+    """
+    if not runs:
+        return None
+    instants = [f'"{code}"@{_fmt_ts(ts)}' for ts, code in runs]
+    return f"[{', '.join(instants)}]"
+
+
 def tint_seq(values: list[int], timestamps: list[float]) -> str:
     """Return a MobilityDB tint sequence string (stepwise by type).
 

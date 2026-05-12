@@ -128,7 +128,7 @@ _FLIGHT_COLS = f"""
     ST_AsGeoJSON(endValue(f.path)::geometry, 6) AS end_point,
     asText(f.path) AS path_text,
     asText(f.path_tracks) AS path_tracks_text,
-    f.squawk_runs,
+    asText(f.squawk_seq) AS squawk_seq_text,
     f.raw_point_count,
     f.ingest_batch_date,
     numInstants(f.path) AS point_count
@@ -140,6 +140,7 @@ _INSTANT_RE = re.compile(
     re.IGNORECASE,
 )
 _TINT_INSTANT_RE = re.compile(r"(-?\d+)@")
+_TTEXT_INSTANT_RE = re.compile(r"([^@,\[\]]+)@([^,\[\]]+)")
 
 
 def _parse_path(
@@ -172,6 +173,19 @@ def _parse_path(
     return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps, path_tracks
 
 
+def _parse_squawk_seq(text: str | None) -> list[tuple[float, str]]:
+    if not text:
+        return []
+    runs: list[tuple[float, str]] = []
+    for m in _TTEXT_INSTANT_RE.finditer(text):
+        code = m.group(1).strip().strip('"')
+        ts_str = m.group(2).strip()
+        if ts_str.endswith("+00"):
+            ts_str += ":00"
+        runs.append((datetime.fromisoformat(ts_str).timestamp(), code))
+    return runs
+
+
 def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDetail:
     path = None
     timestamps = None
@@ -179,10 +193,7 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
     squawk_runs = None
     if include_path:
         path, timestamps, filtered_tracks = _parse_path(row["path_text"], row["path_tracks_text"])
-        squawk_raw: str | None = row["squawk_runs"]
-        squawk_runs = (
-            [(float(r[0]), str(r[1])) for r in json.loads(squawk_raw)] if squawk_raw else []
-        )
+        squawk_runs = _parse_squawk_seq(row["squawk_seq_text"])
     return FlightDetail(
         flight_id=row["flight_id"],
         icao24=row["icao24"],

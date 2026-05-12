@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import pickle
@@ -12,12 +11,13 @@ import zlib
 from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path  # noqa: TC003
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import asyncpg
+if TYPE_CHECKING:
+    import asyncpg
 
 from adsb_server.geometry.simplify import simplify_flight
-from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq
+from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq, ttext_seq
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import count_traces, stream_tarball
 from adsb_server.ingestion.splitter import (
@@ -34,16 +34,16 @@ _CHUNK_SIZE = 256
 _UPSERT_FLIGHT_SQL = """
 INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
     start_ts, end_ts, path, path_tracks,
-    squawk_runs, raw_point_count, ingest_batch_date)
+    squawk_seq, raw_point_count, ingest_batch_date)
 VALUES ($1,$2,$3,$4,$5,$6,
     $7::tgeompoint, $8::tint,
-    $9::jsonb, $10, $11)
+    $9::ttext, $10, $11)
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
     end_ts=EXCLUDED.end_ts,
     path=EXCLUDED.path, path_tracks=EXCLUDED.path_tracks,
-    squawk_runs=EXCLUDED.squawk_runs, raw_point_count=EXCLUDED.raw_point_count,
+    squawk_seq=EXCLUDED.squawk_seq, raw_point_count=EXCLUDED.raw_point_count,
     ingest_batch_date=EXCLUDED.ingest_batch_date
 """
 
@@ -51,7 +51,7 @@ _FlightParams = tuple[
     str, str | None, str | None, str | None,
     datetime, datetime,
     str, str,
-    str, int, date,
+    str | None, int, date,
 ]
 
 
@@ -81,7 +81,7 @@ def _flight_to_params(
         flight.end_ts,
         tgeompoint_seq(flight.vertices),
         tint_seq(flight.path_tracks, timestamps),
-        json.dumps(flight.squawk_runs),
+        ttext_seq(flight.squawk_runs),
         flight.raw_point_count,
         batch_date,
     )
@@ -128,7 +128,7 @@ def _in_progress_flight_to_params(
         end_ts,
         tgeompoint_seq(vertices),
         tint_seq(path_tracks, timestamps),
-        json.dumps(build_squawk_runs([interp[i] for i in kept])),
+        ttext_seq(build_squawk_runs([interp[i] for i in kept])),
         len(flight.points),
         batch_date,
     )

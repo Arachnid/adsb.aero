@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq
+from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq, ttext_seq
 
 
 def test_tgeompoint_seq_format() -> None:
@@ -76,3 +76,40 @@ def test_tint_seq_timestamp_format() -> None:
 def test_tint_seq_zero_track() -> None:
     result = tint_seq([0, 0, 0], [100.0, 200.0, 300.0])
     assert result.count("0@") == 3
+
+
+def test_ttext_seq_empty_returns_none() -> None:
+    assert ttext_seq([]) is None
+
+
+def test_ttext_seq_single_run() -> None:
+    result = ttext_seq([(1609275898.0, "7700")])
+    assert result is not None
+    assert result.startswith("[")
+    assert result.endswith("]")
+    assert '"7700"@' in result
+
+
+def test_ttext_seq_multiple_runs() -> None:
+    result = ttext_seq([(1609275898.0, "7700"), (1609279498.0, "2000")])
+    assert result is not None
+    assert '"7700"@' in result
+    assert '"2000"@' in result
+    assert ", " in result
+
+
+def test_ttext_seq_timestamp_format() -> None:
+    result = ttext_seq([(0.0, "1234")])
+    assert result is not None
+    assert '"1234"@1970-01-01T00:00:00' in result
+    assert "+00" in result
+
+
+def test_ttext_seq_preserves_order() -> None:
+    runs = [(100.0, "2000"), (200.0, "7700"), (300.0, "1200")]
+    result = ttext_seq(runs)
+    assert result is not None
+    idx_2000 = result.index('"2000"@')
+    idx_7700 = result.index('"7700"@')
+    idx_1200 = result.index('"1200"@')
+    assert idx_2000 < idx_7700 < idx_1200

@@ -44,7 +44,7 @@ def upgrade() -> None:
             end_ts            TIMESTAMPTZ  NOT NULL,
             path              tgeompoint   NOT NULL,
             path_tracks       tint         NOT NULL,
-            squawk_runs       JSONB        NOT NULL DEFAULT '[]',
+            squawk_seq        ttext,
             raw_point_count   INTEGER      NOT NULL DEFAULT 0,
             ingest_batch_date DATE         NOT NULL,
             PRIMARY KEY (icao24, start_ts)

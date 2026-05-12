@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import asyncpg
 
 from adsb_server.api.main import app
-from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq
+from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq, ttext_seq
 
 # ---------------------------------------------------------------------------
 # Test flight data
@@ -56,12 +56,12 @@ INSERT_FLIGHT = """
         icao24, callsign, icao_type, emitter_category,
         start_ts, end_ts,
         path, path_tracks,
-        squawk_runs, raw_point_count, ingest_batch_date
+        squawk_seq, raw_point_count, ingest_batch_date
     ) VALUES (
         $1, $2, $3, $4,
         $5, $6,
         $7::tgeompoint, $8::tint,
-        $9::jsonb, $10, $11
+        $9::ttext, $10, $11
     )
     ON CONFLICT (icao24, start_ts) DO NOTHING
 """
@@ -75,14 +75,14 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
         FLIGHT_A_ICAO, FLIGHT_A_CALLSIGN, FLIGHT_A_TYPE, FLIGHT_A_EMITTER,
         FLIGHT_A_START_TS, FLIGHT_A_END_TS,
         FLIGHT_A_PATH, FLIGHT_A_TRACKS,
-        "[[1743501600.0,\"1234\"]]", 30, date(2025, 4, 1),
+        ttext_seq([(1743501600.0, "1234")]), 30, date(2025, 4, 1),
     )
     await pool.execute(
         INSERT_FLIGHT,
         FLIGHT_B_ICAO, FLIGHT_B_CALLSIGN, FLIGHT_B_TYPE, FLIGHT_B_EMITTER,
         FLIGHT_B_START_TS, FLIGHT_B_END_TS,
         FLIGHT_B_PATH, FLIGHT_B_TRACKS,
-        "[]", 50, date(2025, 4, 1),
+        None, 50, date(2025, 4, 1),
     )
 
 
