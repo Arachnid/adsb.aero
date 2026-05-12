@@ -625,6 +625,58 @@ input[type="range"]::-moz-range-thumb {
   box-sizing: border-box;
 }
 
+/* ===== Global date range bar ===== */
+
+.date-range-bar {
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-2);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: var(--bg-2);
+}
+
+.date-range-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.date-range-bar-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-3);
+}
+
+.date-range-reset {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 10.5px;
+  color: var(--accent);
+  cursor: pointer;
+  opacity: 0.8;
+}
+.date-range-reset:hover { opacity: 1; }
+
+.date-range-bar-row {
+  display: flex;
+  gap: 6px;
+}
+
+.date-range-bar-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.date-range-error {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--danger);
+}
+
 /* ===== React Aria DatePicker ===== */
 
 /* The visible date+time input box */

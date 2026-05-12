@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -471,9 +471,21 @@ NotPredicate.model_rebuild()
 # ---------------------------------------------------------------------------
 
 
+_MAX_DATE_RANGE = timedelta(days=7)
+
+
 class QueryRequest(BaseModel):
     """Request body for `POST /api/v1/query`."""
 
+    start_from: datetime = Field(
+        description="Inclusive lower bound on flight start time (`start_ts`). Required.",
+        examples=["2025-03-25T00:00:00Z"],
+    )
+    start_to: datetime = Field(
+        description="Exclusive upper bound on flight start time (`start_ts`). "
+        "Must be strictly after `start_from` and within 7 days of it.",
+        examples=["2025-04-01T00:00:00Z"],
+    )
     match: Predicate | None = Field(
         default=None,
         description="Filter predicate. Omit or set to `null` to return all flights.",
@@ -491,3 +503,11 @@ class QueryRequest(BaseModel):
         description="Whether to include `path`, `timestamps`, `path_tracks`, and `squawk_runs` in each result. "  # noqa: E501
         "Set to `false` for lightweight listing queries where trajectory data is not needed.",
     )
+
+    @model_validator(mode="after")
+    def _validate_start_range(self) -> "QueryRequest":
+        if self.start_to <= self.start_from:
+            raise ValueError("start_to must be strictly after start_from")
+        if self.start_to - self.start_from > _MAX_DATE_RANGE:
+            raise ValueError("date range (start_to − start_from) must not exceed 7 days")
+        return self

@@ -134,6 +134,185 @@ const EMITTER_CATEGORIES: { code: string; label: string }[] = [
   { code: "B6", label: "UAV" },
 ];
 
+// ===== Global date range =====
+
+export interface GlobalDateRange {
+  from: string; // "YYYY-MM-DD" inclusive
+  to: string;   // "YYYY-MM-DD" inclusive
+}
+
+const MAX_RANGE_DAYS = 6; // 7-day inclusive window = 6-day difference
+
+export function isDateRangeValid(range: GlobalDateRange): boolean {
+  if (!range.from || !range.to) return false;
+  try {
+    const f = parseDate(range.from);
+    const t = parseDate(range.to);
+    const diffMs = t.toDate("UTC").getTime() - f.toDate("UTC").getTime();
+    return diffMs >= 0 && diffMs <= MAX_RANGE_DAYS * 86400000;
+  } catch {
+    return false;
+  }
+}
+
+/** Convert an inclusive GlobalDateRange to the exclusive ISO strings the API expects. */
+export function dateRangeToApiParams(range: GlobalDateRange): { startFrom: string; startTo: string } {
+  const toDate = parseDate(range.to).add({ days: 1 });
+  return {
+    startFrom: range.from + "T00:00:00Z",
+    startTo: toDate.toString() + "T00:00:00Z",
+  };
+}
+
+export function QueryBuilderDateRange({
+  range,
+  onChange,
+  dataRange,
+}: {
+  range: GlobalDateRange;
+  onChange: (r: GlobalDateRange) => void;
+  dataRange: DataRange | null;
+}): React.ReactElement {
+  const minValue = dataRange?.first_date !== undefined && dataRange.first_date !== null
+    ? parseDate(dataRange.first_date) : undefined;
+  const maxValue = dataRange?.last_date !== undefined && dataRange.last_date !== null
+    ? parseDate(dataRange.last_date) : undefined;
+
+  const fromValue = range.from ? parseDate(range.from) : null;
+  const toValue = range.to ? parseDate(range.to) : null;
+
+  const toMaxValue = fromValue
+    ? (maxValue
+        ? (fromValue.add({ days: MAX_RANGE_DAYS }).compare(maxValue) < 0
+            ? fromValue.add({ days: MAX_RANGE_DAYS })
+            : maxValue)
+        : fromValue.add({ days: MAX_RANGE_DAYS }))
+    : maxValue;
+
+  const handleFromChange = (d: CalendarDate | null): void => {
+    const newFrom = d ? d.toString() : "";
+    let newTo = range.to;
+    if (d && range.to) {
+      const maxTo = d.add({ days: MAX_RANGE_DAYS });
+      if (parseDate(range.to).compare(maxTo) > 0) newTo = maxTo.toString();
+    }
+    onChange({ from: newFrom, to: newTo });
+  };
+
+  const handleToChange = (d: CalendarDate | null): void => {
+    onChange({ ...range, to: d ? d.toString() : "" });
+  };
+
+  const handleReset = (): void => {
+    if (!dataRange?.last_date) return;
+    const last = new Date(dataRange.last_date + "T00:00:00Z");
+    last.setUTCDate(last.getUTCDate() - MAX_RANGE_DAYS);
+    onChange({ from: last.toISOString().slice(0, 10), to: dataRange.last_date });
+  };
+
+  const bothSet = range.from && range.to;
+  let error: string | null = null;
+  if (bothSet) {
+    try {
+      const f = parseDate(range.from);
+      const t = parseDate(range.to);
+      const diffMs = t.toDate("UTC").getTime() - f.toDate("UTC").getTime();
+      if (diffMs < 0) error = "End must be after start";
+      else if (diffMs > MAX_RANGE_DAYS * 86400000) error = "Range must be 7 days or less";
+    } catch {
+      error = "Invalid date";
+    }
+  }
+
+  return (
+    <div className="date-range-bar">
+      <div className="date-range-bar-header">
+        <div className="date-range-bar-label">Departure window</div>
+        {dataRange?.last_date && (
+          <button className="date-range-reset" onClick={handleReset}>↺ Last 7 days</button>
+        )}
+      </div>
+      <div className="date-range-bar-row">
+        <div className="date-range-bar-field">
+          <FieldLabel>From</FieldLabel>
+          <DatePicker<CalendarDate>
+            granularity="day"
+            value={fromValue}
+            onChange={handleFromChange}
+            {...(minValue !== undefined ? { minValue } : {})}
+            {...(maxValue !== undefined ? { maxValue } : {})}
+          >
+            <Group className="datetime-date-group">
+              <DateInput className="datetime-date-input">
+                {(segment) => <DateSegment segment={segment} />}
+              </DateInput>
+              <Button className="datetime-cal-btn">▾</Button>
+            </Group>
+            <Popover className="datetime-popover">
+              <Dialog>
+                <Calendar>
+                  <header className="datetime-cal-header">
+                    <Button slot="previous">◀</Button>
+                    <Heading />
+                    <Button slot="next">▶</Button>
+                  </header>
+                  <CalendarGrid>
+                    <CalendarGridHeader>
+                      {(day) => <CalendarHeaderCell>{day}</CalendarHeaderCell>}
+                    </CalendarGridHeader>
+                    <CalendarGridBody>
+                      {(date) => <CalendarCell date={date} />}
+                    </CalendarGridBody>
+                  </CalendarGrid>
+                </Calendar>
+              </Dialog>
+            </Popover>
+          </DatePicker>
+        </div>
+        <div className="date-range-bar-field">
+          <FieldLabel>To</FieldLabel>
+          <DatePicker<CalendarDate>
+            granularity="day"
+            value={toValue}
+            onChange={handleToChange}
+            {...(minValue !== undefined ? { minValue } : {})}
+            {...(toMaxValue !== undefined ? { maxValue: toMaxValue } : {})}
+          >
+            <Group className="datetime-date-group">
+              <DateInput className="datetime-date-input">
+                {(segment) => <DateSegment segment={segment} />}
+              </DateInput>
+              <Button className="datetime-cal-btn">▾</Button>
+            </Group>
+            <Popover className="datetime-popover">
+              <Dialog>
+                <Calendar>
+                  <header className="datetime-cal-header">
+                    <Button slot="previous">◀</Button>
+                    <Heading />
+                    <Button slot="next">▶</Button>
+                  </header>
+                  <CalendarGrid>
+                    <CalendarGridHeader>
+                      {(day) => <CalendarHeaderCell>{day}</CalendarHeaderCell>}
+                    </CalendarGridHeader>
+                    <CalendarGridBody>
+                      {(date) => <CalendarCell date={date} />}
+                    </CalendarGridBody>
+                  </CalendarGrid>
+                </Calendar>
+              </Dialog>
+            </Popover>
+          </DatePicker>
+        </div>
+      </div>
+      {error && (
+        <div className="date-range-error">{error}</div>
+      )}
+    </div>
+  );
+}
+
 // ===== Validation =====
 
 export function isPredValid(pred: UIPredicate): boolean {
@@ -1046,11 +1225,12 @@ export function QueryBuilderAddMenu({
 
 export interface QueryBuilderFooterProps {
   rootGroup: FilterGroup;
+  dateRangeValid: boolean;
   onRun: () => void;
 }
 
-export function QueryBuilderFooter({ rootGroup, onRun }: QueryBuilderFooterProps): React.ReactElement {
-  const enabled = rootGroup.items.length > 0 && isGroupValid(rootGroup);
+export function QueryBuilderFooter({ rootGroup, dateRangeValid, onRun }: QueryBuilderFooterProps): React.ReactElement {
+  const enabled = dateRangeValid && rootGroup.items.length > 0 && isGroupValid(rootGroup);
   return (
     <button className="run-btn" onClick={onRun} disabled={!enabled}>
       <Play /> Run query

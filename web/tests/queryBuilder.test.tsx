@@ -38,7 +38,7 @@ function bodyProps(group: FilterGroup, onChange = vi.fn()) {
 
 describe("QueryBuilderFooter", () => {
   it("is disabled when rootGroup has no items", () => {
-    render(<QueryBuilderFooter rootGroup={emptyGroup()} onRun={noop} />);
+    render(<QueryBuilderFooter rootGroup={emptyGroup()} dateRangeValid={true} onRun={noop} />);
     expect(screen.getByRole("button", { name: /run query/i })).toBeDisabled();
   });
 
@@ -46,29 +46,35 @@ describe("QueryBuilderFooter", () => {
     const group = makeGroup([
       { id: makeId(), kind: "aircraft", icaoTypes: [], emitters: [] },
     ]);
-    render(<QueryBuilderFooter rootGroup={group} onRun={noop} />);
+    render(<QueryBuilderFooter rootGroup={group} dateRangeValid={true} onRun={noop} />);
     expect(screen.getByRole("button", { name: /run query/i })).toBeDisabled();
   });
 
-  it("is enabled when group contains a valid predicate", () => {
+  it("is disabled when dateRangeValid is false", () => {
+    const group = makeGroup([{ id: makeId(), kind: "callsign", pattern: "^BAW" }]);
+    render(<QueryBuilderFooter rootGroup={group} dateRangeValid={false} onRun={noop} />);
+    expect(screen.getByRole("button", { name: /run query/i })).toBeDisabled();
+  });
+
+  it("is enabled when group contains a valid predicate and date range is valid", () => {
     const group = makeGroup([
       { id: makeId(), kind: "callsign", pattern: "^BAW" },
     ]);
-    render(<QueryBuilderFooter rootGroup={group} onRun={noop} />);
+    render(<QueryBuilderFooter rootGroup={group} dateRangeValid={true} onRun={noop} />);
     expect(screen.getByRole("button", { name: /run query/i })).not.toBeDisabled();
   });
 
   it("calls onRun when clicked while enabled", () => {
     const onRun = vi.fn();
     const group = makeGroup([{ id: makeId(), kind: "callsign", pattern: "^BAW" }]);
-    render(<QueryBuilderFooter rootGroup={group} onRun={onRun} />);
+    render(<QueryBuilderFooter rootGroup={group} dateRangeValid={true} onRun={onRun} />);
     fireEvent.click(screen.getByRole("button", { name: /run query/i }));
     expect(onRun).toHaveBeenCalledOnce();
   });
 
   it("does not call onRun when button is disabled", () => {
     const onRun = vi.fn();
-    render(<QueryBuilderFooter rootGroup={emptyGroup()} onRun={onRun} />);
+    render(<QueryBuilderFooter rootGroup={emptyGroup()} dateRangeValid={true} onRun={onRun} />);
     fireEvent.click(screen.getByRole("button", { name: /run query/i }));
     expect(onRun).not.toHaveBeenCalled();
   });

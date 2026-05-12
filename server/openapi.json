@@ -1179,6 +1179,24 @@
       },
       "QueryRequest": {
         "properties": {
+          "start_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start From",
+            "description": "Inclusive lower bound on flight start time (`start_ts`). Required.",
+            "examples": [
+              "2025-03-25T00:00:00Z"
+            ]
+          },
+          "start_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start To",
+            "description": "Exclusive upper bound on flight start time (`start_ts`). Must be strictly after `start_from` and within 7 days of it.",
+            "examples": [
+              "2025-04-01T00:00:00Z"
+            ]
+          },
           "match": {
             "anyOf": [
               {
@@ -1252,6 +1270,10 @@
           }
         },
         "type": "object",
+        "required": [
+          "start_from",
+          "start_to"
+        ],
         "title": "QueryRequest",
         "description": "Request body for `POST /api/v1/query`."
       },

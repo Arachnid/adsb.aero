@@ -5,11 +5,15 @@ import { Topbar } from "./components/layout/Topbar";
 import { Sidebar } from "./components/layout/Sidebar";
 import {
   countPredicates,
+  dateRangeToApiParams,
   FilterGroup,
+  GlobalDateRange,
+  isDateRangeValid,
   isGroupValid,
   makeId,
   QueryBuilderAddMenu,
   QueryBuilderBody,
+  QueryBuilderDateRange,
   QueryBuilderFooter,
   updatePredInGroup,
   UIPredicate,
@@ -90,6 +94,7 @@ export function App(): React.ReactElement {
     mode: "all",
     items: [],
   });
+  const [globalDateRange, setGlobalDateRange] = useState<GlobalDateRange>({ from: "", to: "" });
   const [pickingId, setPickingId] = useState<string | null>(null);
   const [drawingId, setDrawingId] = useState<string | null>(null);
 
@@ -111,7 +116,14 @@ export function App(): React.ReactElement {
   }, [theme]);
 
   useEffect(() => {
-    getDataRange().then(setDataRange).catch(() => { /* non-critical */ });
+    getDataRange().then((dr) => {
+      setDataRange(dr);
+      if (dr.last_date) {
+        const last = new Date(dr.last_date + "T00:00:00Z");
+        last.setUTCDate(last.getUTCDate() - 6);
+        setGlobalDateRange({ from: last.toISOString().slice(0, 10), to: dr.last_date });
+      }
+    }).catch(() => { /* non-critical */ });
   }, []);
 
   const handleTheme = (): void => {
@@ -162,6 +174,7 @@ export function App(): React.ReactElement {
   };
 
   const handleRun = useCallback((): void => {
+    if (!isDateRangeValid(globalDateRange)) return;
     setLastRunVersion(viewportVersion);
     setLastRunGroup(rootGroup);
     queryAbortRef.current?.abort();
@@ -169,13 +182,14 @@ export function App(): React.ReactElement {
     queryAbortRef.current = ctrl;
 
     const match = compileGroup(rootGroup, mapBounds);
+    const { startFrom, startTo } = dateRangeToApiParams(globalDateRange);
     setQueryLoading(true);
     setQueryError(null);
     setQueryFlights(null);
     setQueryCursor(null);
     setRightCollapsed(false);
 
-    postQuery(match, { signal: ctrl.signal })
+    postQuery(match, { startFrom, startTo, signal: ctrl.signal })
       .then((res) => {
         setQueryFlights(res.flights);
         setQueryCursor(res.cursor);
@@ -187,19 +201,20 @@ export function App(): React.ReactElement {
       .finally(() => {
         setQueryLoading(false);
       });
-  }, [rootGroup, mapBounds, viewportVersion]);
+  }, [rootGroup, mapBounds, viewportVersion, globalDateRange]);
 
   const handleLoadMore = useCallback((): void => {
-    if (!queryCursor || queryLoading) return;
+    if (!queryCursor || queryLoading || !isDateRangeValid(globalDateRange)) return;
     queryAbortRef.current?.abort();
     const ctrl = new AbortController();
     queryAbortRef.current = ctrl;
 
     const match = compileGroup(rootGroup, mapBounds);
+    const { startFrom, startTo } = dateRangeToApiParams(globalDateRange);
     setQueryLoading(true);
     setQueryError(null);
 
-    postQuery(match, { cursor: queryCursor, signal: ctrl.signal })
+    postQuery(match, { startFrom, startTo, cursor: queryCursor, signal: ctrl.signal })
       .then((res) => {
         setQueryFlights((prev) => [...(prev ?? []), ...res.flights]);
         setQueryCursor(res.cursor);
@@ -211,7 +226,7 @@ export function App(): React.ReactElement {
       .finally(() => {
         setQueryLoading(false);
       });
-  }, [rootGroup, mapBounds, queryCursor, queryLoading]);
+  }, [rootGroup, mapBounds, queryCursor, queryLoading, globalDateRange]);
 
   const handleMoveEnd = useCallback((bounds: MapBounds): void => {
     setMapBounds(bounds);
@@ -223,7 +238,8 @@ export function App(): React.ReactElement {
   const predCount = countPredicates(rootGroup);
   const queryStructureChanged = lastRunGroup !== null && rootGroup !== lastRunGroup;
   const viewportChanged = hasViewport && lastRunVersion !== null && viewportVersion !== lastRunVersion;
-  const showRerunChip = predCount > 0 && isGroupValid(rootGroup) && (queryStructureChanged || viewportChanged);
+  const dateRangeOk = isDateRangeValid(globalDateRange);
+  const showRerunChip = dateRangeOk && isGroupValid(rootGroup) && (queryStructureChanged || viewportChanged);
   const filterMeta = predCount === 0
     ? "no filters"
     : String(predCount) + " filter" + (predCount !== 1 ? "s" : "");
@@ -289,10 +305,16 @@ export function App(): React.ReactElement {
         footer={
           <QueryBuilderFooter
             rootGroup={rootGroup}
+            dateRangeValid={dateRangeOk}
             onRun={handleRun}
           />
         }
       >
+        <QueryBuilderDateRange
+          range={globalDateRange}
+          onChange={setGlobalDateRange}
+          dataRange={dataRange}
+        />
         <QueryBuilderBody
           rootGroup={rootGroup}
           onGroupChange={setRootGroup}

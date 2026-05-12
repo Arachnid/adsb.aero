@@ -320,6 +320,11 @@ async def query_flights(
 
     # Build WHERE clause
     where_parts: list[str] = []
+
+    # Global start-time range (always present — validated in QueryRequest)
+    where_parts.append(f"start_ts >= {_p(params, body.start_from)}")
+    where_parts.append(f"start_ts < {_p(params, body.start_to)}")
+
     compiled: CompiledPredicate | None = None
     if body.match is not None:
         compiled = compile_predicate(body.match, params)

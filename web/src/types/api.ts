@@ -553,6 +553,20 @@ export interface components {
          */
         QueryRequest: {
             /**
+             * Start From
+             * Format: date-time
+             * @description Inclusive lower bound on flight start time (`start_ts`). Required.
+             * @example 2025-03-25T00:00:00Z
+             */
+            start_from: string;
+            /**
+             * Start To
+             * Format: date-time
+             * @description Exclusive upper bound on flight start time (`start_ts`). Must be strictly after `start_from` and within 7 days of it.
+             * @example 2025-04-01T00:00:00Z
+             */
+            start_to: string;
+            /**
              * Match
              * @description Filter predicate. Omit or set to `null` to return all flights.
              */
