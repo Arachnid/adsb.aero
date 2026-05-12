@@ -302,7 +302,8 @@ class TestTrajectoryWithin:
 
 
 class TestSquawkFilter:
-    def test_squawk_codes_only(self) -> None:
+    def test_squawk_codes_only_no_geometry(self) -> None:
+        # No geometry: check entire squawk_seq, no atgeometry correlation.
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(squawk_codes=["7700"])
@@ -311,6 +312,7 @@ class TestSquawkFilter:
         assert "squawk_seq IS NOT NULL" in sql
         assert "EXISTS" in sql
         assert "getValue(_inst)" in sql
+        assert "atgeometry" not in sql
         assert ["7700"] in params
 
     def test_squawk_codes_multiple(self) -> None:
@@ -324,7 +326,8 @@ class TestSquawkFilter:
         assert "squawk_seq IS NOT NULL" in sql
         assert ["7700", "7600", "7500"] in params
 
-    def test_squawk_codes_with_geometry(self) -> None:
+    def test_squawk_codes_with_geometry_correlates_atgeometry(self) -> None:
+        # With geometry: squawk is checked only at instants the path was inside the polygon.
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -334,6 +337,24 @@ class TestSquawkFilter:
         sql = compile_predicate(pred, params)
         assert "eIntersects(path," in sql
         assert "squawk_seq IS NOT NULL" in sql
+        assert "atgeometry(path," in sql
+        assert "getTime(atgeometry" in sql
+        assert "atTime(squawk_seq" in sql
+        assert ["7700"] in params
+
+    def test_squawk_codes_with_geometry_and_altitude_uses_stbox(self) -> None:
+        # With geometry + altitude: clip to STBOX then to geometry for squawk correlation.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, altitude_min_ft=10000, squawk_codes=["7700"]
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        assert compiled.ctes
+        assert "atgeometry(atStbox(path," in compiled
+        assert "getTime(atgeometry" in compiled
+        assert "atTime(squawk_seq" in compiled
         assert ["7700"] in params
 
     def test_squawk_codes_none_not_emitted(self) -> None:
@@ -345,8 +366,8 @@ class TestSquawkFilter:
         assert "squawk_seq" not in sql
         assert "EXISTS" not in sql
 
-    def test_empty_squawk_codes_not_required(self) -> None:
-        # squawk_codes=[] should be treated the same as None (no constraint)
+    def test_empty_squawk_codes_not_valid(self) -> None:
+        # squawk_codes=[] is falsy — treated as no constraint, triggers the validator.
         with pytest.raises(ValueError, match="at least one constraint"):
             SpatioTemporalAltitudeValue(squawk_codes=[])
 
@@ -359,7 +380,20 @@ class TestSquawkFilter:
         assert "squawk_seq IS NOT NULL" in sql
         assert ["1200"] in params
 
-    def test_squawk_codes_param_count(self) -> None:
+    def test_squawk_codes_with_geometry_trajectory_within(self) -> None:
+        # trajectory_within + geometry + squawk: squawk correlated with geometry.
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, squawk_codes=["7700"]
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "ST_Within(trajectory(path)," in sql
+        assert "atgeometry(path," in sql
+        assert ["7700"] in params
+
+    def test_squawk_codes_param_count_no_geometry(self) -> None:
         # squawk_codes alone = 1 param (the list itself, asyncpg sends as text[])
         params: list = []
         pred = TrajectoryIntersects(

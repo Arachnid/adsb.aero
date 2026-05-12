@@ -126,6 +126,14 @@ def _compile_spatial_path(
       path && STBOX pre-filters via the GiST index; atStbox IS NOT NULL confirms
       the path has instants in the window; ST_Within(trajectory(path), geom)
       verifies the entire path lies inside the geometry.
+
+    squawk_codes correlation:
+      When geometry is present, squawk codes are checked only at the instants when
+      the path was inside the geometry (and within any altitude/time window).
+      atgeometry(path, geom) clips the trajectory to instants inside the polygon;
+      getTime() extracts the time spans; atTime(squawk_seq, ...) restricts the
+      squawk sequence to those same spans.  Without geometry, squawk codes are
+      checked against the entire squawk_seq.
     """
     parts: list[str] = []
     ctes: list[tuple[str, str]] = []
@@ -137,6 +145,11 @@ def _compile_spatial_path(
 
     has_time = time_from_p is not None or time_to_p is not None
     has_alt = alt_min_p is not None or alt_max_p is not None
+
+    # clipped_path_expr: SQL expression for the path restricted to the region of
+    # interest.  Used for squawk correlation so squawk codes are only checked
+    # during the instants the flight was inside the constrained region.
+    clipped_path_expr: str | None = None
 
     if v.geometry is not None:
         geom_sql = _compile_geometry_sql(v.geometry, params)
@@ -167,6 +180,10 @@ def _compile_spatial_path(
                 parts.append(
                     f"eIntersects(atStbox(path, {cte_name}.sb), {cte_name}.geom)"
                 )
+            # Squawk check window: path clipped to STBOX then to exact geometry.
+            clipped_path_expr = (
+                f"atgeometry(atStbox(path, {cte_name}.sb), {cte_name}.geom)"
+            )
 
         else:
             # Geometry only — no altitude or time constraints.
@@ -174,6 +191,8 @@ def _compile_spatial_path(
                 parts.append(f"ST_Within(trajectory(path), {geom_sql})")
             else:  # ST_Intersects
                 parts.append(f"eIntersects(path, {geom_sql})")
+            # Squawk check window: path clipped to the geometry.
+            clipped_path_expr = f"atgeometry(path, {geom_sql})"
 
     # Altitude via btree expression indexes when there is no geometry.
     if v.geometry is None:
@@ -188,16 +207,29 @@ def _compile_spatial_path(
     if time_to_p is not None:
         parts.append(f"start_ts < {time_to_p}")
 
-    # Squawk filter: the flight must have broadcast any of the given codes.
+    # Squawk filter: check the given codes at the instants the path was inside the
+    # region of interest.  When there is no geometry, check the entire squawk_seq.
     if v.squawk_codes:
         codes_p = _p(params, v.squawk_codes)
-        parts.append(
-            f"squawk_seq IS NOT NULL"
-            f" AND EXISTS ("
-            f"SELECT 1 FROM unnest(instants(squawk_seq)) AS _inst"
-            f" WHERE getValue(_inst) = ANY({codes_p}::text[])"
-            f")"
-        )
+        parts.append("squawk_seq IS NOT NULL")
+        if clipped_path_expr is not None:
+            # Correlate: squawk must match during the instants the path was in the region.
+            parts.append(
+                f"EXISTS ("
+                f"SELECT 1 FROM unnest(instants("
+                f"atTime(squawk_seq, getTime({clipped_path_expr}))"
+                f")) AS _inst"
+                f" WHERE getValue(_inst) = ANY({codes_p}::text[])"
+                f")"
+            )
+        else:
+            # No geometry: check squawk for the entire flight.
+            parts.append(
+                f"EXISTS ("
+                f"SELECT 1 FROM unnest(instants(squawk_seq)) AS _inst"
+                f" WHERE getValue(_inst) = ANY({codes_p}::text[])"
+                f")"
+            )
 
     where = " AND ".join(parts) if parts else "TRUE"
     return CompiledPredicate(where, ctes=ctes)
