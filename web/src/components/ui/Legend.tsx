@@ -65,10 +65,21 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
 
       {colorMode === "cat" && (
         <>
-          <LegendRow swatch="#6ed3a3">A1 Light</LegendRow>
-          <LegendRow swatch="#4d8df0">A3 Large</LegendRow>
-          <LegendRow swatch="#9b6ef0">A5 Heavy</LegendRow>
-          <LegendRow swatch="#f0a04d">A7 Rotor</LegendRow>
+          <LegendRow swatch="#78b4ff">A1 Light</LegendRow>
+          <LegendRow swatch="#3c82f0">A2 Small</LegendRow>
+          <LegendRow swatch="#1e50c8">A3 Large</LegendRow>
+          <LegendRow swatch="#8c3cdc">A4 Hi-vortex</LegendRow>
+          <LegendRow swatch="#dc3c3c">A5 Heavy</LegendRow>
+          <LegendRow swatch="#f0a014">A6 Hi-perf</LegendRow>
+          <LegendRow swatch="#32b450">A7 Rotorcraft</LegendRow>
+          <LegendRow swatch="#3cc8be">B1 Glider</LegendRow>
+          <LegendRow swatch="#dcb932">B2 Airship</LegendRow>
+          <LegendRow swatch="#b478f0">B3 Parachutist</LegendRow>
+          <LegendRow swatch="#82d796">B4 Ultralight</LegendRow>
+          <LegendRow swatch="#dc4baf">B6 UAV</LegendRow>
+          <LegendRow swatch="#bec3d2">B7 Space</LegendRow>
+          <LegendRow swatch="#b97332">C  Surface</LegendRow>
+          <LegendRow swatch="#a0a0a0">Other</LegendRow>
         </>
       )}
 

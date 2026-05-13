@@ -185,14 +185,22 @@ const ICAO_TYPES: string[] = [
 ];
 
 const EMITTER_CATEGORIES: { code: string; label: string }[] = [
-  { code: "A1", label: "Light (<15500 lbs)" },
-  { code: "A2", label: "Small (15500-75000 lbs)" },
-  { code: "A3", label: "Large (75000-300000 lbs)" },
-  { code: "A5", label: "Heavy (>300000 lbs)" },
+  { code: "A1", label: "Light (<15,500 lb)" },
+  { code: "A2", label: "Small (15,500–75,000 lb)" },
+  { code: "A3", label: "Large (75,000–300,000 lb)" },
+  { code: "A4", label: "High vortex (757-type)" },
+  { code: "A5", label: "Heavy (>300,000 lb)" },
+  { code: "A6", label: "High performance" },
   { code: "A7", label: "Rotorcraft" },
-  { code: "B1", label: "Glider/Sailplane" },
+  { code: "B1", label: "Glider / sailplane" },
   { code: "B2", label: "Lighter-than-air" },
+  { code: "B3", label: "Parachutist / skydiver" },
+  { code: "B4", label: "Ultralight / hang-glider" },
   { code: "B6", label: "UAV" },
+  { code: "B7", label: "Space / trans-atmospheric" },
+  { code: "C1", label: "Emergency vehicle" },
+  { code: "C2", label: "Service vehicle" },
+  { code: "C3", label: "Ground obstruction" },
 ];
 
 // ===== Global date range =====
@@ -670,10 +678,8 @@ function ChipMultiSelect({
                       toggle(opt);
                     }}
                   >
-                    <span>
-                      {sel ? "✓ " : "  "}
-                      {code}
-                    </span>
+                    <span className="chip-opt-check">{sel ? "✓" : ""}</span>
+                    <span className="chip-opt-code">{code}</span>
                     {meta && <span className="chip-opt-meta">{meta}</span>}
                   </div>
                 );
