@@ -122,6 +122,14 @@ class FlightDetail(FlightSummary):
         "Omitted when `include_path` is false.",
         examples=[[[1743501600.0, "1234"]]],
     )
+    alt_correction_ft: list[list[float]] | None = Field(
+        default=None,
+        description="QNH altitude correction timeseries as `[[unix_epoch_s, correction_ft], ...]`. "
+        "Step-interpolated: forward-fill each entry to the next to get the correction at any time. "
+        "Add to the pressure altitude from `path.coordinates[*][2]` to obtain feet MSL. "
+        "Null when no correction data was available at ingestion time.",
+        examples=[[[1743501600.0, 14.5], [1743505200.0, 14.5]]],
+    )
     raw_point_count: int = Field(
         description="Number of raw ADS-B messages ingested for this leg, "
         "including ground-roll points not present in the simplified path geometry."
@@ -307,30 +315,52 @@ class SpatioTemporalAltitudeValue(BaseModel):
         description="GeoJSON geometry or Circle to test the flight path against. "
         "Omit for a time- or altitude-only filter.",
     )
-    altitude_min_ft: float | None = Field(
+    altitude_min: float | None = Field(
         default=None,
-        description="Minimum altitude bound in feet (inclusive). "
-        "Compared against the bounding box of the simplified path — an approximation.",
+        description="Lower altitude bound (inclusive). "
+        "Interpretation depends on `altitude_min_ref`.",
     )
-    altitude_max_ft: float | None = Field(
+    altitude_min_ref: Literal["fl", "ft"] = Field(
+        default="ft",
+        description=(
+            "Reference system for `altitude_min`. "
+            "`'fl'`: flight level (e.g. `100` = FL100 = 10 000 ft pressure altitude). "
+            "`'ft'` (default): feet MSL using the stored QNH correction."
+        ),
+    )
+    altitude_max: float | None = Field(
         default=None,
-        description="Maximum altitude bound in feet (inclusive). "
-        "Compared against the bounding box of the simplified path — an approximation.",
+        description="Upper altitude bound (inclusive). "
+        "Interpretation depends on `altitude_max_ref`.",
+    )
+    altitude_max_ref: Literal["fl", "ft"] = Field(
+        default="ft",
+        description=(
+            "Reference system for `altitude_max`. "
+            "`'fl'`: flight level (e.g. `100` = FL100 = 10 000 ft pressure altitude). "
+            "`'ft'` (default): feet MSL using the stored QNH correction."
+        ),
     )
     time_from: datetime | None = Field(
         default=None,
-        description="Inclusive lower bound: the flight must still be active at this time "
-        "(end_ts >= time_from).",
+        description="Inclusive lower bound on the time window. "
+        "When combined with `geometry` or altitude, constrains the intersection to "
+        "occur within this window. Without geometry/altitude, filters by activity "
+        "window (end_ts >= time_from).",
     )
     time_to: datetime | None = Field(
         default=None,
-        description="Exclusive upper bound: the flight must have started by this time "
-        "(start_ts < time_to).",
+        description="Exclusive upper bound on the time window. "
+        "When combined with `geometry` or altitude, constrains the intersection to "
+        "occur within this window. Without geometry/altitude, filters by activity "
+        "window (start_ts < time_to).",
     )
     squawk_codes: list[str] | None = Field(
         default=None,
         description="Transponder squawk codes to match (OR semantics). "
-        "Returns flights that broadcast any of these codes at any point during the flight.",
+        "When `geometry` is set, only squawk codes broadcast while the flight was "
+        "inside the geometry (and within any altitude/time window) are checked. "
+        "Without `geometry`, any code broadcast during the flight matches.",
         examples=[["7700", "7600"]],
     )
 
@@ -338,8 +368,8 @@ class SpatioTemporalAltitudeValue(BaseModel):
     def _require_at_least_one(self) -> SpatioTemporalAltitudeValue:
         if (
             self.geometry is None
-            and self.altitude_min_ft is None
-            and self.altitude_max_ft is None
+            and self.altitude_min is None
+            and self.altitude_max is None
             and self.time_from is None
             and self.time_to is None
             and not self.squawk_codes
@@ -349,13 +379,24 @@ class SpatioTemporalAltitudeValue(BaseModel):
 
 
 class TrajectoryIntersects(BaseModel):
-    """Flights whose simplified path crosses the given geometry and/or were active during the given time window."""  # noqa: E501
+    """Flights whose simplified path intersects the given constraints.
+
+    When geometry, altitude, and/or time are combined, all constraints are applied
+    simultaneously — the intersection must occur at the right altitude and within the
+    time window, not just at any point during the flight. Squawk codes are similarly
+    checked only at instants when the path was inside the geometry (if provided).
+    """
 
     trajectory_intersects: SpatioTemporalAltitudeValue
 
 
 class TrajectoryWithin(BaseModel):
-    """Flights whose entire simplified path lies within the given geometry and/or were active during the given time window."""  # noqa: E501
+    """Flights whose entire simplified path lies within the given geometry.
+
+    Altitude and time constraints narrow the portion of the path that must lie within
+    the geometry; squawk codes are checked only at instants when the path was inside
+    the geometry (if provided).
+    """
 
     trajectory_within: SpatioTemporalAltitudeValue
 

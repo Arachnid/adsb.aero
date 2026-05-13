@@ -90,18 +90,26 @@ async def test_flights_path_gist_index_exists(conn: asyncpg.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_flights_altitude_expression_indexes_exist(
+async def test_flights_altitude_column_indexes_exist(
     conn: asyncpg.Connection,  # type: ignore[type-arg]
 ) -> None:
     rows = await conn.fetch(
         """
         SELECT indexname FROM pg_indexes
         WHERE tablename = 'flights'
-          AND indexname IN ('flights_alt_min', 'flights_alt_max')
+          AND indexname IN (
+              'flights_alt_min_pressure', 'flights_alt_max_pressure',
+              'flights_alt_min_qnh', 'flights_alt_max_qnh'
+          )
         """
     )
     found = {r["indexname"] for r in rows}
-    assert found == {"flights_alt_min", "flights_alt_max"}
+    assert found == {
+        "flights_alt_min_pressure",
+        "flights_alt_max_pressure",
+        "flights_alt_min_qnh",
+        "flights_alt_max_qnh",
+    }
 
 
 @pytest.mark.asyncio

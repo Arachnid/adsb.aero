@@ -46,6 +46,24 @@ def upgrade() -> None:
             path_tracks       tint         NOT NULL,
             squawk_seq        ttext,
             alt_correction_ft tfloat,
+            alt_min_pressure_ft FLOAT4
+                GENERATED ALWAYS AS (CAST(minValue(getZ(path)) AS float4)) STORED,
+            alt_max_pressure_ft FLOAT4
+                GENERATED ALWAYS AS (CAST(maxValue(getZ(path)) AS float4)) STORED,
+            alt_min_qnh_ft    FLOAT4
+                GENERATED ALWAYS AS (
+                    CAST(COALESCE(
+                        minValue(getZ(path) + alt_correction_ft),
+                        minValue(getZ(path))
+                    ) AS float4)
+                ) STORED,
+            alt_max_qnh_ft    FLOAT4
+                GENERATED ALWAYS AS (
+                    CAST(COALESCE(
+                        maxValue(getZ(path) + alt_correction_ft),
+                        maxValue(getZ(path))
+                    ) AS float4)
+                ) STORED,
             raw_point_count   INTEGER      NOT NULL DEFAULT 0,
             ingest_batch_date DATE         NOT NULL,
             PRIMARY KEY (icao24, start_ts)
@@ -88,13 +106,17 @@ def upgrade() -> None:
         """)
     )
 
-    # Btree expression indexes for altitude-range queries when no geometry is
-    # present (trajectory(path) converts the tgeompoint to a PostGIS LineStringZ).
     op.execute(sa.text(
-        "CREATE INDEX flights_alt_min ON flights ((ST_ZMin(trajectory(path)::box3d)))"
+        "CREATE INDEX flights_alt_min_pressure ON flights (alt_min_pressure_ft)"
     ))
     op.execute(sa.text(
-        "CREATE INDEX flights_alt_max ON flights ((ST_ZMax(trajectory(path)::box3d)))"
+        "CREATE INDEX flights_alt_max_pressure ON flights (alt_max_pressure_ft)"
+    ))
+    op.execute(sa.text(
+        "CREATE INDEX flights_alt_min_qnh ON flights (alt_min_qnh_ft)"
+    ))
+    op.execute(sa.text(
+        "CREATE INDEX flights_alt_max_qnh ON flights (alt_max_qnh_ft)"
     ))
 
     op.execute(sa.text("CREATE INDEX flights_start_ts    ON flights (start_ts)"))

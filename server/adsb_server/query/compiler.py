@@ -23,6 +23,23 @@ from adsb_server.query.models import (
 )
 
 
+# SQL expression for QNH-corrected altitude in feet.
+# Uses uncorrected getZ(path) when alt_correction_ft is NULL (no correction stored).
+_CORR_ALT = (
+    "CASE WHEN alt_correction_ft IS NULL "
+    "THEN getZ(path) "
+    "ELSE getZ(path) + alt_correction_ft END"
+)
+
+
+def _float_span_sql(alt_min_p: str | None, alt_max_p: str | None) -> str:
+    """SQL span() expression for a floatspan altitude range (one or both bounds may be open)."""
+    lb = f"{alt_min_p}::float8" if alt_min_p is not None else "'-infinity'::float8"
+    ub = f"{alt_max_p}::float8" if alt_max_p is not None else "'infinity'::float8"
+    ub_inc = "true" if alt_max_p is not None else "false"
+    return f"span({lb}, {ub}, true, {ub_inc})"
+
+
 class CompiledPredicate(str):
     """SQL WHERE fragment that may carry CTE definitions for use in WITH clauses.
 
@@ -138,13 +155,36 @@ def _compile_spatial_path(
     parts: list[str] = []
     ctes: list[tuple[str, str]] = []
 
-    alt_min_p = _p(params, v.altitude_min_ft) if v.altitude_min_ft is not None else None
-    alt_max_p = _p(params, v.altitude_max_ft) if v.altitude_max_ft is not None else None
+    # Altitude bounds, separated by reference system.
+    # FL bounds go into the STBOX Z dimension (pressure altitude index).
+    # ft bounds use the corrected altitude tfloat (atvalues).
+    fl_alt_min_p: str | None = None
+    fl_alt_max_p: str | None = None
+    ft_alt_min_p: str | None = None
+    ft_alt_max_p: str | None = None
+
+    if v.altitude_min is not None:
+        if v.altitude_min_ref == "fl":
+            fl_alt_min_p = _p(params, v.altitude_min * 100.0)
+        else:
+            ft_alt_min_p = _p(params, float(v.altitude_min))
+
+    if v.altitude_max is not None:
+        if v.altitude_max_ref == "fl":
+            fl_alt_max_p = _p(params, v.altitude_max * 100.0)
+        else:
+            ft_alt_max_p = _p(params, float(v.altitude_max))
+
     time_from_p = _p(params, v.time_from) if v.time_from is not None else None
     time_to_p = _p(params, v.time_to) if v.time_to is not None else None
 
+    has_fl_alt = fl_alt_min_p is not None or fl_alt_max_p is not None
+    has_ft_alt = ft_alt_min_p is not None or ft_alt_max_p is not None
+    has_alt = has_fl_alt or has_ft_alt
     has_time = time_from_p is not None or time_to_p is not None
-    has_alt = alt_min_p is not None or alt_max_p is not None
+
+    # ft altitude span SQL (used for atvalues), empty string when not needed.
+    ft_span_sql = _float_span_sql(ft_alt_min_p, ft_alt_max_p) if has_ft_alt else ""
 
     # clipped_path_expr: SQL expression for the path restricted to the region of
     # interest.  Used for squawk correlation so squawk codes are only checked
@@ -159,8 +199,10 @@ def _compile_spatial_path(
             # entire compile call; each spatial predicate with a CTE adds at least one
             # param before reaching this point.
             cte_name = f"_s{len(params)}"
+
+            # FL bounds go into the STBOX Z dimension; ft bounds handled separately.
             stbox_sql = _build_stbox_sql(
-                "geom", alt_min_p, alt_max_p, time_from_p, time_to_p
+                "geom", fl_alt_min_p, fl_alt_max_p, time_from_p, time_to_p
             )
             cte_body = (
                 f"SELECT geom, {stbox_sql} AS sb "
@@ -171,19 +213,24 @@ def _compile_spatial_path(
             # GiST STBOX index pre-filter.
             parts.append(f"path && {cte_name}.sb")
 
-            if spatial_fn == "ST_Within":
-                # Confirm at least one instant falls in the altitude/time window.
-                parts.append(f"atStbox(path, {cte_name}.sb) IS NOT NULL")
-                # The entire path must lie within the geometry.
-                parts.append(f"ST_Within(trajectory(path), {cte_name}.geom)")
-            else:  # ST_Intersects → clip to altitude+time window then check intersection
-                parts.append(
-                    f"eIntersects(atStbox(path, {cte_name}.sb), {cte_name}.geom)"
-                )
-            # Squawk check window: path clipped to STBOX then to exact geometry.
-            clipped_path_expr = (
-                f"atgeometry(atStbox(path, {cte_name}.sb), {cte_name}.geom)"
+            # Path clipped to STBOX (FL bounds + time + spatial area).
+            clipped_stbox = f"atStbox(path, {cte_name}.sb)"
+            # Further restrict to ft altitude range when present.
+            clipped_full = (
+                f"atTime({clipped_stbox}, getTime(atvalues({_CORR_ALT}, {ft_span_sql})))"
+                if has_ft_alt
+                else clipped_stbox
             )
+
+            if spatial_fn == "ST_Within":
+                parts.append(f"{clipped_stbox} IS NOT NULL")
+                if has_ft_alt:
+                    parts.append(f"atvalues({_CORR_ALT}, {ft_span_sql}) IS NOT NULL")
+                parts.append(f"ST_Within(trajectory(path), {cte_name}.geom)")
+            else:
+                parts.append(f"eIntersects({clipped_full}, {cte_name}.geom)")
+
+            clipped_path_expr = f"atgeometry({clipped_full}, {cte_name}.geom)"
 
         else:
             # Geometry only — no altitude or time constraints.
@@ -194,12 +241,16 @@ def _compile_spatial_path(
             # Squawk check window: path clipped to the geometry.
             clipped_path_expr = f"atgeometry(path, {geom_sql})"
 
-    # Altitude via btree expression indexes when there is no geometry.
+    # Altitude when no geometry: btree indexes on stored generated columns for all refs.
     if v.geometry is None:
-        if alt_min_p is not None:
-            parts.append(f"ST_ZMax(trajectory(path)::box3d) >= {alt_min_p}::float8")
-        if alt_max_p is not None:
-            parts.append(f"ST_ZMin(trajectory(path)::box3d) <= {alt_max_p}::float8")
+        if fl_alt_min_p is not None:
+            parts.append(f"alt_max_pressure_ft >= {fl_alt_min_p}::float4")
+        if fl_alt_max_p is not None:
+            parts.append(f"alt_min_pressure_ft <= {fl_alt_max_p}::float4")
+        if ft_alt_min_p is not None:
+            parts.append(f"alt_max_qnh_ft >= {ft_alt_min_p}::float4")
+        if ft_alt_max_p is not None:
+            parts.append(f"alt_min_qnh_ft <= {ft_alt_max_p}::float4")
 
     # Btree time bounds for partition pruning and activity-window filtering.
     if time_from_p is not None:

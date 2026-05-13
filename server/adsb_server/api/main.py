@@ -129,6 +129,7 @@ _FLIGHT_COLS = f"""
     asText(f.path) AS path_text,
     asText(f.path_tracks) AS path_tracks_text,
     asText(f.squawk_seq) AS squawk_seq_text,
+    asText(f.alt_correction_ft) AS alt_correction_ft_text,
     f.raw_point_count,
     f.ingest_batch_date,
     numInstants(f.path) AS point_count
@@ -141,6 +142,7 @@ _INSTANT_RE = re.compile(
 )
 _TINT_INSTANT_RE = re.compile(r"(-?\d+)@")
 _TTEXT_INSTANT_RE = re.compile(r"([^@,\[\]]+)@([^,\[\]]+)")
+_TFLOAT_INSTANT_RE = re.compile(r"(-?[\d.]+(?:[eE][+-]?\d+)?)@(\d{4}-\d{2}-\d{2}[^,\[\]\{\}]*)")
 
 
 def _parse_path(
@@ -186,6 +188,20 @@ def _parse_squawk_seq(text: str | None) -> list[tuple[float, str]]:
     return runs
 
 
+def _parse_alt_correction(text: str | None) -> list[list[float]] | None:
+    """Parse a MobilityDB stepwise tfloat text into [[epoch_s, correction_ft], ...] pairs."""
+    if not text:
+        return None
+    result: list[list[float]] = []
+    for m in _TFLOAT_INSTANT_RE.finditer(text):
+        val = float(m.group(1))
+        ts_str = m.group(2).strip()
+        if ts_str.endswith("+00"):
+            ts_str += ":00"
+        result.append([datetime.fromisoformat(ts_str).timestamp(), val])
+    return result if result else None
+
+
 def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDetail:
     path = None
     timestamps = None
@@ -194,6 +210,7 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
     if include_path:
         path, timestamps, filtered_tracks = _parse_path(row["path_text"], row["path_tracks_text"])
         squawk_runs = _parse_squawk_seq(row["squawk_seq_text"])
+    alt_correction_ft = _parse_alt_correction(row["alt_correction_ft_text"])
     return FlightDetail(
         flight_id=row["flight_id"],
         icao24=row["icao24"],
@@ -209,6 +226,7 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
         timestamps=timestamps,
         path_tracks=filtered_tracks,
         squawk_runs=squawk_runs,
+        alt_correction_ft=alt_correction_ft,
         raw_point_count=row["raw_point_count"],
         ingest_batch_date=row["ingest_batch_date"],
     )
@@ -290,7 +308,8 @@ async def query_flights(
                                     "type": "Polygon",
                                     "coordinates": [[[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]],  # noqa: E501
                                 },
-                                "altitude_min_ft": 35000,
+                                "altitude_min": 35000,
+                                "altitude_min_ref": "ft",
                                 "time_from": "2026-03-30T00:00:00Z",
                                 "time_to": "2026-03-31T00:00:00Z",
                             }
