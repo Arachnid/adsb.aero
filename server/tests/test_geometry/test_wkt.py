@@ -113,3 +113,41 @@ def test_ttext_seq_preserves_order() -> None:
     idx_7700 = result.index('"7700"@')
     idx_1200 = result.index('"1200"@')
     assert idx_2000 < idx_7700 < idx_1200
+
+
+from adsb_server.geometry.wkt import tfloat_stepwise_seq  # noqa: E402
+
+
+def test_tfloat_stepwise_seq_empty_returns_none() -> None:
+    assert tfloat_stepwise_seq([], []) is None
+
+
+def test_tfloat_stepwise_seq_single_value() -> None:
+    result = tfloat_stepwise_seq([12.5], [1609275898.0])
+    assert result is not None
+    assert result.startswith("Interp=Step;[")
+    assert result.endswith("]")
+    assert "12.5000@" in result
+
+
+def test_tfloat_stepwise_seq_multiple_values() -> None:
+    result = tfloat_stepwise_seq([12.5, -3.0, 27.1], [100.0, 200.0, 300.0])
+    assert result is not None
+    assert result.startswith("Interp=Step;[")
+    assert result.count("@") == 3
+    assert "12.5000@" in result
+    assert "-3.0000@" in result
+    assert "27.1000@" in result
+
+
+def test_tfloat_stepwise_seq_timestamp_format() -> None:
+    result = tfloat_stepwise_seq([0.0], [0.0])
+    assert result is not None
+    assert "0.0000@1970-01-01T00:00:00" in result
+    assert "+00" in result
+
+
+def test_tfloat_stepwise_seq_preserves_order() -> None:
+    result = tfloat_stepwise_seq([1.0, 2.0, 3.0], [100.0, 200.0, 300.0])
+    assert result is not None
+    assert result.index("1.0000@") < result.index("2.0000@") < result.index("3.0000@")

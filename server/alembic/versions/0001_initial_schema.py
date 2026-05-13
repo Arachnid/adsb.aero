@@ -45,6 +45,7 @@ def upgrade() -> None:
             path              tgeompoint   NOT NULL,
             path_tracks       tint         NOT NULL,
             squawk_seq        ttext,
+            alt_correction_ft tfloat,
             raw_point_count   INTEGER      NOT NULL DEFAULT 0,
             ingest_batch_date DATE         NOT NULL,
             PRIMARY KEY (icao24, start_ts)

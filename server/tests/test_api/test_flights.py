@@ -41,8 +41,8 @@ async def test_get_flight_happy_path(api_client: AsyncClient) -> None:
     # Tracks
     assert data["path_tracks"] == [90, 315, 315]
 
-    # Squawk runs
-    assert data["squawk_runs"] == [[1743501600.0, "1234"]]
+    # Squawk runs: two instants with the same code define the temporal extent
+    assert data["squawk_runs"] == [[1743501600.0, "1234"], [1743508800.0, "1234"]]
 
     assert data["raw_point_count"] == 30
     assert data["ingest_batch_date"] == "2025-04-01"

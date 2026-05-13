@@ -45,3 +45,19 @@ def tint_seq(values: list[int], timestamps: list[float]) -> str:
     """
     instants = [f"{v}@{_fmt_ts(ts)}" for v, ts in zip(values, timestamps, strict=True)]
     return f"[{', '.join(instants)}]"
+
+
+def tfloat_stepwise_seq(values: list[float], timestamps: list[float]) -> str | None:
+    """Return a MobilityDB tfloat stepwise sequence string, or None if empty.
+
+    values: float values at each instant (e.g. altitude corrections in feet).
+    timestamps: corresponding unix epoch floats, same length as values.
+    Output: 'Interp=Step;[val@ts, ...]'
+    """
+    if not values:
+        return None
+    instants = [
+        f"{v:.4f}@{_fmt_ts(ts)}"
+        for v, ts in zip(values, timestamps, strict=True)
+    ]
+    return f"Interp=Step;[{', '.join(instants)}]"
