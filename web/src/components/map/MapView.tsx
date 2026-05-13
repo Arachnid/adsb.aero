@@ -299,6 +299,7 @@ export type HoveredPoint = { flightId: string; pointIdx: number };
 
 interface MapViewProps {
   basemap: Basemap;
+  chartsOn: boolean;
   pickingActive: boolean;
   drawingActive: boolean;
   onPickPoint: (lat: number, lng: number) => void;
@@ -315,6 +316,7 @@ interface MapViewProps {
 
 export function MapView({
   basemap,
+  chartsOn,
   pickingActive,
   drawingActive,
   onPickPoint,
@@ -340,6 +342,7 @@ export function MapView({
   const onMoveEndRef = useRef(onMoveEnd);
   const onSelectRef = useRef(onSelectFlight);
   const onHoverPointRef = useRef(onHoverPoint);
+  const chartsOnRef = useRef(chartsOn);
   // Persists the main flight layers so the hover-dot effect can append without rebuilding them.
   const mainLayersRef = useRef<(LineLayer<Seg> | ScatterplotLayer<FlightDetail>)[]>([]);
 
@@ -360,6 +363,7 @@ export function MapView({
   onMoveEndRef.current = onMoveEnd;
   onSelectRef.current = onSelectFlight;
   onHoverPointRef.current = onHoverPoint;
+  chartsOnRef.current = chartsOn;
 
   useEffect(() => {
     const map = mapRef.current;
@@ -377,6 +381,12 @@ export function MapView({
       setSource(mapRef.current?.getSource("draft"), EMPTY_FC);
     }
   }, [drawingActive]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer("openaip-charts")) return;
+    map.setLayoutProperty("openaip-charts", "visibility", chartsOn ? "visible" : "none");
+  }, [chartsOn]);
 
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas();
@@ -430,6 +440,21 @@ export function MapView({
 
     const setupOverlays = (): void => {
       if (!map.getSource("filter-geoms")) {
+        map.addSource("openaip", {
+          type: "raster",
+          tiles: ["/tiles/openaip/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          minzoom: 5,
+          maxzoom: 14,
+          attribution: "© <a href='https://www.openaip.net/' target='_blank'>OpenAIP</a>",
+        });
+        map.addLayer({
+          id: "openaip-charts",
+          type: "raster",
+          source: "openaip",
+          layout: { visibility: chartsOnRef.current ? "visible" : "none" },
+          paint: { "raster-opacity": 0.8 },
+        });
         initOverlays(map, geometriesRef.current);
       }
     };

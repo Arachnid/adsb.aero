@@ -277,6 +277,7 @@ export function App(): React.ReactElement {
     <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
       <MapView
         basemap={basemap}
+        chartsOn={airspaceOn}
         pickingActive={pickingId !== null}
         drawingActive={drawingId !== null}
         onPickPoint={handlePickPoint}

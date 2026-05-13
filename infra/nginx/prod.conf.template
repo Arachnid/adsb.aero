@@ -1,0 +1,78 @@
+# Tile cache shared across workers. Must be in http{} context — conf.d/ files
+# are included there by the default nginx.conf, so this is valid here.
+proxy_cache_path /var/cache/nginx/openaip
+    levels=1:2
+    keys_zone=openaip:4m
+    max_size=512m
+    inactive=30d
+    use_temp_path=off;
+
+upstream api {
+    server api:8000;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    root /srv/web;
+    index index.html;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml image/svg+xml application/x-protobuf application/vnd.mapbox-vector-tile;
+    gzip_proxied any;
+    gzip_vary on;
+    gzip_min_length 256;
+
+    # OpenAIP chart tile proxy.
+    # API key is injected here; clients never see it.
+    # Cache: 7 days for successful tiles (charts update infrequently).
+    location ~ ^/tiles/openaip/(?<tile_path>.+)$ {
+        # Restrict to requests originating from this site.
+        valid_referers blocked server_names "~adsb\.aero";
+        if ($invalid_referer) {
+            return 403;
+        }
+
+        resolver 1.1.1.1 8.8.8.8 valid=300s ipv6=off;
+
+        proxy_cache            openaip;
+        proxy_cache_key        $uri;
+        proxy_cache_valid      200 7d;
+        proxy_cache_valid      404 1m;
+        proxy_cache_use_stale  error timeout updating;
+        proxy_cache_lock       on;
+        proxy_cache_lock_timeout 5s;
+        # Honour our TTL regardless of upstream cache headers.
+        proxy_ignore_headers   Cache-Control Expires;
+
+        add_header X-Cache-Status $upstream_cache_status always;
+
+        proxy_pass https://api.tiles.openaip.net/api/data/openaip/$tile_path?apiKey=${OPENAIP_API_KEY};
+        proxy_http_version 1.1;
+        proxy_ssl_server_name  on;
+
+        # Don't leak client headers upstream.
+        proxy_set_header Host            api.tiles.openaip.net;
+        proxy_set_header X-Real-IP       "";
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header Cookie          "";
+    }
+
+    # API — preserve the full /api/... path (FastAPI routes include the /api prefix)
+    location /api/ {
+        proxy_pass http://api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # SPA — fall back to index.html for all non-file routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

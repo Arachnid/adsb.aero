@@ -29,11 +29,10 @@ services:
       - dev_scheduler_cache:/data/cache
 
   nginx:
-    # Dev config: proxy everything non-API to the Vite dev server
-    # This volume mount appends after the prod.conf mount; Docker uses the last mount
-    # for duplicate destinations, so dev.conf shadows prod.conf at runtime.
+    # dev.conf.template shadows prod.conf.template at the same destination path;
+    # Docker uses the last mount for duplicate destinations.
     volumes:
-      - ./nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/dev.conf.template:/etc/nginx/templates/default.conf.template:ro
     depends_on:
       - vite
 
