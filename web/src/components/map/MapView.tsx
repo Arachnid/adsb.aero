@@ -302,8 +302,10 @@ interface MapViewProps {
   chartsOn: boolean;
   pickingActive: boolean;
   drawingActive: boolean;
+  airspacePickingActive: boolean;
   onPickPoint: (lat: number, lng: number) => void;
   onDrawComplete: (points: [number, number][]) => void;
+  onPickAirspace: (lat: number, lng: number, x: number, y: number) => void;
   geometries: MapGeometry[];
   onMoveEnd?: (bounds: MapBounds) => void;
   flights: FlightDetail[] | null;
@@ -319,8 +321,10 @@ export function MapView({
   chartsOn,
   pickingActive,
   drawingActive,
+  airspacePickingActive,
   onPickPoint,
   onDrawComplete,
+  onPickAirspace,
   geometries,
   onMoveEnd,
   flights,
@@ -343,6 +347,8 @@ export function MapView({
   const onSelectRef = useRef(onSelectFlight);
   const onHoverPointRef = useRef(onHoverPoint);
   const chartsOnRef = useRef(chartsOn);
+  const airspacePickingRef = useRef(airspacePickingActive);
+  const onPickAirspaceRef = useRef(onPickAirspace);
   // Persists the main flight layers so the hover-dot effect can append without rebuilding them.
   const mainLayersRef = useRef<(LineLayer<Seg> | ScatterplotLayer<FlightDetail>)[]>([]);
 
@@ -364,6 +370,8 @@ export function MapView({
   onSelectRef.current = onSelectFlight;
   onHoverPointRef.current = onHoverPoint;
   chartsOnRef.current = chartsOn;
+  airspacePickingRef.current = airspacePickingActive;
+  onPickAirspaceRef.current = onPickAirspace;
 
   useEffect(() => {
     const map = mapRef.current;
@@ -391,9 +399,9 @@ export function MapView({
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas();
     if (canvas) {
-      canvas.style.cursor = pickingActive || drawingActive ? "crosshair" : "";
+      canvas.style.cursor = pickingActive || drawingActive || airspacePickingActive ? "crosshair" : "";
     }
-  }, [pickingActive, drawingActive]);
+  }, [pickingActive, drawingActive, airspacePickingActive]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -408,6 +416,10 @@ export function MapView({
 
     const onClick = (e: MapMouseEvent): void => {
       const { lat, lng } = e.lngLat;
+      if (airspacePickingRef.current) {
+        onPickAirspaceRef.current(lat, lng, e.point.x, e.point.y);
+        return;
+      }
       if (pickingRef.current) {
         onPickRef.current(lat, lng);
         return;

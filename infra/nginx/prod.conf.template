@@ -25,6 +25,38 @@ server {
     gzip_vary on;
     gzip_min_length 256;
 
+    # OpenAIP airspaces API proxy.
+    # Injects the API key; clients never see it.
+    # Exact match takes precedence over the /api/ → FastAPI block below.
+    # Cache: 24 h (airspace boundaries change infrequently).
+    location = /api/airspaces {
+        valid_referers blocked server_names "~adsb\.aero";
+        if ($invalid_referer) { return 403; }
+
+        resolver 1.1.1.1 8.8.8.8 valid=300s ipv6=off;
+
+        proxy_cache            openaip;
+        proxy_cache_key        "/api/airspaces$is_args$args";
+        proxy_cache_valid      200 24h;
+        proxy_cache_valid      404 1m;
+        proxy_cache_use_stale  error timeout updating;
+        proxy_cache_lock       on;
+        proxy_cache_lock_timeout 5s;
+        proxy_ignore_headers   Cache-Control Expires;
+
+        add_header X-Cache-Status $upstream_cache_status always;
+
+        proxy_pass https://api.core.openaip.net/api/airspaces$is_args$args;
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+
+        proxy_set_header Host               api.core.openaip.net;
+        proxy_set_header x-openaip-api-key  "${OPENAIP_API_KEY}";
+        proxy_set_header X-Real-IP          "";
+        proxy_set_header X-Forwarded-For    "";
+        proxy_set_header Cookie             "";
+    }
+
     # OpenAIP chart tile proxy.
     # API key is injected here; clients never see it.
     # Cache: 7 days for successful tiles (charts update infrequently).

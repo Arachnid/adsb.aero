@@ -17,7 +17,7 @@ import {
 } from "react-aria-components";
 import { parseDate, parseDateTime } from "@internationalized/date";
 import type { CalendarDate, CalendarDateTime } from "@internationalized/date";
-import { Braces, Circle, Pin, Plane, Play, Plus, Polygon, Text, Viewport, X } from "../Icons";
+import { Braces, Circle, Pin, Plane, Play, Plus, Polygon, Text, Viewport, X, Zone } from "../Icons";
 import type { DataRange } from "../../lib/api";
 
 // ===== Types =====
@@ -34,29 +34,35 @@ interface AircraftPred extends BasePred {
 }
 interface StartsWithinPred extends BasePred {
   kind: "starts_within";
-  shape: "none" | "circle" | "polygon" | "viewport";
+  shape: "none" | "circle" | "polygon" | "viewport" | "airspace";
   lat: number | null;
   lng: number | null;
   radiusNm: number;
   polygon: [number, number][] | null;
+  airspaceName: string | null;
+  airspaceLabel: string | null;
   timeFrom: string;
   timeTo: string;
 }
 interface EndsWithinPred extends BasePred {
   kind: "ends_within";
-  shape: "none" | "circle" | "polygon" | "viewport";
+  shape: "none" | "circle" | "polygon" | "viewport" | "airspace";
   lat: number | null;
   lng: number | null;
   radiusNm: number;
   polygon: [number, number][] | null;
+  airspaceName: string | null;
+  airspaceLabel: string | null;
   timeFrom: string;
   timeTo: string;
 }
 interface IntersectsPred extends BasePred {
   kind: "region";
   regionName: string;
-  shape: "none" | "circle" | "polygon" | "viewport";
+  shape: "none" | "circle" | "polygon" | "viewport" | "airspace";
   polygon: [number, number][] | null;
+  airspaceName: string | null;
+  airspaceLabel: string | null;
   lat: number | null;
   lng: number | null;
   radiusNm: number;
@@ -69,8 +75,10 @@ interface IntersectsPred extends BasePred {
 interface AlwaysWithinPred extends BasePred {
   kind: "always_within";
   regionName: string;
-  shape: "none" | "circle" | "polygon" | "viewport";
+  shape: "none" | "circle" | "polygon" | "viewport" | "airspace";
   polygon: [number, number][] | null;
+  airspaceName: string | null;
+  airspaceLabel: string | null;
   lat: number | null;
   lng: number | null;
   radiusNm: number;
@@ -122,6 +130,8 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
       lng: null,
       radiusNm: 1,
       polygon: null,
+      airspaceName: null,
+      airspaceLabel: null,
       timeFrom: "",
       timeTo: "",
     };
@@ -133,6 +143,8 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
       regionName: "Region " + String(regionCount + 1),
       shape: "polygon",
       polygon: null,
+      airspaceName: null,
+      airspaceLabel: null,
       lat: null,
       lng: null,
       radiusNm: 25,
@@ -399,6 +411,7 @@ export function isPredValid(pred: UIPredicate): boolean {
       if (pred.shape === "none") return hasTime;
       if (pred.shape === "viewport") return true;
       if (pred.shape === "circle") return pred.lat !== null && pred.lng !== null;
+      // polygon and airspace both require a polygon to be set
       return pred.polygon !== null && pred.polygon.length >= 3;
     }
     case "region":
@@ -414,6 +427,7 @@ export function isPredValid(pred: UIPredicate): boolean {
       if (pred.shape === "circle") {
         if (pred.lat === null) return false;
       } else if (pred.polygon === null || pred.polygon.length < 3) {
+        // polygon and airspace both require a polygon to be set
         return false;
       }
       if (pred.altMin !== null && pred.altMax !== null && pred.altMin > pred.altMax) return false;
@@ -528,7 +542,7 @@ function DateTimeField({
   );
 }
 
-type Shape = "none" | "circle" | "polygon" | "viewport";
+type Shape = "none" | "circle" | "polygon" | "viewport" | "airspace";
 
 function ShapeToggle({
   shape,
@@ -539,37 +553,20 @@ function ShapeToggle({
 }): React.ReactElement {
   return (
     <div className="shape-toggle">
-      <button
-        className={shape === "none" ? "active" : ""}
-        onClick={() => {
-          onChange("none");
-        }}
-      >
+      <button className={shape === "none" ? "active" : ""} onClick={() => onChange("none")}>
         —
       </button>
-      <button
-        className={shape === "circle" ? "active" : ""}
-        onClick={() => {
-          onChange("circle");
-        }}
-      >
+      <button className={shape === "circle" ? "active" : ""} onClick={() => onChange("circle")}>
         <Circle size={12} /> Circle
       </button>
-      <button
-        className={shape === "polygon" ? "active" : ""}
-        onClick={() => {
-          onChange("polygon");
-        }}
-      >
-        <Polygon size={12} /> Polygon
+      <button className={shape === "polygon" ? "active" : ""} onClick={() => onChange("polygon")}>
+        <Polygon size={12} /> Poly
       </button>
-      <button
-        className={shape === "viewport" ? "active" : ""}
-        onClick={() => {
-          onChange("viewport");
-        }}
-      >
-        <Viewport size={12} /> Viewport
+      <button className={shape === "viewport" ? "active" : ""} onClick={() => onChange("viewport")}>
+        <Viewport size={12} /> View
+      </button>
+      <button className={shape === "airspace" ? "active" : ""} onClick={() => onChange("airspace")}>
+        <Zone size={12} /> Zone
       </button>
     </div>
   );
@@ -738,6 +735,8 @@ function PointRadiusCard({
   isPicking,
   onArmDraw,
   isDrawing,
+  onArmAirspacePicker,
+  isPickingAirspace,
   name,
   dateRange,
 }: {
@@ -748,6 +747,8 @@ function PointRadiusCard({
   isPicking: boolean;
   onArmDraw: () => void;
   isDrawing: boolean;
+  onArmAirspacePicker: () => void;
+  isPickingAirspace: boolean;
   name: string;
   dateRange: DataRange | null;
 }): React.ReactElement {
@@ -837,6 +838,41 @@ function PointRadiusCard({
         >
           Uses current map viewport
         </div>
+      ) : pred.shape === "airspace" ? (
+        <>
+          {pred.polygon && pred.airspaceName ? (
+            <>
+              <div className="polygon-summary">◆ {pred.airspaceName}</div>
+              {pred.airspaceLabel && (
+                <div style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 2 }}>
+                  {pred.airspaceLabel}
+                </div>
+              )}
+            </>
+          ) : (
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: 10.5,
+                color: "var(--fg-3)",
+              }}
+            >
+              No airspace selected
+            </div>
+          )}
+          <div className="minimap-buttons">
+            <button
+              className={"btn-secondary" + (isPickingAirspace ? " armed" : "")}
+              onClick={onArmAirspacePicker}
+            >
+              {isPickingAirspace
+                ? "Click on map…"
+                : pred.polygon
+                  ? "Change"
+                  : "Choose from map"}
+            </button>
+          </div>
+        </>
       ) : null}
       <div style={{ marginTop: 4 }}>
         <DateTimeField
@@ -874,6 +910,8 @@ function RegionCard({
   isDrawing,
   onArmPicker,
   isPicking,
+  onArmAirspacePicker,
+  isPickingAirspace,
   name,
   dateRange,
 }: {
@@ -884,6 +922,8 @@ function RegionCard({
   isDrawing: boolean;
   onArmPicker: () => void;
   isPicking: boolean;
+  onArmAirspacePicker: () => void;
+  isPickingAirspace: boolean;
   name: string;
   dateRange: DataRange | null;
 }): React.ReactElement {
@@ -1000,47 +1040,84 @@ function RegionCard({
         >
           Uses current map viewport
         </div>
-      ) : null}
-      <div className="optional-group" style={{ marginTop: 4 }}>
-        <label className="optional-group-label">
-          <input
-            type="checkbox"
-            checked={altOpen}
-            onChange={(e) => {
-              toggleAlt(e.target.checked);
-            }}
-          />
-          Altitude range
-        </label>
-        {altOpen && (
-          <div className="pred-row optional-group-body">
-            <div>
-              <FieldLabel>Alt min (ft)</FieldLabel>
-              <input
-                className="text-field mono"
-                type="number"
-                placeholder="0"
-                value={pred.altMin ?? ""}
-                onChange={(e) => {
-                  onChange({ ...pred, altMin: e.target.value === "" ? null : +e.target.value });
-                }}
-              />
+      ) : pred.shape === "airspace" ? (
+        <>
+          {pred.polygon && pred.airspaceName ? (
+            <>
+              <div className="polygon-summary">◆ {pred.airspaceName}</div>
+              {pred.airspaceLabel && (
+                <div style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 2 }}>
+                  {pred.airspaceLabel}
+                </div>
+              )}
+            </>
+          ) : (
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: 10.5,
+                color: "var(--fg-3)",
+              }}
+            >
+              No airspace selected
             </div>
-            <div>
-              <FieldLabel>Alt max (ft)</FieldLabel>
-              <input
-                className="text-field mono"
-                type="number"
-                placeholder="∞"
-                value={pred.altMax ?? ""}
-                onChange={(e) => {
-                  onChange({ ...pred, altMax: e.target.value === "" ? null : +e.target.value });
-                }}
-              />
-            </div>
+          )}
+          <div className="minimap-buttons">
+            <button
+              className={"btn-secondary" + (isPickingAirspace ? " armed" : "")}
+              onClick={onArmAirspacePicker}
+            >
+              {isPickingAirspace
+                ? "Click on map…"
+                : pred.polygon
+                  ? "Change"
+                  : "Choose from map"}
+            </button>
           </div>
-        )}
-      </div>
+        </>
+      ) : null}
+      {pred.shape !== "airspace" && (
+        <div className="optional-group" style={{ marginTop: 4 }}>
+          <label className="optional-group-label">
+            <input
+              type="checkbox"
+              checked={altOpen}
+              onChange={(e) => {
+                toggleAlt(e.target.checked);
+              }}
+            />
+            Altitude range
+          </label>
+          {altOpen && (
+            <div className="pred-row optional-group-body">
+              <div>
+                <FieldLabel>Alt min (ft)</FieldLabel>
+                <input
+                  className="text-field mono"
+                  type="number"
+                  placeholder="0"
+                  value={pred.altMin ?? ""}
+                  onChange={(e) => {
+                    onChange({ ...pred, altMin: e.target.value === "" ? null : +e.target.value });
+                  }}
+                />
+              </div>
+              <div>
+                <FieldLabel>Alt max (ft)</FieldLabel>
+                <input
+                  className="text-field mono"
+                  type="number"
+                  placeholder="∞"
+                  value={pred.altMax ?? ""}
+                  onChange={(e) => {
+                    onChange({ ...pred, altMax: e.target.value === "" ? null : +e.target.value });
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <div className="optional-group" style={{ marginTop: 4 }}>
         <label className="optional-group-label">
           <input
@@ -1240,6 +1317,8 @@ function PredicateRenderer({
   isPicking,
   onArmDraw,
   isDrawing,
+  onArmAirspacePicker,
+  isPickingAirspace,
   name,
   dateRange,
 }: {
@@ -1250,6 +1329,8 @@ function PredicateRenderer({
   isPicking: boolean;
   onArmDraw: () => void;
   isDrawing: boolean;
+  onArmAirspacePicker: () => void;
+  isPickingAirspace: boolean;
   name: string;
   dateRange: DataRange | null;
 }): React.ReactElement | null {
@@ -1269,14 +1350,14 @@ function PredicateRenderer({
       return (
         <PointRadiusCard
           pred={pred}
-          onChange={(p) => {
-            onChange(p);
-          }}
+          onChange={(p) => { onChange(p); }}
           onRemove={onRemove}
           onArmPicker={onArmPicker}
           isPicking={isPicking}
           onArmDraw={onArmDraw}
           isDrawing={isDrawing}
+          onArmAirspacePicker={onArmAirspacePicker}
+          isPickingAirspace={isPickingAirspace}
           name={name}
           dateRange={dateRange}
         />
@@ -1286,14 +1367,14 @@ function PredicateRenderer({
       return (
         <RegionCard
           pred={pred}
-          onChange={(p) => {
-            onChange(p);
-          }}
+          onChange={(p) => { onChange(p); }}
           onRemove={onRemove}
           onArmDraw={onArmDraw}
           isDrawing={isDrawing}
           onArmPicker={onArmPicker}
           isPicking={isPicking}
+          onArmAirspacePicker={onArmAirspacePicker}
+          isPickingAirspace={isPickingAirspace}
           name={name}
           dateRange={dateRange}
         />
@@ -1321,6 +1402,8 @@ interface GroupBlockProps {
   pickingId: string | null;
   onArmDraw: (id: string) => void;
   drawingId: string | null;
+  onArmAirspacePicker: (id: string) => void;
+  airspacePickingId: string | null;
   regionCount: number;
   labels: Map<string, string>;
   noAddFilter?: boolean;
@@ -1335,6 +1418,8 @@ function GroupBlock({
   pickingId,
   onArmDraw,
   drawingId,
+  onArmAirspacePicker,
+  airspacePickingId,
   regionCount,
   labels,
   noAddFilter,
@@ -1421,16 +1506,14 @@ function GroupBlock({
             <GroupBlock
               key={item.id}
               group={item}
-              onChange={(g) => {
-                updateChild(item.id, g);
-              }}
-              onRemove={() => {
-                removeChild(item.id);
-              }}
+              onChange={(g) => { updateChild(item.id, g); }}
+              onRemove={() => { removeChild(item.id); }}
               onArmPicker={onArmPicker}
               pickingId={pickingId}
               onArmDraw={onArmDraw}
               drawingId={drawingId}
+              onArmAirspacePicker={onArmAirspacePicker}
+              airspacePickingId={airspacePickingId}
               regionCount={regionCount}
               labels={labels}
               dateRange={dateRange}
@@ -1439,20 +1522,14 @@ function GroupBlock({
             <PredicateRenderer
               key={item.id}
               pred={item}
-              onChange={(p) => {
-                updateChild(item.id, p);
-              }}
-              onRemove={() => {
-                removeChild(item.id);
-              }}
-              onArmPicker={() => {
-                onArmPicker(item.id);
-              }}
+              onChange={(p) => { updateChild(item.id, p); }}
+              onRemove={() => { removeChild(item.id); }}
+              onArmPicker={() => { onArmPicker(item.id); }}
               isPicking={pickingId === item.id}
-              onArmDraw={() => {
-                onArmDraw(item.id);
-              }}
+              onArmDraw={() => { onArmDraw(item.id); }}
               isDrawing={drawingId === item.id}
+              onArmAirspacePicker={() => { onArmAirspacePicker(item.id); }}
+              isPickingAirspace={airspacePickingId === item.id}
               name={labels.get(item.id) ?? (item.kind === "aircraft" ? "Aircraft" : "Callsign")}
               dateRange={dateRange}
             />
@@ -1473,6 +1550,8 @@ export interface QueryBuilderBodyProps {
   pickingId: string | null;
   onArmDraw: (id: string) => void;
   drawingId: string | null;
+  onArmAirspacePicker: (id: string) => void;
+  airspacePickingId: string | null;
   dateRange: DataRange | null;
 }
 
@@ -1527,6 +1606,8 @@ export function QueryBuilderBody({
   pickingId,
   onArmDraw,
   drawingId,
+  onArmAirspacePicker,
+  airspacePickingId,
   dateRange,
 }: QueryBuilderBodyProps): React.ReactElement {
   return (
@@ -1537,6 +1618,8 @@ export function QueryBuilderBody({
       pickingId={pickingId}
       onArmDraw={onArmDraw}
       drawingId={drawingId}
+      onArmAirspacePicker={onArmAirspacePicker}
+      airspacePickingId={airspacePickingId}
       regionCount={countRegions(rootGroup)}
       labels={computeLabels(rootGroup)}
       noAddFilter

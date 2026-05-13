@@ -43,7 +43,7 @@ export function collectGeometries(group: FilterGroup): MapGeometry[] {
           id: item.id,
           label,
           color,
-          kind: item.shape,
+          kind: item.shape === "airspace" ? "polygon" : item.shape,
           polygon: item.polygon,
           lat: item.lat,
           lng: item.lng,

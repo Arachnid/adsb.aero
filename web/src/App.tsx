@@ -1,5 +1,46 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapView, MapBounds, HoveredPoint } from "./components/map/MapView";
+
+// Numeric codes from the OpenAIP API
+const AIRSPACE_TYPES: Record<number, string> = {
+  0: "Other", 1: "Restricted", 2: "Danger", 3: "Prohibited",
+  4: "CTR", 5: "TMZ", 6: "RMZ", 7: "TMA", 8: "TRA", 9: "TSA",
+  10: "FIR", 11: "UIR", 12: "ADIZ", 13: "ATZ", 14: "MATZ",
+  15: "Airway", 16: "MTR", 17: "Alert", 18: "Warning",
+  19: "Protected", 20: "MOA", 21: "CTA", 22: "ACC", 23: "Sport",
+};
+const ICAO_CLASSES: Record<number, string> = {
+  0: "A", 1: "B", 2: "C", 3: "D", 4: "E", 5: "F", 6: "G",
+};
+
+interface AirspaceCandidate {
+  id: string;
+  name: string;
+  typeCode: number;
+  icaoClassCode: number | null;
+  country: string;
+  lowerLimitFt: number | null;
+  upperLimitFt: number | null;
+  polygon: [number, number][];
+}
+
+function airspaceSubtitle(c: AirspaceCandidate): string {
+  const type = AIRSPACE_TYPES[c.typeCode] ?? `Type ${c.typeCode}`;
+  const cls = c.icaoClassCode !== null
+    ? `Class ${ICAO_CLASSES[c.icaoClassCode] ?? String(c.icaoClassCode)}`
+    : null;
+  const typeClass = [type, cls].filter(Boolean).join(" · ");
+  const altRange =
+    c.lowerLimitFt !== null || c.upperLimitFt !== null
+      ? `${c.lowerLimitFt !== null ? c.lowerLimitFt.toLocaleString() : "GND"} – ${c.upperLimitFt !== null ? c.upperLimitFt.toLocaleString() : "∞"} ft`
+      : null;
+  return [typeClass, altRange].filter(Boolean).join(" · ");
+}
+
+function openaipLimitToFt(limit: { value: number; unit: number } | null | undefined): number | null {
+  if (!limit) return null;
+  return limit.unit === 6 ? limit.value * 100 : limit.value;
+}
 import { anyViewportFilter, collectGeometries } from "./lib/queryGeometry";
 import { Topbar } from "./components/layout/Topbar";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -107,6 +148,13 @@ export function App(): React.ReactElement {
   const [globalDateRange, setGlobalDateRange] = useState<GlobalDateRange>({ from: "", to: "" });
   const [pickingId, setPickingId] = useState<string | null>(null);
   const [drawingId, setDrawingId] = useState<string | null>(null);
+  const [airspacePickingId, setAirspacePickingId] = useState<string | null>(null);
+  const [airspaceMenu, setAirspaceMenu] = useState<{
+    x: number;
+    y: number;
+    predId: string;
+    candidates: AirspaceCandidate[] | null; // null = loading
+  } | null>(null);
 
   const [viewportVersion, setViewportVersion] = useState(0);
   const [lastRunVersion, setLastRunVersion] = useState<number | null>(null);
@@ -153,12 +201,86 @@ export function App(): React.ReactElement {
 
   const armPicker = (predId: string): void => {
     setDrawingId(null);
+    setAirspacePickingId(null);
+    setAirspaceMenu(null);
     setPickingId((prev) => (prev === predId ? null : predId));
   };
 
   const armDraw = (predId: string): void => {
     setPickingId(null);
+    setAirspacePickingId(null);
+    setAirspaceMenu(null);
     setDrawingId((prev) => (prev === predId ? null : predId));
+  };
+
+  const armAirspacePicker = (predId: string): void => {
+    setPickingId(null);
+    setDrawingId(null);
+    setAirspaceMenu(null);
+    setAirspacePickingId((prev) => (prev === predId ? null : predId));
+  };
+
+  const handlePickAirspace = (lat: number, lng: number, x: number, y: number): void => {
+    const predId = airspacePickingId;
+    if (!predId) return;
+    setAirspacePickingId(null);
+    setAirspaceMenu({ x, y, predId, candidates: null });
+    fetch(`/api/airspaces?pos=${lat.toFixed(6)},${lng.toFixed(6)}&dist=1`)
+      .then((r) => r.json())
+      .then((data: { items: Array<{
+        _id: string; name: string; type: number; icaoClass?: number;
+        country: string;
+        lowerLimit?: { value: number; unit: number };
+        upperLimit?: { value: number; unit: number };
+        geometry: { type: string; coordinates: number[][][] };
+      }> }) => {
+        const candidates: AirspaceCandidate[] = data.items
+          .filter((item) => item.geometry?.type === "Polygon")
+          .map((item) => ({
+            id: item._id,
+            name: item.name,
+            typeCode: item.type,
+            icaoClassCode: typeof item.icaoClass === "number" && item.icaoClass <= 6
+              ? item.icaoClass : null,
+            country: item.country ?? "",
+            lowerLimitFt: openaipLimitToFt(item.lowerLimit),
+            upperLimitFt: openaipLimitToFt(item.upperLimit),
+            polygon: (item.geometry.coordinates[0] ?? []) as [number, number][],
+          }))
+          .filter((c) => c.polygon.length >= 3);
+        if (candidates.length === 0) {
+          setAirspaceMenu(null);
+        } else if (candidates.length === 1) {
+          setAirspaceMenu(null);
+          applyAirspace(predId, candidates[0]!);
+        } else {
+          setAirspaceMenu((m) => m ? { ...m, candidates } : null);
+        }
+      })
+      .catch(() => { setAirspaceMenu(null); });
+  };
+
+  const applyAirspace = (predId: string, c: AirspaceCandidate): void => {
+    const airspaceLabel = airspaceSubtitle(c) || null;
+    setRootGroup((g) =>
+      updatePredInGroup(g, predId, (p: UIPredicate) => {
+        if (
+          p.kind === "starts_within" ||
+          p.kind === "ends_within" ||
+          p.kind === "region" ||
+          p.kind === "always_within"
+        ) {
+          const base = { ...p, shape: "airspace" as const, polygon: c.polygon,
+            airspaceName: c.name, airspaceLabel };
+          if (p.kind === "region" || p.kind === "always_within") {
+            return { ...base, altMin: c.lowerLimitFt, altMax: c.upperLimitFt };
+          }
+          return base;
+        }
+        return p;
+      }),
+    );
+    setAirspaceMenu(null);
   };
 
   const handlePickPoint = (lat: number, lng: number): void => {
@@ -279,6 +401,8 @@ export function App(): React.ReactElement {
         basemap={basemap}
         chartsOn={airspaceOn}
         pickingActive={pickingId !== null}
+        airspacePickingActive={airspacePickingId !== null}
+        onPickAirspace={handlePickAirspace}
         drawingActive={drawingId !== null}
         onPickPoint={handlePickPoint}
         onDrawComplete={handleDrawComplete}
@@ -358,6 +482,8 @@ export function App(): React.ReactElement {
           pickingId={pickingId}
           onArmDraw={armDraw}
           drawingId={drawingId}
+          onArmAirspacePicker={armAirspacePicker}
+          airspacePickingId={airspacePickingId}
           dateRange={dataRange}
         />
       </Sidebar>
@@ -403,6 +529,125 @@ export function App(): React.ReactElement {
       />
 
       <Legend colorMode={colorMode} />
+
+      {airspaceMenu && (
+        <AirspacePickerMenu
+          x={airspaceMenu.x}
+          y={airspaceMenu.y}
+          candidates={airspaceMenu.candidates}
+          onSelect={(c) => { applyAirspace(airspaceMenu.predId, c); }}
+          onDismiss={() => { setAirspaceMenu(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AirspaceShapePreview({ polygon }: { polygon: [number, number][] }): React.ReactElement {
+  const SIZE = 48;
+  const PAD = 3;
+  const inner = SIZE - PAD * 2;
+  const lngs = polygon.map(([lng]) => lng);
+  const lats = polygon.map(([, lat]) => lat);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const dLng = maxLng - minLng || 0.001;
+  const dLat = maxLat - minLat || 0.001;
+  const scale = inner / Math.max(dLng, dLat);
+  const offX = (SIZE - dLng * scale) / 2;
+  const pts = polygon.map(([lng, lat]) => [
+    (lng - minLng) * scale + offX,
+    (SIZE + dLat * scale) / 2 - (lat - minLat) * scale,
+  ]);
+  const d =
+    pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${(x ?? 0).toFixed(1)},${(y ?? 0).toFixed(1)}`).join(" ") + " Z";
+  return (
+    <svg width={SIZE} height={SIZE} style={{ display: "block", flexShrink: 0 }}>
+      <path d={d} fill="rgba(60,100,220,0.18)" stroke="#3c64dc" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
+function AirspacePickerMenu({
+  x,
+  y,
+  candidates,
+  onSelect,
+  onDismiss,
+}: {
+  x: number;
+  y: number;
+  candidates: AirspaceCandidate[] | null;
+  onSelect: (c: AirspaceCandidate) => void;
+  onDismiss: () => void;
+}): React.ReactElement {
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const handler = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onDismiss();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => { document.removeEventListener("mousedown", handler); };
+  }, [onDismiss]);
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "absolute",
+        left: x + 8,
+        top: y + 8,
+        zIndex: 20,
+        background: "color-mix(in oklab, var(--bg-1) 96%, transparent)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        border: "1px solid var(--line-1)",
+        borderRadius: "var(--radius-2)",
+        boxShadow: "var(--shadow-2)",
+        minWidth: 240,
+        maxWidth: 320,
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ padding: "6px 10px 4px", fontSize: 10.5, color: "var(--fg-3)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        {candidates === null ? "Searching…" : "Select airspace"}
+      </div>
+      {candidates === null && (
+        <div style={{ padding: "8px 10px 10px", fontSize: 12, color: "var(--fg-3)" }}>
+          Looking up airspaces…
+        </div>
+      )}
+      {candidates?.map((c) => (
+        <button
+          key={c.id}
+          onClick={() => { onSelect(c); }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            width: "100%",
+            padding: "6px 10px",
+            background: "none",
+            border: "none",
+            borderTop: "1px solid var(--line-0)",
+            cursor: "pointer",
+            textAlign: "left",
+            color: "var(--fg-1)",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-2)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
+        >
+          <AirspaceShapePreview polygon={c.polygon} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {c.name}
+            </div>
+            <div style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {airspaceSubtitle(c)}
+            </div>
+          </div>
+        </button>
+      ))}
     </div>
   );
 }

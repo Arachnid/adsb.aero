@@ -120,7 +120,8 @@ function shapeToGeometry(
       if (pred.lat === null || pred.lng === null) return null;
       return { type: "Circle", coordinates: [pred.lng, pred.lat], radius: pred.radiusNm * 1852 };
 
-    case "polygon": {
+    case "polygon":
+    case "airspace": {
       if (!pred.polygon || pred.polygon.length < 3) return null;
       // GeoJSON rings must be closed (first === last vertex)
       const ring = [...pred.polygon, pred.polygon[0]] as [number, number][];
