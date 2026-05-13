@@ -125,27 +125,77 @@ function approxCircle(lng: number, lat: number, radiusKm: number): Coord[] {
 
 function topEdgeInfo(pts: Coord[]): { center: Coord; rotation: number } {
   const n = pts.length;
-  let bestAvgLat = -Infinity;
-  let bestA: Coord = [0, 0],
-    bestB: Coord = [0, 0];
+  const lats = pts.map((p) => p[1]);
+  const maxLat = Math.max(...lats);
+  const minLat = Math.min(...lats);
+  const threshold = maxLat - (maxLat - minLat) * 0.5;
+
+  type EdgeInfo = { dx: number; dy: number; len: number };
+  const topEdges: EdgeInfo[] = [];
+  let topMinLng = Infinity,
+    topMaxLng = -Infinity;
+
   for (let i = 0; i < n; i++) {
     const a = pts[i];
     const b = pts[(i + 1) % n];
     if (!a || !b) continue;
-    const avgLat = (a[1] + b[1]) / 2;
-    if (avgLat > bestAvgLat) {
-      bestAvgLat = avgLat;
-      bestA = a;
-      bestB = b;
+    const midLat = (a[1] + b[1]) / 2;
+    if (midLat >= threshold) {
+      const cosLat = Math.cos((midLat * Math.PI) / 180);
+      const dx = (b[0] - a[0]) * cosLat;
+      const dy = b[1] - a[1];
+      topEdges.push({ dx, dy, len: Math.sqrt(dx * dx + dy * dy) });
+    }
+    if (a[1] >= threshold) {
+      topMinLng = Math.min(topMinLng, a[0]);
+      topMaxLng = Math.max(topMaxLng, a[0]);
     }
   }
-  const center: Coord = [(bestA[0] + bestB[0]) / 2, bestAvgLat];
-  // text-rotate is clockwise from east (horizontal); bearing is clockwise from north, so subtract 90.
-  const midLat = bestAvgLat;
-  const dx = (bestB[0] - bestA[0]) * Math.cos((midLat * Math.PI) / 180);
-  const dy = bestB[1] - bestA[1];
-  let rotation = Math.atan2(dx, dy) * (180 / Math.PI) - 90;
-  // Clamp to [-90, 90] so the text is never upside-down.
+
+  if (topEdges.length === 0) {
+    for (let i = 0; i < n; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % n];
+      if (!a || !b) continue;
+      const midLat = (a[1] + b[1]) / 2;
+      const cosLat = Math.cos((midLat * Math.PI) / 180);
+      const dx = (b[0] - a[0]) * cosLat;
+      const dy = b[1] - a[1];
+      topEdges.push({ dx, dy, len: Math.sqrt(dx * dx + dy * dy) });
+    }
+    topMinLng = Math.min(...pts.map((p) => p[0]));
+    topMaxLng = Math.max(...pts.map((p) => p[0]));
+  }
+
+  // An edge is "long" if it spans > 15% of the polygon's projected width.
+  // Long edges are authoritative on their own — pick the most horizontal one
+  // rather than averaging, so that a flat edge and a slightly angled neighbour
+  // of similar length don't combine into a jaunty result.
+  // When all edges are short (e.g. a circle), average them by length instead.
+  const polyWidth =
+    (topMaxLng - topMinLng) * Math.cos((maxLat * Math.PI) / 180);
+  const longThreshold = polyWidth * 0.15;
+  const longEdges = topEdges.filter((e) => e.len > longThreshold);
+
+  let sumDx = 0,
+    sumDy = 0;
+  if (longEdges.length > 0) {
+    const best = longEdges.reduce((a, b) =>
+      Math.abs(a.dx) / a.len > Math.abs(b.dx) / b.len ? a : b,
+    );
+    sumDx = best.dx;
+    sumDy = best.dy;
+  } else {
+    for (const e of topEdges) {
+      sumDx += e.dx * e.len;
+      sumDy += e.dy * e.len;
+    }
+  }
+
+  const centerLng = (topMinLng + topMaxLng) / 2;
+  const center: Coord = [centerLng, maxLat];
+
+  let rotation = Math.atan2(sumDx, sumDy) * (180 / Math.PI) - 90;
   if (rotation > 90) rotation -= 180;
   if (rotation < -90) rotation += 180;
   return { center, rotation };
