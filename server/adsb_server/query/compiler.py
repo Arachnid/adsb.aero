@@ -386,7 +386,7 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> CompiledPredicate:
 
     if isinstance(pred, IcaoType):
         types = _p(params, pred.icao_type)
-        return CompiledPredicate(f"icao_type = ANY({types}::varchar[])")
+        return CompiledPredicate(f"f.icao_type = ANY({types}::varchar[])")
 
     if isinstance(pred, EmitterCategory):
         cats = _p(params, pred.emitter_category)

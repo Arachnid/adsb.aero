@@ -66,6 +66,17 @@ INSERT_FLIGHT = """
     ON CONFLICT (icao24, start_ts) DO NOTHING
 """
 
+INSERT_AIRFRAME = """
+    INSERT INTO airframes (icao24, registration, icao_type, flags, model, year, operator)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (icao24) DO NOTHING
+"""
+
+FLIGHT_A_REGISTRATION = "G-TESTA"
+FLIGHT_A_MODEL = "BOEING 737-800"
+FLIGHT_A_YEAR = 2010
+FLIGHT_A_OPERATOR = "Test Airways"
+
 
 @pytest.fixture(scope="session")
 async def api_test_data(pool: asyncpg.Pool) -> None:
@@ -97,6 +108,17 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
         None,
         50,
         date(2025, 4, 1),
+    )
+    # Airframe data for flight A only; flight B tests the null case.
+    await pool.execute(
+        INSERT_AIRFRAME,
+        FLIGHT_A_ICAO,
+        FLIGHT_A_REGISTRATION,
+        FLIGHT_A_TYPE,
+        0,
+        FLIGHT_A_MODEL,
+        FLIGHT_A_YEAR,
+        FLIGHT_A_OPERATOR,
     )
 
 

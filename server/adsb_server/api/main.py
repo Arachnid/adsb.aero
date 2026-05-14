@@ -46,7 +46,7 @@ def _p(params: list[Any], val: Any) -> str:
 # ---------------------------------------------------------------------------
 
 FLIGHT_ID_EXPR = (
-    "icao24 || ':' || to_char(start_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
+    "f.icao24 || ':' || to_char(f.start_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
 )
 
 
@@ -123,6 +123,10 @@ _FLIGHT_COLS = f"""
     f.callsign,
     f.icao_type,
     f.emitter_category,
+    af.registration,
+    af.model,
+    af.year,
+    af.operator,
     f.start_ts,
     f.end_ts,
     ST_AsGeoJSON(startValue(f.path)::geometry, 6) AS start_point,
@@ -138,6 +142,8 @@ _FLIGHT_COLS = f"""
     f.ingest_batch_date,
     numInstants(f.path) AS point_count
 """
+
+_FLIGHT_JOIN = "LEFT JOIN airframes af ON af.icao24 = f.icao24"
 
 
 _INSTANT_RE = re.compile(
@@ -232,6 +238,10 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
         callsign=row["callsign"],
         icao_type=row["icao_type"],
         emitter_category=row["emitter_category"],
+        registration=row["registration"],
+        model=row["model"],
+        year=row["year"],
+        operator=row["operator"],
         start_ts=row["start_ts"],
         end_ts=row["end_ts"],
         start_point=GeoJSONPointZ.model_validate_json(row["start_point"]),
@@ -405,7 +415,9 @@ async def query_flights(
         cursor_ts, cursor_icao = decode_cursor(body.cursor)
         ts_p = _p(params, cursor_ts)
         icao_p = _p(params, cursor_icao)
-        where_parts.append(f"(start_ts < {ts_p} OR (start_ts = {ts_p} AND icao24 < {icao_p}))")
+        where_parts.append(
+            f"(f.start_ts < {ts_p} OR (f.start_ts = {ts_p} AND f.icao24 < {icao_p}))"
+        )
 
     where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
@@ -421,9 +433,9 @@ async def query_flights(
 
     sql = f"""
         {with_clause}SELECT {_FLIGHT_COLS}
-        FROM flights f{from_extras}
+        FROM flights f {_FLIGHT_JOIN}{from_extras}
         {where_sql}
-        ORDER BY start_ts DESC, icao24 DESC
+        ORDER BY f.start_ts DESC, f.icao24 DESC
         LIMIT {limit_p}
     """
 
@@ -490,7 +502,7 @@ async def get_flight(
 
     sql = f"""
         SELECT {_FLIGHT_COLS}
-        FROM flights f
+        FROM flights f {_FLIGHT_JOIN}
         WHERE f.icao24 = $1 AND date_trunc('second', f.start_ts) = $2
     """
 

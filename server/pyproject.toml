@@ -72,4 +72,4 @@ addopts = "--cov=adsb_server --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
 source = ["adsb_server"]
-omit = ["tests/*"]
+omit = ["tests/*", "adsb_server/reference_data/*"]

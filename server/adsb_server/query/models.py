@@ -61,6 +61,26 @@ class FlightSummary(BaseModel):
         description="ADS-B emitter category code (e.g. `A3` = large aircraft), or null if unknown.",
         examples=["A3"],
     )
+    registration: str | None = Field(
+        description="Aircraft registration mark (tail number), from the airframes reference table. "
+        "Null when the icao24 is not in the database.",
+        examples=["G-EUOF"],
+    )
+    model: str | None = Field(
+        description="Aircraft model description from the airframes reference table. "
+        "Null when the icao24 is not in the database.",
+        examples=["AIRBUS A-319"],
+    )
+    year: int | None = Field(
+        description="Year of manufacture from the airframes reference table. "
+        "Null when unknown or not in the database.",
+        examples=[2003],
+    )
+    operator: str | None = Field(
+        description="Owner or operator name from the airframes reference table. "
+        "Null when unknown or not in the database.",
+        examples=["British Airways"],
+    )
     start_ts: datetime = Field(
         description="UTC timestamp of the first observed position in this leg."
     )
