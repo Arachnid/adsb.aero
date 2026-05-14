@@ -228,8 +228,7 @@ def _compile_spatial_path(
                 idx_stbox = f"{cte_name}.sb_idx"
             else:
                 cte_body = (
-                    f"SELECT geom, {stbox_clip_sql} AS sb"
-                    f" FROM (VALUES ({geom_sql})) AS _base(geom)"
+                    f"SELECT geom, {stbox_clip_sql} AS sb FROM (VALUES ({geom_sql})) AS _base(geom)"
                 )
                 idx_stbox = f"{cte_name}.sb"
             ctes.append((cte_name, cte_body))

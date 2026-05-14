@@ -109,18 +109,10 @@ def upgrade() -> None:
         """)
     )
 
-    op.execute(sa.text(
-        "CREATE INDEX flights_alt_min_pressure ON flights (alt_min_pressure_ft)"
-    ))
-    op.execute(sa.text(
-        "CREATE INDEX flights_alt_max_pressure ON flights (alt_max_pressure_ft)"
-    ))
-    op.execute(sa.text(
-        "CREATE INDEX flights_alt_min_qnh ON flights (alt_min_qnh_ft)"
-    ))
-    op.execute(sa.text(
-        "CREATE INDEX flights_alt_max_qnh ON flights (alt_max_qnh_ft)"
-    ))
+    op.execute(sa.text("CREATE INDEX flights_alt_min_pressure ON flights (alt_min_pressure_ft)"))
+    op.execute(sa.text("CREATE INDEX flights_alt_max_pressure ON flights (alt_max_pressure_ft)"))
+    op.execute(sa.text("CREATE INDEX flights_alt_min_qnh ON flights (alt_min_qnh_ft)"))
+    op.execute(sa.text("CREATE INDEX flights_alt_max_qnh ON flights (alt_max_qnh_ft)"))
 
     op.execute(sa.text("CREATE INDEX flights_start_ts    ON flights (start_ts)"))
     op.execute(sa.text("CREATE INDEX flights_end_ts      ON flights (end_ts)"))
@@ -163,7 +155,34 @@ def upgrade() -> None:
     )
 
 
+    # ------------------------------------------------------------------
+    # airframes — per-icao24 registration/type/operator reference data
+    #
+    # Sourced from tar1090-db (Mictronics aircraft database).
+    # icao24 matches the flights.icao24 column.
+    # flags is a bitmask: bit 0 = military, bit 1 = interesting,
+    #                      bit 3 = FAA LADD (privacy-protected).
+    # ------------------------------------------------------------------
+    op.execute(
+        sa.text("""
+        CREATE TABLE airframes (
+            icao24       VARCHAR(6)   PRIMARY KEY,
+            registration VARCHAR,
+            icao_type    VARCHAR,
+            flags        SMALLINT     NOT NULL DEFAULT 0,
+            model        VARCHAR,
+            year         SMALLINT,
+            operator     VARCHAR,
+            fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+        )
+        """)
+    )
+    op.execute(sa.text("CREATE INDEX airframes_icao_type ON airframes (icao_type)"))
+    op.execute(sa.text("CREATE INDEX airframes_registration ON airframes (registration)"))
+
+
 def downgrade() -> None:
+    op.execute(sa.text("DROP TABLE IF EXISTS airframes"))
     op.execute(sa.text("DROP TABLE IF EXISTS ingest_batches"))
     op.execute(sa.text("DROP TABLE IF EXISTS flight_staging"))
     op.execute(sa.text("DROP TABLE IF EXISTS flights"))
