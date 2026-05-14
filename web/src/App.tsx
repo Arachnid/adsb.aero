@@ -13,15 +13,25 @@ const ICAO_CLASSES: Record<number, string> = {
   0: "A", 1: "B", 2: "C", 3: "D", 4: "E", 5: "F", 6: "G",
 };
 
+interface AltLimit {
+  value: number;
+  ref: "ft" | "fl";
+}
+
 interface AirspaceCandidate {
   id: string;
   name: string;
   typeCode: number;
   icaoClassCode: number | null;
   country: string;
-  lowerLimitFt: number | null;
-  upperLimitFt: number | null;
+  lowerLimit: AltLimit | null;
+  upperLimit: AltLimit | null;
   polygon: [number, number][];
+}
+
+function formatAltLimit(limit: AltLimit | null): string {
+  if (!limit) return "GND";
+  return limit.ref === "fl" ? `FL${limit.value}` : `${limit.value.toLocaleString()} ft`;
 }
 
 function airspaceSubtitle(c: AirspaceCandidate): string {
@@ -31,15 +41,15 @@ function airspaceSubtitle(c: AirspaceCandidate): string {
     : null;
   const typeClass = [type, cls].filter(Boolean).join(" · ");
   const altRange =
-    c.lowerLimitFt !== null || c.upperLimitFt !== null
-      ? `${c.lowerLimitFt !== null ? c.lowerLimitFt.toLocaleString() : "GND"} – ${c.upperLimitFt !== null ? c.upperLimitFt.toLocaleString() : "∞"} ft`
+    c.lowerLimit !== null || c.upperLimit !== null
+      ? `${formatAltLimit(c.lowerLimit)} – ${c.upperLimit !== null ? formatAltLimit(c.upperLimit) : "∞"}`
       : null;
   return [typeClass, altRange].filter(Boolean).join(" · ");
 }
 
-function openaipLimitToFt(limit: { value: number; unit: number } | null | undefined): number | null {
+function openaipLimit(limit: { value: number; unit: number } | null | undefined): AltLimit | null {
   if (!limit) return null;
-  return limit.unit === 6 ? limit.value * 100 : limit.value;
+  return limit.unit === 6 ? { value: limit.value, ref: "fl" } : { value: limit.value, ref: "ft" };
 }
 import { anyViewportFilter, collectGeometries } from "./lib/queryGeometry";
 import { Topbar } from "./components/layout/Topbar";
@@ -242,8 +252,8 @@ export function App(): React.ReactElement {
             icaoClassCode: typeof item.icaoClass === "number" && item.icaoClass <= 6
               ? item.icaoClass : null,
             country: item.country ?? "",
-            lowerLimitFt: openaipLimitToFt(item.lowerLimit),
-            upperLimitFt: openaipLimitToFt(item.upperLimit),
+            lowerLimit: openaipLimit(item.lowerLimit),
+            upperLimit: openaipLimit(item.upperLimit),
             polygon: (item.geometry.coordinates[0] ?? []) as [number, number][],
           }))
           .filter((c) => c.polygon.length >= 3);
@@ -272,7 +282,13 @@ export function App(): React.ReactElement {
           const base = { ...p, shape: "airspace" as const, polygon: c.polygon,
             airspaceName: c.name, airspaceLabel };
           if (p.kind === "region" || p.kind === "always_within") {
-            return { ...base, altMin: c.lowerLimitFt, altMax: c.upperLimitFt };
+            return {
+              ...base,
+              altMin: c.lowerLimit?.value ?? null,
+              altMinRef: c.lowerLimit?.ref ?? "ft",
+              altMax: c.upperLimit?.value ?? null,
+              altMaxRef: c.upperLimit?.ref ?? "ft",
+            };
           }
           return base;
         }

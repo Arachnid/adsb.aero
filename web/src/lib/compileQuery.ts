@@ -57,8 +57,8 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
     case "region": {
       const geom = shapeToGeometry(pred, bounds);
       const v: SpatioTemporalAltitudeValue = {
-        altitude_min_ref: "ft",
-        altitude_max_ref: "ft",
+        altitude_min_ref: pred.altMinRef,
+        altitude_max_ref: pred.altMaxRef,
         ...(geom ? { geometry: geom } : {}),
         ...(pred.altMin !== null ? { altitude_min: pred.altMin } : {}),
         ...(pred.altMax !== null ? { altitude_max: pred.altMax } : {}),
@@ -72,8 +72,8 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
     case "always_within": {
       const geom = shapeToGeometry(pred, bounds);
       const v: SpatioTemporalAltitudeValue = {
-        altitude_min_ref: "ft",
-        altitude_max_ref: "ft",
+        altitude_min_ref: pred.altMinRef,
+        altitude_max_ref: pred.altMaxRef,
         ...(geom ? { geometry: geom } : {}),
         ...(pred.altMin !== null ? { altitude_min: pred.altMin } : {}),
         ...(pred.altMax !== null ? { altitude_max: pred.altMax } : {}),

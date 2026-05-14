@@ -67,7 +67,9 @@ interface IntersectsPred extends BasePred {
   lng: number | null;
   radiusNm: number;
   altMin: number | null;
+  altMinRef: "ft" | "fl";
   altMax: number | null;
+  altMaxRef: "ft" | "fl";
   timeFrom: string;
   timeTo: string;
   squawkCodes: string[];
@@ -83,7 +85,9 @@ interface AlwaysWithinPred extends BasePred {
   lng: number | null;
   radiusNm: number;
   altMin: number | null;
+  altMinRef: "ft" | "fl";
   altMax: number | null;
+  altMaxRef: "ft" | "fl";
   timeFrom: string;
   timeTo: string;
   squawkCodes: string[];
@@ -149,7 +153,9 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
       lng: null,
       radiusNm: 25,
       altMin: null,
+      altMinRef: "ft" as const,
       altMax: null,
+      altMaxRef: "ft" as const,
       timeFrom: "",
       timeTo: "",
       squawkCodes: [],
@@ -473,6 +479,29 @@ function PredCard({
 
 function FieldLabel({ children }: { children: React.ReactNode }): React.ReactElement {
   return <div className="field-label">{children}</div>;
+}
+
+function RefToggle({ value, onChange }: { value: "ft" | "fl"; onChange: (r: "ft" | "fl") => void }): React.ReactElement {
+  return (
+    <div style={{ display: "inline-flex", border: "1px solid var(--line-2)", borderRadius: 3, overflow: "hidden", fontSize: 9.5, fontFamily: "JetBrains Mono, monospace" }}>
+      {(["ft", "fl"] as const).map((ref) => (
+        <button
+          key={ref}
+          onClick={() => { onChange(ref); }}
+          style={{
+            padding: "1px 5px",
+            background: value === ref ? "var(--accent)" : "transparent",
+            color: value === ref ? "white" : "var(--fg-3)",
+            border: "none",
+            cursor: "pointer",
+            lineHeight: 1.4,
+          }}
+        >
+          {ref === "fl" ? "FL" : "ft"}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function DateTimeField({
@@ -937,7 +966,7 @@ function RegionCard({
   };
 
   const toggleAlt = (checked: boolean): void => {
-    if (!checked) onChange({ ...pred, altMin: null, altMax: null });
+    if (!checked) onChange({ ...pred, altMin: null, altMinRef: "ft", altMax: null, altMaxRef: "ft" });
     setAltOpen(checked);
   };
 
@@ -1091,7 +1120,10 @@ function RegionCard({
           {altOpen && (
             <div className="pred-row optional-group-body">
               <div>
-                <FieldLabel>Alt min (ft)</FieldLabel>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span className="field-label" style={{ marginBottom: 0 }}>Alt min</span>
+                  <RefToggle value={pred.altMinRef} onChange={(r) => { onChange({ ...pred, altMinRef: r }); }} />
+                </div>
                 <input
                   className="text-field mono"
                   type="number"
@@ -1103,7 +1135,10 @@ function RegionCard({
                 />
               </div>
               <div>
-                <FieldLabel>Alt max (ft)</FieldLabel>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span className="field-label" style={{ marginBottom: 0 }}>Alt max</span>
+                  <RefToggle value={pred.altMaxRef} onChange={(r) => { onChange({ ...pred, altMaxRef: r }); }} />
+                </div>
                 <input
                   className="text-field mono"
                   type="number"
