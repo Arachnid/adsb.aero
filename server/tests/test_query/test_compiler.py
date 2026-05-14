@@ -109,9 +109,11 @@ class TestTrajectoryIntersects:
         assert isinstance(compiled, CompiledPredicate)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" not in cte_body
-        assert "stbox(" in cte_body
+        assert "ST_3DMakeBox(" in cte_body  # in sb_idx for && pre-filter
+        assert "sb_idx" in cte_body
+        assert "stbox(" in cte_body  # sb (2D+T) still present for atStbox
         assert "path && " in compiled
+        assert "sb_idx" in compiled  # && uses 3D+T sb_idx
         assert "atStbox(path," in compiled
         assert "atvalues(getZ(path)," in compiled
         assert "eIntersects(atTime(atStbox(" in compiled
@@ -130,7 +132,9 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" not in cte_body
+        assert "ST_3DMakeBox(" in cte_body  # in sb_idx
+        assert "sb_idx" in cte_body
+        assert "sb_idx" in compiled
         assert "atvalues(getZ(path)," in compiled
         assert "eIntersects(atTime(atStbox(" in compiled
         assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
@@ -150,7 +154,9 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" not in cte_body
+        assert "ST_3DMakeBox(" in cte_body  # in sb_idx
+        assert "sb_idx" in cte_body
+        assert "sb_idx" in compiled
         assert "atvalues(getZ(path)," in compiled
         assert "eIntersects(atTime(atStbox(" in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
@@ -191,7 +197,9 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" not in cte_body  # no Z in STBOX
+        assert "ST_3DMakeBox(" in cte_body  # FL ceiling in sb_idx
+        assert "sb_idx" in cte_body
+        assert "sb_idx" in compiled
         assert "atvalues(getZ(path)," in compiled  # FL ceiling via getZ
         assert "atvalues(" in compiled  # ft floor via corrected alt
         assert "alt_correction_ft" in compiled
@@ -250,7 +258,9 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" not in cte_body
+        assert "ST_3DMakeBox(" in cte_body  # FL floor in sb_idx
+        assert "sb_idx" in cte_body
+        assert "sb_idx" in compiled
         assert "atvalues(getZ(path)," in compiled  # FL floor via getZ
         assert "alt_correction_ft" in compiled
         assert 35000.0 in params  # FL350 x 100
@@ -456,9 +466,11 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" not in cte_body
-        assert "stbox(" in cte_body
+        assert "ST_3DMakeBox(" in cte_body  # in sb_idx
+        assert "sb_idx" in cte_body
+        assert "stbox(" in cte_body  # sb (2D+T) still present
         assert "span(" in cte_body
+        assert "sb_idx" in compiled
         assert "atvalues(getZ(path)," in compiled
         assert "eIntersects(atTime(atStbox(" in compiled
         assert "end_ts >=" in compiled
@@ -512,8 +524,10 @@ class TestTrajectoryWithin:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" not in cte_body
+        assert "ST_3DMakeBox(" in cte_body  # in sb_idx
+        assert "sb_idx" in cte_body
         assert "path && " in compiled
+        assert "sb_idx" in compiled  # && uses 3D+T sb_idx
         assert "atStbox(path," in compiled
         assert "atvalues(getZ(path)," in compiled
         assert "IS NOT NULL" in compiled

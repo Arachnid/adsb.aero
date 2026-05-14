@@ -87,9 +87,11 @@ def _build_stbox_sql(
 ) -> str:
     """Build an STBOX SQL expression referencing geom_alias as the 2D geometry.
 
-    With altitude: builds a 3D STBOX via ST_3DMakeBox so that atStbox clips
-    the tgeompoint to both the spatial region and the altitude window —
-    correctly enforcing that the path intersected the geometry at that altitude.
+    With altitude: builds a 3D+T STBOX via ST_3DMakeBox.  Safe to use with the
+    && index pre-filter (pure bounding-box comparison, no interpolation).  Must
+    NOT be passed to atStbox() — atStbox interpolates Z-boundary entry/exit
+    instants, which can produce duplicate timestamps and crash with "Timestamps
+    for temporal value must be increasing".
     With time only: builds a 2D+T STBOX via stbox(geom, span(...)).
     """
     has_alt = alt_min_p is not None or alt_max_p is not None
@@ -155,11 +157,16 @@ def _compile_spatial_path(
     # Altitude bounds, separated by reference system.
     # FL bounds use raw barometric altitude: getZ(path) in feet (FL x 100).
     # ft bounds use QNH-corrected altitude: getZ(path) + alt_correction_ft.
-    # Both are applied via atvalues() after STBOX clipping, never via the STBOX
-    # Z dimension.  Putting altitude in the STBOX causes MobilityDB's atStbox to
-    # produce duplicate timestamps when it interpolates Z boundary entry/exit
-    # points, triggering a "Timestamps for temporal value must be increasing"
-    # error at query time.
+    #
+    # FL altitude IS encoded in the STBOX Z dimension for the && index pre-filter
+    # (sb_idx in the CTE) so the GiST index can filter by altitude bounding box.
+    # It is deliberately excluded from the atStbox() STBOX (sb): atStbox with a 3D
+    # STBOX interpolates Z-boundary entry/exit instants, which can produce duplicate
+    # timestamps and crash with "Timestamps for temporal value must be increasing".
+    #
+    # ft/QNH altitude cannot go in the STBOX Z because the per-row alt_correction_ft
+    # offset is not known at plan time.  Both FL and ft are applied precisely via
+    # atvalues() after atStbox() clipping.
     fl_alt_min_p: str | None = None
     fl_alt_max_p: str | None = None
     ft_alt_min_p: str | None = None
@@ -203,16 +210,34 @@ def _compile_spatial_path(
             # param before reaching this point.
             cte_name = f"_s{len(params)}"
 
-            # STBOX is always 2D+T (no Z altitude bounds) to avoid the MobilityDB
-            # atStbox duplicate-timestamp bug described above.
-            stbox_sql = _build_stbox_sql("geom", None, None, time_from_p, time_to_p)
-            cte_body = f"SELECT geom, {stbox_sql} AS sb FROM (VALUES ({geom_sql})) AS _base(geom)"
+            # sb: 2D+T STBOX for atStbox() — no Z to avoid the crash described above.
+            stbox_clip_sql = _build_stbox_sql("geom", None, None, time_from_p, time_to_p)
+
+            # sb_idx: 3D+T STBOX for the && index pre-filter when FL altitude is
+            # present.  The && operator is a pure bbox comparison (no interpolation),
+            # so Z bounds are safe and let the GiST index filter by altitude.
+            # ft/QNH altitude is excluded because the correction is per-row.
+            if has_fl_alt:
+                stbox_idx_sql = _build_stbox_sql(
+                    "geom", fl_alt_min_p, fl_alt_max_p, time_from_p, time_to_p
+                )
+                cte_body = (
+                    f"SELECT geom, {stbox_clip_sql} AS sb, {stbox_idx_sql} AS sb_idx"
+                    f" FROM (VALUES ({geom_sql})) AS _base(geom)"
+                )
+                idx_stbox = f"{cte_name}.sb_idx"
+            else:
+                cte_body = (
+                    f"SELECT geom, {stbox_clip_sql} AS sb"
+                    f" FROM (VALUES ({geom_sql})) AS _base(geom)"
+                )
+                idx_stbox = f"{cte_name}.sb"
             ctes.append((cte_name, cte_body))
 
-            # GiST STBOX index pre-filter (spatial + time, not altitude).
-            parts.append(f"path && {cte_name}.sb")
+            # GiST pre-filter: 3D+T (altitude-selective) when FL alt present, else 2D+T.
+            parts.append(f"path && {idx_stbox}")
 
-            # Clip path to 2D spatial + time window.
+            # Clip path to 2D spatial + time window (no Z — avoids crash).
             clipped_stbox = f"atStbox(path, {cte_name}.sb)"
 
             # Further restrict to altitude range(s) via atvalues.
