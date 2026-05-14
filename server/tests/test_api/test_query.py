@@ -51,12 +51,14 @@ async def test_no_filter_returns_all(api_client: AsyncClient) -> None:
 async def test_starts_within_time_filter(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={
-            "starts_within": {
-                "time_from": "2025-04-01T09:00:00Z",
-                "time_to": "2025-04-01T11:00:00Z",
+        json=qbody(
+            match={
+                "starts_within": {
+                    "time_from": "2025-04-01T09:00:00Z",
+                    "time_to": "2025-04-01T11:00:00Z",
+                }
             }
-        }),
+        ),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -116,12 +118,14 @@ async def test_callsign_matches(api_client: AsyncClient) -> None:
 async def test_and_composition(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={
-            "and": [
-                {"trajectory_intersects": {"geometry": UK_BBOX}},
-                {"icao_type": ["B738"]},
-            ]
-        }),
+        json=qbody(
+            match={
+                "and": [
+                    {"trajectory_intersects": {"geometry": UK_BBOX}},
+                    {"icao_type": ["B738"]},
+                ]
+            }
+        ),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -137,9 +141,7 @@ async def test_cursor_pagination(api_client: AsyncClient) -> None:
     assert len(data1["flights"]) == 1
     assert data1["cursor"] is not None
 
-    resp2 = await api_client.post(
-        "/api/v1/query", json=qbody(limit=1, cursor=data1["cursor"])
-    )
+    resp2 = await api_client.post("/api/v1/query", json=qbody(limit=1, cursor=data1["cursor"]))
     assert resp2.status_code == 200
     data2 = resp2.json()
     assert len(data2["flights"]) == 1
@@ -224,9 +226,9 @@ async def test_squawk_filter_with_geometry_correlated(api_client: AsyncClient) -
     }
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={
-            "trajectory_intersects": {"geometry": manchester_box, "squawk_codes": ["1234"]}
-        }),
+        json=qbody(
+            match={"trajectory_intersects": {"geometry": manchester_box, "squawk_codes": ["1234"]}}
+        ),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -246,9 +248,9 @@ async def test_squawk_filter_geometry_no_squawk_match_at_location(
     }
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={
-            "trajectory_intersects": {"geometry": manchester_box, "squawk_codes": ["7700"]}
-        }),
+        json=qbody(
+            match={"trajectory_intersects": {"geometry": manchester_box, "squawk_codes": ["7700"]}}
+        ),
     )
     assert resp.status_code == 200
     assert resp.json()["flights"] == []
@@ -259,13 +261,15 @@ async def test_trajectory_intersects_altitude_band_fl(api_client: AsyncClient) -
     # Flight A at 35000-36000 ft; should match.
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={
-            "trajectory_intersects": {
-                "geometry": UK_BBOX,
-                "altitude_min": 340,
-                "altitude_min_ref": "fl",
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_BBOX,
+                    "altitude_min": 340,
+                    "altitude_min_ref": "fl",
+                }
             }
-        }),
+        ),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -278,12 +282,14 @@ async def test_trajectory_intersects_altitude_band_ft(api_client: AsyncClient) -
     # Flight A at 35000-36000 ft; altitude_min=34000 ft should match.
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={
-            "trajectory_intersects": {
-                "geometry": UK_BBOX,
-                "altitude_min": 34000,
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_BBOX,
+                    "altitude_min": 34000,
+                }
             }
-        }),
+        ),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -297,12 +303,14 @@ async def test_trajectory_intersects_altitude_band_ft_excludes_below(
     # altitude_max=30000 ft (default ref): Flight A (35000-36000 ft) should not match.
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={
-            "trajectory_intersects": {
-                "geometry": UK_BBOX,
-                "altitude_max": 30000,
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_BBOX,
+                    "altitude_max": 30000,
+                }
             }
-        }),
+        ),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -315,15 +323,17 @@ async def test_trajectory_intersects_altitude_mixed_refs(api_client: AsyncClient
     # Flight A at 35000-36000 ft; should match (above floor, below ceiling).
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={
-            "trajectory_intersects": {
-                "geometry": UK_BBOX,
-                "altitude_min": 1500,
-                "altitude_min_ref": "ft",
-                "altitude_max": 400,
-                "altitude_max_ref": "fl",  # FL400 = 40000 ft pressure
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_BBOX,
+                    "altitude_min": 1500,
+                    "altitude_min_ref": "ft",
+                    "altitude_max": 400,
+                    "altitude_max_ref": "fl",  # FL400 = 40000 ft pressure
+                }
             }
-        }),
+        ),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -352,12 +362,14 @@ async def test_ends_within_time_range(api_client: AsyncClient) -> None:
     # Flight B ends at 09:00; Flight A ends at 12:00.
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={
-            "ends_within": {
-                "time_from": "2025-04-01T08:00:00Z",
-                "time_to": "2025-04-01T10:00:00Z",
+        json=qbody(
+            match={
+                "ends_within": {
+                    "time_from": "2025-04-01T08:00:00Z",
+                    "time_to": "2025-04-01T10:00:00Z",
+                }
             }
-        }),
+        ),
     )
     assert resp.status_code == 200
     data = resp.json()

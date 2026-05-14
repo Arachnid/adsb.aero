@@ -67,7 +67,9 @@ def _fetch_hour(
     except Exception:
         logger.warning(
             "Failed to fetch MSLP %s %02dZ+%d",
-            run_date, run_hour, fxx,
+            run_date,
+            run_hour,
+            fxx,
             exc_info=True,
         )
         return None
@@ -100,7 +102,9 @@ def _build_mslp_range(
     cache_dir.mkdir(parents=True, exist_ok=True)
     logger.info(
         "Fetching GFS MSLP %s +%dh (workers: %d)",
-        start_date, n_hours, _DOWNLOAD_WORKERS,
+        start_date,
+        n_hours,
+        _DOWNLOAD_WORKERS,
     )
 
     # Map each required hour to (run_date, run_hour, fxx, valid_ts).
@@ -137,10 +141,15 @@ def _build_mslp_range(
     sorted_slices = [slices[ts] for ts in sorted(slices)]
     logger.info(
         "Fetched %d/%d MSLP hours from %s; shape %s",
-        len(sorted_slices), n_hours, start_date, sorted_slices[0].shape,
+        len(sorted_slices),
+        n_hours,
+        start_date,
+        sorted_slices[0].shape,
     )
 
-    mslp: xr.DataArray = xr.concat(sorted_slices, dim="valid_time", coords="minimal").sortby("valid_time")
+    mslp: xr.DataArray = xr.concat(sorted_slices, dim="valid_time", coords="minimal").sortby(
+        "valid_time"
+    )
 
     # Pad the longitude axis so that bilinear interpolation is continuous
     # across the 0°/360° seam.  After padding, longitude runs from -0.25

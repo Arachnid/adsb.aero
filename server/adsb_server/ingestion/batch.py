@@ -66,12 +66,21 @@ ON CONFLICT (icao24, start_ts) DO UPDATE SET
 """
 
 _FlightParams = tuple[
-    str, str | None, str | None, str | None,
-    datetime, datetime,
-    str, str,
-    str | None, str | None,
-    str | None, str | None, str | None,
-    int, date,
+    str,
+    str | None,
+    str | None,
+    str | None,
+    datetime,
+    datetime,
+    str,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+    int,
+    date,
 ]
 
 
@@ -131,8 +140,7 @@ def _simplify_in_progress(
         kept = [0, len(interp) - 1]
 
     vertices: list[tuple[float, float, float, float]] = [
-        (p.lon, p.lat, p.alt_baro or 0.0, p.ts)
-        for p in (interp[i] for i in kept)
+        (p.lon, p.lat, p.alt_baro or 0.0, p.ts) for p in (interp[i] for i in kept)
     ]
     return vertices, [interp[i] for i in kept]
 
@@ -158,8 +166,8 @@ def _in_progress_flight_to_params(
     start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
     end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
 
-    path_tracks_series, path_gs_series, path_vr_series, path_ias_series = (
-        build_scalar_series(kept_points)
+    path_tracks_series, path_gs_series, path_vr_series, path_ias_series = build_scalar_series(
+        kept_points
     )
 
     return (
@@ -239,7 +247,8 @@ async def run_batch(
         staging = _deserialize_staging(bytes(staging_row["staging_data"]))
         logger.info(
             "Loaded %d in-progress flights from staging (batch_date=%s)",
-            len(staging), prev_date,
+            len(staging),
+            prev_date,
         )
 
     # Record flights already attributed to this batch_date so we can delete
@@ -297,23 +306,20 @@ async def run_batch(
 
             # Phase 1: parse traces in the process pool (CPU-bound).
             trace_futures = [
-                loop.run_in_executor(pool, _process_trace, h, pts, cutoff_ts)
-                for h, pts in pending
+                loop.run_in_executor(pool, _process_trace, h, pts, cutoff_ts) for h, pts in pending
             ]
-            results: list[Any] = list(
-                await asyncio.gather(*trace_futures, return_exceptions=True)
-            )
+            results: list[Any] = list(await asyncio.gather(*trace_futures, return_exceptions=True))
 
             # Phase 2: collect results; track in-progress flights for staging.
             all_finalized: list[FinalizedFlight] = []
             # (flight, vertices) pairs for in-progress flights with valid paths
-            in_progress_for_correction: list[tuple[RawFlight, list[tuple[float, float, float, float]]]] = []
+            in_progress_for_correction: list[
+                tuple[RawFlight, list[tuple[float, float, float, float]]]
+            ] = []
             params_batch: list[_FlightParams] = []
             for result, (header, _) in zip(results, pending, strict=True):
                 if isinstance(result, BaseException):
-                    logger.error(
-                        "Failed to process trace %s: %s", header.icao24, result
-                    )
+                    logger.error("Failed to process trace %s: %s", header.icao24, result)
                     continue
                 finalized: list[FinalizedFlight]
                 in_progress: RawFlight | None
@@ -330,15 +336,17 @@ async def run_batch(
             # scipy's RegularGridInterpolator releases the GIL, so threads
             # give true parallelism with no pickling of the large grid.
             # Finalized and in-progress flights are corrected together in one pass.
-            all_vertices = (
-                [f.vertices for f in all_finalized]
-                + [v for _, v in in_progress_for_correction]
-            )
+            all_vertices = [f.vertices for f in all_finalized] + [
+                v for _, v in in_progress_for_correction
+            ]
             corr_jobs = [
                 loop.run_in_executor(
                     correction_pool,
                     compute_correction_series,
-                    verts, correction_interp, t_min, t_max,
+                    verts,
+                    correction_interp,
+                    t_min,
+                    t_max,
                 )
                 for verts in all_vertices
             ]
@@ -370,9 +378,7 @@ async def run_batch(
                         upserted_keys.add((p[0], p[4]))  # (icao24, start_ts)
                     flight_count += len(params_batch)
                 except Exception:
-                    logger.exception(
-                        "Failed to write batch of %d flights", len(params_batch)
-                    )
+                    logger.exception("Failed to write batch of %d flights", len(params_batch))
 
             traces_done += len(pending)
             elapsed = _time.monotonic() - t_start
@@ -381,12 +387,18 @@ async def run_batch(
                 pct = 100.0 * traces_done / total_traces
                 logger.info(
                     "%d/%d traces (%.0f%%) | %.0f traces/min | %d flights",
-                    traces_done, total_traces, pct, rate, flight_count,
+                    traces_done,
+                    total_traces,
+                    pct,
+                    rate,
+                    flight_count,
                 )
             else:
                 logger.info(
                     "%d traces | %.0f traces/min | %d flights",
-                    traces_done, rate, flight_count,
+                    traces_done,
+                    rate,
+                    flight_count,
                 )
 
             pending.clear()
@@ -450,7 +462,8 @@ async def run_batch(
         )
         logger.info(
             "Wrote %d in-progress flights to staging for batch_date=%s",
-            len(in_progress_flights), batch_date,
+            len(in_progress_flights),
+            batch_date,
         )
 
     # Delete flights that existed before this run but were not written by it.

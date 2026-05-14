@@ -300,9 +300,7 @@ class TestScalarFields:
         assert points[0].ias is None
 
     def test_all_three_scalars_together(self) -> None:
-        data = _make_trace(
-            trace_entries=[_make_entry(gs=450.0, vr=-1536.0, ias=270.0)]
-        )
+        data = _make_trace(trace_entries=[_make_entry(gs=450.0, vr=-1536.0, ias=270.0)])
         _, points = _parse_trace_json(data)
         assert points[0].gs == 450.0
         assert points[0].vr == -1536.0

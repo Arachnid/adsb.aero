@@ -64,9 +64,7 @@ class FlightSummary(BaseModel):
     start_ts: datetime = Field(
         description="UTC timestamp of the first observed position in this leg."
     )
-    end_ts: datetime = Field(
-        description="UTC timestamp of the last observed position in this leg."
-    )
+    end_ts: datetime = Field(description="UTC timestamp of the last observed position in this leg.")
     start_point: GeoJSONPointZ = Field(
         description="GeoJSON Point of the first observed position. "
         "Coordinates are `[longitude, latitude, altitude_ft]`.",
@@ -96,14 +94,16 @@ class FlightDetail(FlightSummary):
         "then altitude pass with ε=100 ft on the surviving vertices. "
         "Squawk change points are always preserved and divide simplification intervals. "
         "Omitted when the request sets `include_path` to false.",
-        examples=[{
-            "type": "LineString",
-            "coordinates": [
-                [-0.1275, 51.5072, 35000.0],
-                [-1.2, 52.5, 36000.0],
-                [-2.2667, 53.4667, 35000.0],
-            ],
-        }],
+        examples=[
+            {
+                "type": "LineString",
+                "coordinates": [
+                    [-0.1275, 51.5072, 35000.0],
+                    [-1.2, 52.5, 36000.0],
+                    [-2.2667, 53.4667, 35000.0],
+                ],
+            }
+        ],
     )
     timestamps: list[float] | None = Field(
         default=None,
@@ -253,7 +253,9 @@ class GeoJSONMultiLineString(BaseModel):
     """GeoJSON MultiLineString geometry."""
 
     type: Literal["MultiLineString"]
-    coordinates: list[list[list[float]]] = Field(description="Array of LineString coordinate arrays.")  # noqa: E501
+    coordinates: list[list[list[float]]] = Field(
+        description="Array of LineString coordinate arrays."
+    )
 
 
 class GeoJSONPolygon(BaseModel):
@@ -270,7 +272,9 @@ class GeoJSONMultiPolygon(BaseModel):
     """GeoJSON MultiPolygon geometry."""
 
     type: Literal["MultiPolygon"]
-    coordinates: list[list[list[list[float]]]] = Field(description="Array of Polygon coordinate arrays.")  # noqa: E501
+    coordinates: list[list[list[list[float]]]] = Field(
+        description="Array of Polygon coordinate arrays."
+    )
 
 
 class CircleGeometry(BaseModel):
@@ -411,13 +415,17 @@ class SpatioTemporalAltitudeValue(BaseModel):
     )
     distance_min_m: float | None = Field(
         default=None,
-        description="Minimum distance the flight must cover inside the geometry (metres, inclusive). "
-        "Measured along the clipped path. Requires `geometry`.",
+        description=(
+            "Minimum distance the flight must cover inside the geometry "
+            "(metres, inclusive). Measured along the clipped path. Requires `geometry`."
+        ),
     )
     distance_max_m: float | None = Field(
         default=None,
-        description="Maximum distance the flight may cover inside the geometry (metres, inclusive). "
-        "Requires `geometry`.",
+        description=(
+            "Maximum distance the flight may cover inside the geometry "
+            "(metres, inclusive). Requires `geometry`."
+        ),
     )
 
     @model_validator(mode="after")
@@ -521,8 +529,12 @@ class CallsignMatches(BaseModel):
 class DurationValue(BaseModel):
     """Bounds for a flight duration filter. Both bounds are optional."""
 
-    min_s: float | None = Field(default=None, description="Minimum duration in seconds (inclusive).")  # noqa: E501
-    max_s: float | None = Field(default=None, description="Maximum duration in seconds (inclusive).")  # noqa: E501
+    min_s: float | None = Field(
+        default=None, description="Minimum duration in seconds (inclusive)."
+    )
+    max_s: float | None = Field(
+        default=None, description="Maximum duration in seconds (inclusive)."
+    )
 
 
 class Duration(BaseModel):
@@ -547,7 +559,9 @@ class AndPredicate(BaseModel):
 class OrPredicate(BaseModel):
     """At least one child predicate must be true (logical OR)."""
 
-    or_: list[Predicate] = Field(alias="or", description="At least one of these predicates must match.")  # noqa: E501
+    or_: list[Predicate] = Field(
+        alias="or", description="At least one of these predicates must match."
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -609,7 +623,9 @@ class QueryRequest(BaseModel):
         description="Filter predicate. Omit or set to `null` to return all flights.",
     )
     limit: int = Field(
-        default=100, ge=1, le=10000,
+        default=100,
+        ge=1,
+        le=10000,
         description="Maximum number of flights to return per page.",
     )
     cursor: str | None = Field(

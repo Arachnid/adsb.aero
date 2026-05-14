@@ -152,10 +152,26 @@ def build_scalar_series(
     vr_idx = simplify_series(sub, _VR_EPSILON_FPM, vr_deviation)
     ias_idx = simplify_series(sub, _IAS_EPSILON_KT, ias_deviation)
 
-    trk = [(sub[i].ts, sub[i].track % 360.0) for i in trk_idx if sub[i].track is not None]
-    gs_ = [(sub[i].ts, sub[i].gs) for i in gs_idx if sub[i].gs is not None]
-    vr_ = [(sub[i].ts, sub[i].vr) for i in vr_idx if sub[i].vr is not None]
-    ias = [(sub[i].ts, sub[i].ias) for i in ias_idx if sub[i].ias is not None]
+    trk: list[tuple[float, float]] = []
+    for i in trk_idx:
+        p = sub[i]
+        if p.track is not None:
+            trk.append((p.ts, p.track % 360.0))
+    gs_: list[tuple[float, float]] = []
+    for i in gs_idx:
+        p = sub[i]
+        if p.gs is not None:
+            gs_.append((p.ts, p.gs))
+    vr_: list[tuple[float, float]] = []
+    for i in vr_idx:
+        p = sub[i]
+        if p.vr is not None:
+            vr_.append((p.ts, p.vr))
+    ias: list[tuple[float, float]] = []
+    for i in ias_idx:
+        p = sub[i]
+        if p.ias is not None:
+            ias.append((p.ts, p.ias))
     return trk, gs_, vr_, ias
 
 
@@ -189,9 +205,7 @@ def _finalize_segment(
 
     sub = [interp_points[i] for i in kept_indices]
     squawk_runs = build_squawk_runs(sub)
-    path_tracks_series, path_gs_series, path_vr_series, path_ias_series = (
-        build_scalar_series(sub)
-    )
+    path_tracks_series, path_gs_series, path_vr_series, path_ias_series = build_scalar_series(sub)
 
     start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
     end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)

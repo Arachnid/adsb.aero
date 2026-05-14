@@ -29,7 +29,7 @@ FIXTURES = Path(__file__).parent.parent / "fixtures" / "traces"
 
 _EPSILONS: list[tuple[float, float]] = [
     (10.0, 50.0),
-    (50.0, 100.0),   # production defaults
+    (50.0, 100.0),  # production defaults
     (100.0, 200.0),
     (200.0, 500.0),
 ]

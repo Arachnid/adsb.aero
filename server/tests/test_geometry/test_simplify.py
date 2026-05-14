@@ -216,9 +216,18 @@ def _pt_scalar(
     track: float | None = None,
 ) -> RawPoint:
     return RawPoint(
-        ts=ts, lat=0.0, lon=0.0, alt_baro=10000.0, track=track,
-        squawk=None, new_leg=False, callsign=None, emitter_category=None,
-        gs=gs, vr=vr, ias=ias,
+        ts=ts,
+        lat=0.0,
+        lon=0.0,
+        alt_baro=10000.0,
+        track=track,
+        squawk=None,
+        new_leg=False,
+        callsign=None,
+        emitter_category=None,
+        gs=gs,
+        vr=vr,
+        ias=ias,
     )
 
 

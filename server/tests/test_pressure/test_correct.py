@@ -10,7 +10,6 @@ import xarray as xr
 from adsb_server.pressure.correct import (
     _FT_PER_HPA,
     _ISA_HPA,
-    _THRESHOLD_FT,
     build_correction_interpolator,
     compute_correction_series,
 )
@@ -22,6 +21,7 @@ def _compute(
 ) -> tuple[list[float], list[float]] | None:
     interp, t_min, t_max = build_correction_interpolator(mslp)
     return compute_correction_series(vertices, interp, t_min, t_max)
+
 
 # Base unix epoch for test vertices: 2025-01-01T01:00:00 UTC
 _BASE_TS = pd.Timestamp("2025-01-01T01:00:00", tz="UTC").timestamp()
@@ -79,7 +79,7 @@ def test_correction_formula() -> None:
     vertices = [_vertex(0.0, 51.5, 0.0), _vertex(1.0, 51.5, _HOUR)]
     result = _compute(vertices, mslp)
     assert result is not None
-    ts, corr = result
+    _ts, corr = result
     assert corr[0] == pytest.approx(expected, abs=1.0)
     assert corr[-1] == pytest.approx(expected, abs=1.0)
 
@@ -110,7 +110,7 @@ def test_below_threshold_two_entries() -> None:
     vertices = [_vertex(float(i) * 0.5, 51.0, i * 600.0) for i in range(10)]
     result = _compute(vertices, mslp)
     assert result is not None
-    ts, corr = result
+    ts, _corr = result
     assert len(ts) == 2
 
 
@@ -136,9 +136,9 @@ def test_at_threshold_three_entries() -> None:
     )
 
     vertices = [
-        _vertex(0.0, 0.0, 0.0),          # correction ≈ 0
-        _vertex(5.0, 0.0, _HOUR),         # correction ≈ 10 ft (above threshold)
-        _vertex(10.0, 0.0, 2 * _HOUR),   # correction ≈ 0 (always emitted as last)
+        _vertex(0.0, 0.0, 0.0),  # correction ≈ 0
+        _vertex(5.0, 0.0, _HOUR),  # correction ≈ 10 ft (above threshold)
+        _vertex(10.0, 0.0, 2 * _HOUR),  # correction ≈ 0 (always emitted as last)
     ]
     result = _compute(vertices, mslp)
     assert result is not None
@@ -178,7 +178,7 @@ def test_seam_crossing_no_nan() -> None:
     vertices = [_vertex(lon, 51.0, i * 600.0) for i, lon in enumerate(seam_lons)]
     result = _compute(vertices, mslp)
     assert result is not None
-    ts, corr = result
+    _ts, corr = result
     assert not any(np.isnan(c) for c in corr)
 
 

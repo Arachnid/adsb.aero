@@ -306,9 +306,7 @@ def _release_client(release_data: dict) -> MagicMock:  # type: ignore[type-arg]
 
 
 class TestDownloadAndProcessRelease:
-    async def test_happy_path_downloads_and_runs_batch(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_happy_path_downloads_and_runs_batch(self, tmp_path: Path) -> None:
         client = _release_client(_SAMPLE_RELEASE)
         conn = AsyncMock()
 
@@ -330,16 +328,12 @@ class TestDownloadAndProcessRelease:
         mock_dl.assert_called_once()
         mock_rb.assert_called_once()
 
-    async def test_release_fetch_failure_returns_false(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_release_fetch_failure_returns_false(self, tmp_path: Path) -> None:
         client = MagicMock()
         client.get = AsyncMock(side_effect=httpx.HTTPError("404"))
         conn = AsyncMock()
 
-        with patch(
-            "adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()
-        ) as mock_rb:
+        with patch("adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()) as mock_rb:
             result = await _download_and_process_release(
                 conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
             )
@@ -351,9 +345,7 @@ class TestDownloadAndProcessRelease:
         client = _release_client({"assets": []})
         conn = AsyncMock()
 
-        with patch(
-            "adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()
-        ) as mock_rb:
+        with patch("adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()) as mock_rb:
             result = await _download_and_process_release(
                 conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
             )
@@ -361,9 +353,7 @@ class TestDownloadAndProcessRelease:
         assert result is True
         mock_rb.assert_not_called()
 
-    async def test_asset_download_failure_returns_false(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_asset_download_failure_returns_false(self, tmp_path: Path) -> None:
         client = _release_client(_SAMPLE_RELEASE)
         conn = AsyncMock()
 
@@ -372,9 +362,7 @@ class TestDownloadAndProcessRelease:
                 "adsb_server.ingestion.scheduler._download_asset",
                 new=AsyncMock(side_effect=OSError("disk full")),
             ) as mock_dl,
-            patch(
-                "adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()
-            ) as mock_rb,
+            patch("adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()) as mock_rb,
         ):
             result = await _download_and_process_release(
                 conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
@@ -417,9 +405,7 @@ class TestDownloadAndProcessRelease:
         call_url = mock_dl.call_args[0][1]
         assert "good.tar.aa" in call_url
 
-    async def test_keep_traces_preserves_dir_after_successful_ingest(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_keep_traces_preserves_dir_after_successful_ingest(self, tmp_path: Path) -> None:
         dest_dir = tmp_path / "2025-04-01"
         dest_dir.mkdir()
         (dest_dir / "2025-04-01.tar.aa").write_bytes(b"x" * 10)
@@ -435,15 +421,18 @@ class TestDownloadAndProcessRelease:
             ),
         ):
             await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path,
+                conn,
+                client,
+                2025,
+                _SAMPLE_TAG,
+                _SAMPLE_DATE,
+                tmp_path,
                 keep_traces=True,
             )
 
         assert dest_dir.exists()
 
-    async def test_deletes_download_dir_after_successful_ingest(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_deletes_download_dir_after_successful_ingest(self, tmp_path: Path) -> None:
         dest_dir = tmp_path / "2025-04-01"
         dest_dir.mkdir()
         (dest_dir / "2025-04-01.tar.aa").write_bytes(b"x" * 10)
@@ -464,9 +453,7 @@ class TestDownloadAndProcessRelease:
 
         assert not dest_dir.exists()
 
-    async def test_keeps_download_dir_after_failed_ingest(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_keeps_download_dir_after_failed_ingest(self, tmp_path: Path) -> None:
         dest_dir = tmp_path / "2025-04-01"
         dest_dir.mkdir()
         (dest_dir / "2025-04-01.tar.aa").write_bytes(b"x" * 10)
@@ -487,9 +474,7 @@ class TestDownloadAndProcessRelease:
 
         assert dest_dir.exists()
 
-    async def test_run_batch_failure_marks_batch_errored(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_run_batch_failure_marks_batch_errored(self, tmp_path: Path) -> None:
         client = _release_client(_SAMPLE_RELEASE)
         conn = AsyncMock()
 
@@ -511,9 +496,7 @@ class TestDownloadAndProcessRelease:
         sql: str = conn.execute.call_args[0][0]
         assert "errored" in sql.lower()
 
-    async def test_run_batch_failure_stores_release_url(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_run_batch_failure_stores_release_url(self, tmp_path: Path) -> None:
         client = _release_client(_SAMPLE_RELEASE)
         conn = AsyncMock()
 
@@ -550,9 +533,7 @@ def _patch_httpx_client() -> MagicMock:
 
 
 class TestCheckAndRunNewBatches:
-    async def test_processes_new_unprocessed_release(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_processes_new_unprocessed_release(self, tmp_path: Path) -> None:
         releases = [{"tag_name": _SAMPLE_TAG}]
 
         with (
@@ -581,9 +562,7 @@ class TestCheckAndRunNewBatches:
 
         assert mock_dapr.call_count >= 1
 
-    async def test_skips_already_processed_release(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_skips_already_processed_release(self, tmp_path: Path) -> None:
         releases = [{"tag_name": _SAMPLE_TAG}]
 
         with (
@@ -612,9 +591,7 @@ class TestCheckAndRunNewBatches:
 
         mock_dapr.assert_not_called()
 
-    async def test_skips_releases_with_invalid_tags(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_skips_releases_with_invalid_tags(self, tmp_path: Path) -> None:
         releases = [{"tag_name": "not-a-valid-tag"}, {"tag_name": ""}]
 
         with (
@@ -639,9 +616,7 @@ class TestCheckAndRunNewBatches:
 
         mock_dapr.assert_not_called()
 
-    async def test_fetches_second_page_when_first_page_is_full(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_fetches_second_page_when_first_page_is_full(self, tmp_path: Path) -> None:
         """A release that only appears on page 2 is discovered and processed."""
         page1 = [{"tag_name": "not-valid"} for _ in range(100)]  # full page, no matches
         page2 = [{"tag_name": _SAMPLE_TAG}]  # valid unprocessed release
@@ -681,9 +656,7 @@ class TestCheckAndRunNewBatches:
         assert any(p == 2 for p in pages_fetched), "page 2 was never fetched"
         assert mock_dapr.call_count >= 1, "release on page 2 was not processed"
 
-    async def test_stops_fetching_pages_on_processed_batch(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_stops_fetching_pages_on_processed_batch(self, tmp_path: Path) -> None:
         """Once a processed batch is found on page 2, page 3 is never requested."""
         page1 = [{"tag_name": "not-valid"} for _ in range(100)]
         page2 = [{"tag_name": _SAMPLE_TAG}]  # valid but already processed
@@ -726,9 +699,7 @@ class TestCheckAndRunNewBatches:
         assert not any(p >= 3 for p in pages_fetched), "page 3 should not have been fetched"
         mock_dapr.assert_not_called()
 
-    async def test_processes_in_ascending_date_order(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_processes_in_ascending_date_order(self, tmp_path: Path) -> None:
         """Unprocessed releases are ingested oldest-first regardless of API sort order."""
         # GitHub returns newest-first
         releases: list[dict[str, object]] = [
@@ -889,9 +860,7 @@ class TestCheckAndRunNewBatches:
 
         assert get_releases_mock.call_count == 2
 
-    async def test_skips_previous_year_when_processed_release_found(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_skips_previous_year_when_processed_release_found(self, tmp_path: Path) -> None:
         """When a processed release is found in year N, year N-1 is not queried."""
         releases_by_year: dict[int, list[dict[str, object]]] = {
             2025: [{"tag_name": "v2025.04.02-planes-readsb-prod-0"}],
@@ -935,9 +904,7 @@ class TestCheckAndRunNewBatches:
         assert 2025 in queried_years
         assert 2024 not in queried_years
 
-    async def test_errored_batch_and_follow_up_requeued(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_errored_batch_and_follow_up_requeued(self, tmp_path: Path) -> None:
         """An errored batch and the day after are both reprocessed on the next run.
 
         Scan order (newest-first): Apr 3 (succeeded, in force_dates), Apr 2 (errored),
@@ -1052,15 +1019,14 @@ class TestSchedulerLoop:
                 "adsb_server.ingestion.scheduler.check_and_run_new_batches",
                 side_effect=mock_check,
             ),
-            patch("asyncio.sleep", side_effect=mock_sleep),pytest.raises(asyncio.CancelledError)
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            pytest.raises(asyncio.CancelledError),
         ):
             await scheduler_loop(conn, tmp_path, interval_seconds=60)
 
         assert check_count == 1
 
-    async def test_continues_after_check_exception(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_continues_after_check_exception(self, tmp_path: Path) -> None:
         """Exception from check_and_run_new_batches is caught; loop continues."""
         check_count = 0
         sleep_count = 0
@@ -1085,7 +1051,8 @@ class TestSchedulerLoop:
                 "adsb_server.ingestion.scheduler.check_and_run_new_batches",
                 side_effect=mock_check,
             ),
-            patch("asyncio.sleep", side_effect=mock_sleep),pytest.raises(asyncio.CancelledError)
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            pytest.raises(asyncio.CancelledError),
         ):
             await scheduler_loop(conn, tmp_path, interval_seconds=60)
 

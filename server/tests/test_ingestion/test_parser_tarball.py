@@ -27,7 +27,8 @@ def _make_trace_bytes(
         "icao": icao,
         "t": t,
         "timestamp": timestamp,
-        "trace": trace_entries or [
+        "trace": trace_entries
+        or [
             [0.0, 51.5, -0.1, 35000.0, 450.0, 90.0, 0, None, None],
             [10.0, 51.6, -0.2, 35100.0, 455.0, 91.0, 0, None, None],
         ],
@@ -210,7 +211,6 @@ class TestStreamTarballDirectory:
         results = list(stream_tarball(tmp_path))
         assert len(results) == 10
         assert {h.icao24 for h, _ in results} == set(icaos)
-
 
 
 class TestIsTarPart:

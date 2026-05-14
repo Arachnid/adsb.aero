@@ -99,7 +99,9 @@ class TestTrajectoryIntersects:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, altitude_min=100, altitude_min_ref="fl"  # FL100
+                geometry=_POLYGON,
+                altitude_min=100,
+                altitude_min_ref="fl",  # FL100
             )
         )
         compiled = compile_predicate(pred, params)
@@ -113,13 +115,15 @@ class TestTrajectoryIntersects:
         assert "atStbox(path," in compiled
         assert "eIntersects(atStbox(" in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
-        assert 10000.0 in params  # FL100 × 100
+        assert 10000.0 in params  # FL100 x 100
 
     def test_geometry_altitude_max_fl_uses_3d_stbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, altitude_max=400, altitude_max_ref="fl"  # FL400
+                geometry=_POLYGON,
+                altitude_max=400,
+                altitude_max_ref="fl",  # FL400
             )
         )
         compiled = compile_predicate(pred, params)
@@ -128,15 +132,17 @@ class TestTrajectoryIntersects:
         assert "ST_3DMakeBox(" in cte_body
         assert "eIntersects(atStbox(" in compiled
         assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
-        assert 40000.0 in params  # FL400 × 100
+        assert 40000.0 in params  # FL400 x 100
 
     def test_geometry_both_altitude_bounds_fl_uses_3d_stbox_cte(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON,
-                altitude_min=100, altitude_min_ref="fl",
-                altitude_max=400, altitude_max_ref="fl",
+                altitude_min=100,
+                altitude_min_ref="fl",
+                altitude_max=400,
+                altitude_max_ref="fl",
             )
         )
         compiled = compile_predicate(pred, params)
@@ -146,15 +152,16 @@ class TestTrajectoryIntersects:
         assert "eIntersects(atStbox(" in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
         assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
-        assert 10000.0 in params  # FL100 × 100
-        assert 40000.0 in params  # FL400 × 100
+        assert 10000.0 in params  # FL100 x 100
+        assert 40000.0 in params  # FL400 x 100
 
     def test_geometry_altitude_min_ft_uses_atvalues(self) -> None:
         # altitude_min_ref="ft" (default) → corrected altitude via atvalues, no ST_3DMakeBox.
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, altitude_min=10000  # ft (default ref)
+                geometry=_POLYGON,
+                altitude_min=10000,  # ft (default ref)
             )
         )
         compiled = compile_predicate(pred, params)
@@ -172,25 +179,28 @@ class TestTrajectoryIntersects:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON,
-                altitude_min=1500, altitude_min_ref="ft",
-                altitude_max=100, altitude_max_ref="fl",  # FL100 ceiling
+                altitude_min=1500,
+                altitude_min_ref="ft",
+                altitude_max=100,
+                altitude_max_ref="fl",  # FL100 ceiling
             )
         )
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body   # FL ceiling in STBOX Z
-        assert "atvalues(" in compiled        # ft floor via corrected alt
+        assert "ST_3DMakeBox(" in cte_body  # FL ceiling in STBOX Z
+        assert "atvalues(" in compiled  # ft floor via corrected alt
         assert "alt_correction_ft" in compiled
-        assert 10000.0 in params  # FL100 × 100
-        assert 1500.0 in params   # ft floor passed directly
+        assert 10000.0 in params  # FL100 x 100
+        assert 1500.0 in params  # ft floor passed directly
 
     def test_geometry_altitude_max_ft_uses_atvalues(self) -> None:
         # altitude_max in ft (default ref) → no STBOX Z, atvalues with corrected alt.
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, altitude_max=10000  # ft ceiling
+                geometry=_POLYGON,
+                altitude_max=10000,  # ft ceiling
             )
         )
         compiled = compile_predicate(pred, params)
@@ -208,7 +218,8 @@ class TestTrajectoryIntersects:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON,
-                altitude_min=5000, altitude_max=15000,  # both ft (default)
+                altitude_min=5000,
+                altitude_max=15000,  # both ft (default)
             )
         )
         compiled = compile_predicate(pred, params)
@@ -227,17 +238,18 @@ class TestTrajectoryIntersects:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON,
-                altitude_min=350, altitude_min_ref="fl",  # FL350 floor
-                altitude_max=50000,                        # 50000 ft QNH ceiling
+                altitude_min=350,
+                altitude_min_ref="fl",  # FL350 floor
+                altitude_max=50000,  # 50000 ft QNH ceiling
             )
         )
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body   # FL floor in STBOX Z
-        assert "atvalues(" in compiled        # ft ceiling via corrected alt
+        assert "ST_3DMakeBox(" in cte_body  # FL floor in STBOX Z
+        assert "atvalues(" in compiled  # ft ceiling via corrected alt
         assert "alt_correction_ft" in compiled
-        assert 35000.0 in params  # FL350 × 100
+        assert 35000.0 in params  # FL350 x 100
         assert 50000.0 in params
 
     def test_geometry_ft_altitude_and_time(self) -> None:
@@ -247,13 +259,14 @@ class TestTrajectoryIntersects:
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON,
                 altitude_min=5000,  # ft (default)
-                time_from=_T1, time_to=_T2,
+                time_from=_T1,
+                time_to=_T2,
             )
         )
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "span(" in cte_body           # time span in STBOX
+        assert "span(" in cte_body  # time span in STBOX
         assert "ST_3DMakeBox(" not in cte_body  # no FL bounds → no Z in STBOX
         assert "atvalues(" in compiled
         assert "alt_correction_ft" in compiled
@@ -278,7 +291,8 @@ class TestTrajectoryIntersects:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
-                altitude_min=350, altitude_min_ref="fl"  # FL350 = 35000 ft
+                altitude_min=350,
+                altitude_min_ref="fl",  # FL350 = 35000 ft
             )
         )
         sql = compile_predicate(pred, params)
@@ -293,7 +307,8 @@ class TestTrajectoryIntersects:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
-                altitude_max=100, altitude_max_ref="fl"  # FL100 = 10000 ft
+                altitude_max=100,
+                altitude_max_ref="fl",  # FL100 = 10000 ft
             )
         )
         sql = compile_predicate(pred, params)
@@ -333,8 +348,10 @@ class TestTrajectoryIntersects:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
-                altitude_min=100, altitude_min_ref="fl",
-                altitude_max=400, altitude_max_ref="fl",
+                altitude_min=100,
+                altitude_min_ref="fl",
+                altitude_max=400,
+                altitude_max_ref="fl",
             )
         )
         sql = compile_predicate(pred, params)
@@ -342,15 +359,16 @@ class TestTrajectoryIntersects:
         assert "alt_min_pressure_ft <=" in sql
         assert "qnh" not in sql
         assert "eIntersects" not in sql
-        assert 10000.0 in params  # FL100 × 100
-        assert 40000.0 in params  # FL400 × 100
+        assert 10000.0 in params  # FL100 x 100
+        assert 40000.0 in params  # FL400 x 100
         assert len(params) == 2
 
     def test_both_ft_bounds_no_geometry(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
-                altitude_min=5000, altitude_max=15000  # both ft (default)
+                altitude_min=5000,
+                altitude_max=15000,  # both ft (default)
             )
         )
         sql = compile_predicate(pred, params)
@@ -368,7 +386,8 @@ class TestTrajectoryIntersects:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 altitude_min=1500,
-                altitude_max=100, altitude_max_ref="fl",  # FL100 ceiling
+                altitude_max=100,
+                altitude_max_ref="fl",  # FL100 ceiling
             )
         )
         sql = compile_predicate(pred, params)
@@ -377,7 +396,7 @@ class TestTrajectoryIntersects:
         assert "alt_min_qnh_ft" not in sql
         assert "alt_max_pressure_ft" not in sql
         assert 1500.0 in params
-        assert 10000.0 in params  # FL100 × 100
+        assert 10000.0 in params  # FL100 x 100
         assert len(params) == 2
 
     def test_mixed_fl_min_ft_max_no_geometry(self) -> None:
@@ -385,8 +404,9 @@ class TestTrajectoryIntersects:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
-                altitude_min=350, altitude_min_ref="fl",  # FL350 floor
-                altitude_max=50000,                        # 50000 ft QNH ceiling
+                altitude_min=350,
+                altitude_min_ref="fl",  # FL350 floor
+                altitude_max=50000,  # 50000 ft QNH ceiling
             )
         )
         sql = compile_predicate(pred, params)
@@ -394,7 +414,7 @@ class TestTrajectoryIntersects:
         assert "alt_min_qnh_ft <=" in sql
         assert "alt_min_pressure_ft" not in sql
         assert "alt_max_qnh_ft" not in sql
-        assert 35000.0 in params  # FL350 × 100
+        assert 35000.0 in params  # FL350 x 100
         assert 50000.0 in params
         assert len(params) == 2
 
@@ -421,9 +441,12 @@ class TestTrajectoryIntersects:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON,
-                altitude_min=100, altitude_min_ref="fl",
-                altitude_max=400, altitude_max_ref="fl",
-                time_from=_T1, time_to=_T2,
+                altitude_min=100,
+                altitude_min_ref="fl",
+                altitude_max=400,
+                altitude_max_ref="fl",
+                time_from=_T1,
+                time_to=_T2,
             )
         )
         compiled = compile_predicate(pred, params)
@@ -437,7 +460,7 @@ class TestTrajectoryIntersects:
         assert "start_ts <" in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
         assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
-        # Params: alt_min (×100), alt_max (×100), time_from, time_to, geom
+        # Params: alt_min (x100), alt_max (x100), time_from, time_to, geom
         assert 10000.0 in params
         assert 40000.0 in params
         assert len(params) == 5
@@ -467,9 +490,7 @@ class TestTrajectoryIntersects:
 class TestTrajectoryWithin:
     def test_geometry_only_uses_st_within_trajectory(self) -> None:
         params: list = []
-        pred = TrajectoryWithin(
-            trajectory_within=SpatioTemporalAltitudeValue(geometry=_POLYGON)
-        )
+        pred = TrajectoryWithin(trajectory_within=SpatioTemporalAltitudeValue(geometry=_POLYGON))
         sql = compile_predicate(pred, params)
         assert "ST_Within(trajectory(path)," in sql
         assert "atStbox" not in sql
@@ -478,7 +499,9 @@ class TestTrajectoryWithin:
         params: list = []
         pred = TrajectoryWithin(
             trajectory_within=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, altitude_min=50, altitude_min_ref="fl"  # FL050
+                geometry=_POLYGON,
+                altitude_min=50,
+                altitude_min_ref="fl",  # FL050
             )
         )
         compiled = compile_predicate(pred, params)
@@ -511,9 +534,7 @@ class TestTrajectoryWithin:
 
     def test_time_only(self) -> None:
         params: list = []
-        pred = TrajectoryWithin(
-            trajectory_within=SpatioTemporalAltitudeValue(time_from=_T1)
-        )
+        pred = TrajectoryWithin(trajectory_within=SpatioTemporalAltitudeValue(time_from=_T1))
         sql = compile_predicate(pred, params)
         assert "ST_Within" not in sql
         assert "end_ts >=" in sql
@@ -541,9 +562,7 @@ class TestSquawkFilter:
     def test_squawk_codes_multiple(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
-            trajectory_intersects=SpatioTemporalAltitudeValue(
-                squawk_codes=["7700", "7600", "7500"]
-            )
+            trajectory_intersects=SpatioTemporalAltitudeValue(squawk_codes=["7700", "7600", "7500"])
         )
         sql = compile_predicate(pred, params)
         assert "squawk_seq IS NOT NULL" in sql
@@ -571,7 +590,8 @@ class TestSquawkFilter:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON,
-                altitude_min=100, altitude_min_ref="fl",
+                altitude_min=100,
+                altitude_min_ref="fl",
                 squawk_codes=["7700"],
             )
         )
@@ -609,9 +629,7 @@ class TestSquawkFilter:
         # trajectory_within + geometry + squawk: squawk correlated with geometry.
         params: list = []
         pred = TrajectoryWithin(
-            trajectory_within=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, squawk_codes=["7700"]
-            )
+            trajectory_within=SpatioTemporalAltitudeValue(geometry=_POLYGON, squawk_codes=["7700"])
         )
         sql = compile_predicate(pred, params)
         assert "ST_Within(trajectory(path)," in sql
@@ -720,9 +738,7 @@ class TestTimeFields:
 
     def test_intersects_time_to_only(self) -> None:
         params: list = []
-        pred = TrajectoryIntersects(
-            trajectory_intersects=SpatioTemporalAltitudeValue(time_to=_T2)
-        )
+        pred = TrajectoryIntersects(trajectory_intersects=SpatioTemporalAltitudeValue(time_to=_T2))
         sql = compile_predicate(pred, params)
         assert "start_ts <" in sql
         assert "end_ts >=" not in sql
@@ -871,9 +887,7 @@ class TestDwellDistance:
     def test_dwell_min_s_with_geometry_emits_duration_ge(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
-            trajectory_intersects=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, dwell_min_s=600.0
-            )
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON, dwell_min_s=600.0)
         )
         sql = compile_predicate(pred, params)
         assert "EXTRACT(EPOCH FROM duration(getTime(" in sql
@@ -883,9 +897,7 @@ class TestDwellDistance:
     def test_dwell_max_s_with_geometry_emits_duration_le(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
-            trajectory_intersects=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, dwell_max_s=1800.0
-            )
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON, dwell_max_s=1800.0)
         )
         sql = compile_predicate(pred, params)
         assert "EXTRACT(EPOCH FROM duration(getTime(" in sql
@@ -942,7 +954,8 @@ class TestDwellDistance:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON,
-                altitude_min=100, altitude_min_ref="fl",
+                altitude_min=100,
+                altitude_min_ref="fl",
                 dwell_min_s=600.0,
             )
         )
@@ -955,9 +968,7 @@ class TestDwellDistance:
     def test_dwell_trajectory_within(self) -> None:
         params: list = []
         pred = TrajectoryWithin(
-            trajectory_within=SpatioTemporalAltitudeValue(
-                geometry=_POLYGON, dwell_min_s=120.0
-            )
+            trajectory_within=SpatioTemporalAltitudeValue(geometry=_POLYGON, dwell_min_s=120.0)
         )
         sql = compile_predicate(pred, params)
         assert "ST_Within(trajectory(path)," in sql

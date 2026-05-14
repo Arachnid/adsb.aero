@@ -40,6 +40,7 @@ def _p(params: list[Any], val: Any) -> str:
     params.append(val)
     return f"${len(params)}"
 
+
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
@@ -309,7 +310,15 @@ async def query_flights(
                         "match": {
                             "and": [
                                 {"icao_type": ["B738", "B737", "B737M"]},
-                                {"ends_within": {"geometry": {"type": "Circle", "coordinates": [-0.4543, 51.4775], "radius": 8000}}},  # noqa: E501
+                                {
+                                    "ends_within": {
+                                        "geometry": {
+                                            "type": "Circle",
+                                            "coordinates": [-0.4543, 51.4775],
+                                            "radius": 8000,
+                                        }
+                                    }
+                                },
                             ]
                         },
                         "limit": 50,
@@ -323,7 +332,9 @@ async def query_flights(
                             "trajectory_intersects": {
                                 "geometry": {
                                     "type": "Polygon",
-                                    "coordinates": [[[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]],  # noqa: E501
+                                    "coordinates": [
+                                        [[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]
+                                    ],
                                 },
                                 "altitude_min": 35000,
                                 "altitude_min_ref": "ft",
@@ -337,18 +348,30 @@ async def query_flights(
                 },
                 "callsign_prefix": {
                     "summary": "British Airways flights (callsign prefix)",
-                    "value": {"match": {"callsign_matches": "^BAW"}, "limit": 50, "include_path": False},  # noqa: E501
+                    "value": {
+                        "match": {"callsign_matches": "^BAW"},
+                        "limit": 50,
+                        "include_path": False,
+                    },
                 },
                 "short_haul": {
                     "summary": "Short flights (under 1 hour)",
-                    "value": {"match": {"duration": {"max_s": 3600}}, "limit": 50, "include_path": False},  # noqa: E501
+                    "value": {
+                        "match": {"duration": {"max_s": 3600}},
+                        "limit": 50,
+                        "include_path": False,
+                    },
                 },
                 "departing_from": {
                     "summary": "Departures from Charles de Gaulle in a time window",
                     "value": {
                         "match": {
                             "starts_within": {
-                                "geometry": {"type": "Circle", "coordinates": [2.5479, 49.0097], "radius": 10000},  # noqa: E501
+                                "geometry": {
+                                    "type": "Circle",
+                                    "coordinates": [2.5479, 49.0097],
+                                    "radius": 10000,
+                                },
                                 "time_from": "2026-03-30T06:00:00Z",
                                 "time_to": "2026-03-30T12:00:00Z",
                             }
@@ -382,9 +405,7 @@ async def query_flights(
         cursor_ts, cursor_icao = decode_cursor(body.cursor)
         ts_p = _p(params, cursor_ts)
         icao_p = _p(params, cursor_icao)
-        where_parts.append(
-            f"(start_ts < {ts_p} OR (start_ts = {ts_p} AND icao24 < {icao_p}))"
-        )
+        where_parts.append(f"(start_ts < {ts_p} OR (start_ts = {ts_p} AND icao24 < {icao_p}))")
 
     where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
@@ -443,7 +464,9 @@ async def query_flights(
     ),
     responses={
         404: {"description": "No flight exists for the given `flight_id`."},
-        422: {"description": "`flight_id` is malformed (missing `:` separator or invalid timestamp)."},  # noqa: E501
+        422: {
+            "description": "`flight_id` is malformed (missing `:` separator or invalid timestamp)."
+        },
     },
 )
 async def get_flight(

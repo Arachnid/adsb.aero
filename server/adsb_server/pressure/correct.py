@@ -36,8 +36,8 @@ def build_correction_interpolator(
     epoch floats from vertex timestamps) match without any unit conversion.
     Latitude and longitude axes are sorted ascending as required.
     """
-    t_float: npt.NDArray[np.float64] = (
-        mslp.valid_time.values.astype("datetime64[s]").astype(np.float64)
+    t_float: npt.NDArray[np.float64] = mslp.valid_time.values.astype("datetime64[s]").astype(
+        np.float64
     )
     lat_float: npt.NDArray[np.float64] = mslp.latitude.values.astype(np.float64)
     lon_float: npt.NDArray[np.float64] = mslp.longitude.values.astype(np.float64)

@@ -17,8 +17,7 @@ def tgeompoint_seq(vertices: list[tuple[float, float, float, float]]) -> str:
     Output: 'SRID=4326;[POINT Z (lon lat alt)@ts, ...]'
     """
     instants = [
-        f"POINT Z ({lon} {lat} {alt_ft})@{_fmt_ts(ts)}"
-        for lon, lat, alt_ft, ts in vertices
+        f"POINT Z ({lon} {lat} {alt_ft})@{_fmt_ts(ts)}" for lon, lat, alt_ft, ts in vertices
     ]
     return f"SRID=4326;[{', '.join(instants)}]"
 
@@ -69,8 +68,5 @@ def tfloat_stepwise_seq(values: list[float], timestamps: list[float]) -> str | N
     """
     if not values:
         return None
-    instants = [
-        f"{v:.4f}@{_fmt_ts(ts)}"
-        for v, ts in zip(values, timestamps, strict=True)
-    ]
+    instants = [f"{v:.4f}@{_fmt_ts(ts)}" for v, ts in zip(values, timestamps, strict=True)]
     return f"Interp=Step;[{', '.join(instants)}]"

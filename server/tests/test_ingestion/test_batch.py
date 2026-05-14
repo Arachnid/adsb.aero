@@ -46,8 +46,17 @@ def _make_trace_bytes(
     """Build a gzip-compressed trace JSON bytes."""
     if entries is None:
         entries = [
-            [0.0, 51.5, -0.1, 35000.0, 450.0, 90.0, 0, None,
-             {"flight": "BAW100", "squawk": "1234"}],
+            [
+                0.0,
+                51.5,
+                -0.1,
+                35000.0,
+                450.0,
+                90.0,
+                0,
+                None,
+                {"flight": "BAW100", "squawk": "1234"},
+            ],
             [30.0, 51.6, -0.2, 35100.0, 455.0, 91.0, 0, None, None],
             [60.0, 51.7, -0.3, 35200.0, 460.0, 92.0, 0, None, None],
         ]
@@ -74,8 +83,6 @@ def _make_tarball_dir(tmp_path: Path, aircraft: list[str]) -> Path:
     raw_bytes = raw_buf.getvalue()
     (tmp_path / "archive.tar.aa").write_bytes(raw_bytes)
     return tmp_path
-
-
 
 
 @pytest.mark.asyncio
@@ -214,6 +221,7 @@ async def test_run_batch_in_progress_written_to_staging(
     assert staging_row is not None
 
     from adsb_server.ingestion.batch import _deserialize_staging
+
     staging = _deserialize_staging(bytes(staging_row["staging_data"]))
     assert "ip0001" in staging
 
@@ -235,21 +243,41 @@ async def test_run_batch_merges_in_progress_from_staging(
 
     # Build a staging blob as if batch_date_1 produced an in-progress flight
     prev_pts = [
-        RawPoint(ts=1000.0, lat=51.5, lon=-0.1, alt_baro=35000.0,
-                 track=90.0, squawk=None, new_leg=False,
-                 callsign=None, emitter_category=None),
-        RawPoint(ts=1030.0, lat=51.6, lon=-0.2, alt_baro=35100.0,
-                 track=91.0, squawk=None, new_leg=False,
-                 callsign=None, emitter_category=None),
+        RawPoint(
+            ts=1000.0,
+            lat=51.5,
+            lon=-0.1,
+            alt_baro=35000.0,
+            track=90.0,
+            squawk=None,
+            new_leg=False,
+            callsign=None,
+            emitter_category=None,
+        ),
+        RawPoint(
+            ts=1030.0,
+            lat=51.6,
+            lon=-0.2,
+            alt_baro=35100.0,
+            track=91.0,
+            squawk=None,
+            new_leg=False,
+            callsign=None,
+            emitter_category=None,
+        ),
     ]
     staging_flight = RawFlight(
-        icao24="cc1122", callsign=None, icao_type="B738",
-        emitter_category=None, points=prev_pts,
+        icao24="cc1122",
+        callsign=None,
+        icao_type="B738",
+        emitter_category=None,
+        points=prev_pts,
     )
     blob = _serialize_staging({"cc1122": staging_flight})
     await conn.execute(
         "INSERT INTO flight_staging (batch_date, staging_data) VALUES ($1, $2)",
-        batch_date_1, blob,
+        batch_date_1,
+        blob,
     )
 
     # Tarball for batch_date_2 continues the flight, placed well before the cutoff
@@ -312,7 +340,7 @@ async def test_run_batch_two_batches_finalizes_in_progress(
     cutoff_ts_1 = 1630454400 + 86399  # end of 2021-09-01
 
     near_entries: list[list[object]] = [
-        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
+        [0.0, 51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
         [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, None],
     ]
 
@@ -339,7 +367,7 @@ async def test_run_batch_two_batches_finalizes_in_progress(
     tmp2 = tmp_path / "batch2"
     tmp2.mkdir()
     cont_entries: list[list[object]] = [
-        [0.0,  51.7, -0.3, 35200.0, 92.0, 0.0, 0, None, None],
+        [0.0, 51.7, -0.3, 35200.0, 92.0, 0.0, 0, None, None],
         [30.0, 51.8, -0.4, 35300.0, 93.0, 0.0, 0, None, None],
         [60.0, 51.9, -0.5, 35400.0, 94.0, 0.0, 0, None, None],
     ]
@@ -374,7 +402,7 @@ async def test_squawk_reconstructed_from_staging(
     cutoff_ts_1 = 1633046400 + 86399  # end of 2021-10-01
 
     squawk_entries: list[list[object]] = [
-        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, {"squawk": "7700"}],
+        [0.0, 51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, {"squawk": "7700"}],
         [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, {"squawk": "7700"}],
     ]
 
@@ -392,6 +420,7 @@ async def test_squawk_reconstructed_from_staging(
 
     # Staging should contain the squawk
     from adsb_server.ingestion.batch import _deserialize_staging
+
     staging_row = await conn.fetchrow(
         "SELECT staging_data FROM flight_staging WHERE batch_date = $1", batch_date_1
     )
@@ -404,7 +433,7 @@ async def test_squawk_reconstructed_from_staging(
     # Batch 2: continuation with different squawk
     batch_date_2 = date(2021, 10, 2)
     cont_entries: list[list[object]] = [
-        [0.0,  51.7, -0.3, 35200.0, 92.0, 0.0, 0, None, {"squawk": "2000"}],
+        [0.0, 51.7, -0.3, 35200.0, 92.0, 0.0, 0, None, {"squawk": "2000"}],
         [30.0, 51.8, -0.4, 35300.0, 93.0, 0.0, 0, None, {"squawk": "2000"}],
         [60.0, 51.9, -0.5, 35400.0, 94.0, 0.0, 0, None, None],
     ]
@@ -445,7 +474,7 @@ async def test_orphaned_in_progress_finalized_by_next_batch(
     cutoff_ts_1 = 1635724800 + 86399  # end of 2021-11-01
 
     near_entries: list[list[object]] = [
-        [0.0,  51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
+        [0.0, 51.5, -0.1, 35000.0, 90.0, 0.0, 0, None, None],
         [30.0, 51.6, -0.2, 35100.0, 91.0, 0.0, 0, None, None],
     ]
 
@@ -498,9 +527,9 @@ async def test_ground_points_preserved_across_batch_boundary(
     # not fire.
     base = float(cutoff_ts_1 - 4060)
     entries: list[list[object]] = [
-        [0.0,    51.5, -0.1, 35000.0, 450.0, 90.0, 0, None, None],  # airborne
-        [30.0,   51.6, -0.2, 35100.0, 455.0, 91.0, 0, None, None],  # airborne
-        [60.0,   51.6, -0.2, "ground", None,  None, 0, None, None],  # on ground
+        [0.0, 51.5, -0.1, 35000.0, 450.0, 90.0, 0, None, None],  # airborne
+        [30.0, 51.6, -0.2, 35100.0, 455.0, 91.0, 0, None, None],  # airborne
+        [60.0, 51.6, -0.2, "ground", None, None, 0, None, None],  # on ground
         [4060.0, 51.7, -0.3, 35200.0, 460.0, 92.0, 0, None, None],  # airborne after takeoff
     ]
 
@@ -523,6 +552,7 @@ async def test_ground_points_preserved_across_batch_boundary(
 
     # Verify ground point is in the blob (alt_baro=None)
     from adsb_server.ingestion.batch import _deserialize_staging
+
     staging = _deserialize_staging(bytes(staging_row["staging_data"]))
     assert "ff0001" in staging
     ground_count = sum(1 for p in staging["ff0001"].points if p.alt_baro is None)
@@ -537,9 +567,7 @@ async def test_ground_points_preserved_across_batch_boundary(
 
     await run_batch(conn, tarball_dir, batch_date_2)
 
-    rows = await conn.fetch(
-        "SELECT icao24 FROM flights WHERE icao24 = 'ff0001'"
-    )
+    rows = await conn.fetch("SELECT icao24 FROM flights WHERE icao24 = 'ff0001'")
     assert len(rows) == 1, "ground gap must not produce a spurious split"
 
 
@@ -560,9 +588,7 @@ async def test_stale_flights_deleted_on_rerun(
     tarball_dir = _make_tarball_dir(tmp_path, ["aa1111", "bb2222"])
     await run_batch(conn, tarball_dir, batch_date)
 
-    rows = await conn.fetch(
-        "SELECT icao24 FROM flights WHERE ingest_batch_date = $1", batch_date
-    )
+    rows = await conn.fetch("SELECT icao24 FROM flights WHERE ingest_batch_date = $1", batch_date)
     assert {r["icao24"] for r in rows} == {"aa1111", "bb2222"}
 
     # Second run: only one aircraft (simulate the tarball changing)
@@ -571,9 +597,7 @@ async def test_stale_flights_deleted_on_rerun(
     tarball_dir2 = _make_tarball_dir(tmp2, ["aa1111"])
     await run_batch(conn, tarball_dir2, batch_date)
 
-    rows = await conn.fetch(
-        "SELECT icao24 FROM flights WHERE ingest_batch_date = $1", batch_date
-    )
+    rows = await conn.fetch("SELECT icao24 FROM flights WHERE ingest_batch_date = $1", batch_date)
     assert {r["icao24"] for r in rows} == {"aa1111"}, "bb2222 should have been deleted as stale"
 
 
@@ -584,16 +608,35 @@ async def test_staging_serialization_roundtrip() -> None:
     from adsb_server.ingestion.models import RawFlight, RawPoint
 
     pts = [
-        RawPoint(ts=1000.0, lat=51.5, lon=-0.1, alt_baro=35000.0,
-                 track=90.0, squawk="7700", new_leg=False,
-                 callsign="BAW1", emitter_category="A3"),
-        RawPoint(ts=1060.0, lat=51.6, lon=-0.2, alt_baro=None,
-                 track=None, squawk=None, new_leg=False,
-                 callsign="BAW1", emitter_category="A3"),
+        RawPoint(
+            ts=1000.0,
+            lat=51.5,
+            lon=-0.1,
+            alt_baro=35000.0,
+            track=90.0,
+            squawk="7700",
+            new_leg=False,
+            callsign="BAW1",
+            emitter_category="A3",
+        ),
+        RawPoint(
+            ts=1060.0,
+            lat=51.6,
+            lon=-0.2,
+            alt_baro=None,
+            track=None,
+            squawk=None,
+            new_leg=False,
+            callsign="BAW1",
+            emitter_category="A3",
+        ),
     ]
     flight = RawFlight(
-        icao24="aabbcc", callsign="BAW1", icao_type="B738",
-        emitter_category="A3", points=pts,
+        icao24="aabbcc",
+        callsign="BAW1",
+        icao_type="B738",
+        emitter_category="A3",
+        points=pts,
     )
     blob = _serialize_staging({"aabbcc": flight})
     result = _deserialize_staging(blob)

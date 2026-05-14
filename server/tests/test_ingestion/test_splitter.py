@@ -175,7 +175,7 @@ class TestSquawkRuns:
         runs = finalized[0].squawk_runs
         assert runs[0] == (1000.0, "1234")
         assert runs[-1][1] == "1234"  # closing instant: same code
-        assert runs[-1][0] > 1000.0   # closing instant: after the start
+        assert runs[-1][0] > 1000.0  # closing instant: after the start
 
 
 class TestCallsignResolution:
@@ -289,7 +289,7 @@ class TestGroundPointHandling:
     def test_segment_leading_ground_excluded_from_geometry(self) -> None:
         """Segment whose first point is ground: geometry starts at first airborne point."""
         points = [
-            _make_point(ts=1000.0, alt_baro=None),   # ground
+            _make_point(ts=1000.0, alt_baro=None),  # ground
             _make_point(ts=1060.0, alt_baro=5000.0),
             _make_point(ts=1120.0, alt_baro=10000.0),
         ]
@@ -314,8 +314,8 @@ class TestGapBasedSplitting:
         points = [
             _make_point(ts=1000.0, alt_baro=30000.0),
             _make_point(ts=1060.0, alt_baro=20000.0),
-            _make_point(ts=1120.0, alt_baro=None),    # landing
-            _make_point(ts=1800.0, alt_baro=None),    # ground, 680 s > 10 min gap
+            _make_point(ts=1120.0, alt_baro=None),  # landing
+            _make_point(ts=1800.0, alt_baro=None),  # ground, 680 s > 10 min gap
             _make_point(ts=1860.0, alt_baro=5000.0),
             _make_point(ts=1920.0, alt_baro=10000.0),
         ]
@@ -326,8 +326,8 @@ class TestGapBasedSplitting:
         """Ground gap of exactly 600 s does NOT split (threshold is strict >)."""
         points = [
             _make_point(ts=1000.0, alt_baro=30000.0),
-            _make_point(ts=1060.0, alt_baro=None),    # landing
-            _make_point(ts=1660.0, alt_baro=None),    # ground, 600 s gap exactly
+            _make_point(ts=1060.0, alt_baro=None),  # landing
+            _make_point(ts=1660.0, alt_baro=None),  # ground, 600 s gap exactly
             _make_point(ts=1720.0, alt_baro=5000.0),
             _make_point(ts=1780.0, alt_baro=10000.0),
         ]

@@ -22,13 +22,10 @@ from adsb_server.query.models import (
     TrajectoryWithin,
 )
 
-
 # SQL expression for QNH-corrected altitude in feet.
 # Uses uncorrected getZ(path) when alt_correction_ft is NULL (no correction stored).
 _CORR_ALT = (
-    "CASE WHEN alt_correction_ft IS NULL "
-    "THEN getZ(path) "
-    "ELSE getZ(path) + alt_correction_ft END"
+    "CASE WHEN alt_correction_ft IS NULL THEN getZ(path) ELSE getZ(path) + alt_correction_ft END"
 )
 
 
@@ -201,13 +198,8 @@ def _compile_spatial_path(
             cte_name = f"_s{len(params)}"
 
             # FL bounds go into the STBOX Z dimension; ft bounds handled separately.
-            stbox_sql = _build_stbox_sql(
-                "geom", fl_alt_min_p, fl_alt_max_p, time_from_p, time_to_p
-            )
-            cte_body = (
-                f"SELECT geom, {stbox_sql} AS sb "
-                f"FROM (VALUES ({geom_sql})) AS _base(geom)"
-            )
+            stbox_sql = _build_stbox_sql("geom", fl_alt_min_p, fl_alt_max_p, time_from_p, time_to_p)
+            cte_body = f"SELECT geom, {stbox_sql} AS sb FROM (VALUES ({geom_sql})) AS _base(geom)"
             ctes.append((cte_name, cte_body))
 
             # GiST STBOX index pre-filter.
@@ -263,24 +255,16 @@ def _compile_spatial_path(
     # so clipped_path_expr is always non-None here.
     if v.dwell_min_s is not None:
         dmin_p = _p(params, v.dwell_min_s)
-        parts.append(
-            f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) >= {dmin_p}"
-        )
+        parts.append(f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) >= {dmin_p}")
     if v.dwell_max_s is not None:
         dmax_p = _p(params, v.dwell_max_s)
-        parts.append(
-            f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) <= {dmax_p}"
-        )
+        parts.append(f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) <= {dmax_p}")
     if v.distance_min_m is not None:
         distmin_p = _p(params, v.distance_min_m)
-        parts.append(
-            f"length(trajectory({clipped_path_expr})::geography) >= {distmin_p}"
-        )
+        parts.append(f"length(trajectory({clipped_path_expr})::geography) >= {distmin_p}")
     if v.distance_max_m is not None:
         distmax_p = _p(params, v.distance_max_m)
-        parts.append(
-            f"length(trajectory({clipped_path_expr})::geography) <= {distmax_p}"
-        )
+        parts.append(f"length(trajectory({clipped_path_expr})::geography) <= {distmax_p}")
 
     # Squawk filter: check the given codes at the instants the path was inside the
     # region of interest.  When there is no geometry, check the entire squawk_seq.
@@ -374,13 +358,9 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> CompiledPredicate:
         dur = pred.duration
         parts_d: list[str] = []
         if dur.min_s is not None:
-            parts_d.append(
-                f"EXTRACT(EPOCH FROM (end_ts - start_ts)) >= {_p(params, dur.min_s)}"
-            )
+            parts_d.append(f"EXTRACT(EPOCH FROM (end_ts - start_ts)) >= {_p(params, dur.min_s)}")
         if dur.max_s is not None:
-            parts_d.append(
-                f"EXTRACT(EPOCH FROM (end_ts - start_ts)) <= {_p(params, dur.max_s)}"
-            )
+            parts_d.append(f"EXTRACT(EPOCH FROM (end_ts - start_ts)) <= {_p(params, dur.max_s)}")
         return CompiledPredicate(" AND ".join(parts_d) if parts_d else "TRUE")
 
     if isinstance(pred, AndPredicate):

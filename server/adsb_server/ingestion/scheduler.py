@@ -48,9 +48,7 @@ async def _get_releases(
     repo = _REPO_TEMPLATE.format(year=year)
     url = f"{_GITHUB_API_BASE}/repos/{repo}/releases"
     try:
-        resp = await client.get(
-            url, params={"per_page": _GITHUB_RELEASES_PER_PAGE, "page": page}
-        )
+        resp = await client.get(url, params={"per_page": _GITHUB_RELEASES_PER_PAGE, "page": page})
         resp.raise_for_status()
         result: list[dict[str, object]] = resp.json()
         return result
@@ -76,9 +74,7 @@ async def _is_batch_already_processed(
 
 async def _get_errored_dates(conn: asyncpg.Connection) -> set[date]:
     """Return the set of batch dates currently in 'errored' status."""
-    rows = await conn.fetch(
-        "SELECT batch_date FROM ingest_batches WHERE status = 'errored'"
-    )
+    rows = await conn.fetch("SELECT batch_date FROM ingest_batches WHERE status = 'errored'")
     return {row["batch_date"] for row in rows}
 
 
@@ -255,9 +251,7 @@ async def check_and_run_new_batches(
 
                     if await _is_batch_already_processed(conn, batch_date):
                         if batch_date not in force_dates:
-                            logger.debug(
-                                "Batch %s already processed, stopping scan", batch_date
-                            )
+                            logger.debug("Batch %s already processed, stopping scan", batch_date)
                             stop = True
                             break
                         # Succeeded but in force_dates (follow-up of an errored batch):
@@ -276,13 +270,16 @@ async def check_and_run_new_batches(
                 tag = to_process[batch_date]
                 logger.info("New batch found: %s (tag=%s)", batch_date, tag)
                 ok = await _download_and_process_release(
-                    conn, client, year, tag, batch_date, cache_dir,
+                    conn,
+                    client,
+                    year,
+                    tag,
+                    batch_date,
+                    cache_dir,
                     keep_traces=keep_traces,
                 )
                 if not ok:
-                    logger.warning(
-                        "Batch %s errored — continuing to next batch", batch_date
-                    )
+                    logger.warning("Batch %s errored — continuing to next batch", batch_date)
 
             if stop:
                 break  # processed release found; all earlier years are also done
