@@ -32,6 +32,12 @@ type Seg = {
   vs: number | null;
   gs: number | null;
   ias: number | null;
+  track: number | null;
+  callsign: string | null;
+  icao24: string;
+  icaoType: string | null;
+  tsFrom: number;
+  tsTo: number;
 };
 
 // Step-interpolate (forward-fill) a [[ts, value], ...] series at a given timestamp.
@@ -58,6 +64,15 @@ function projectOntoSegment(
   const lenSq = dx * dx + dy * dy;
   if (lenSq === 0) return 0;
   return Math.max(0, Math.min(1, ((cursor[0] - from[0]) * dx + (cursor[1] - from[1]) * dy) / lenSq));
+}
+
+function trackToCompass(deg: number): string {
+  const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"] as const;
+  return dirs[Math.round(deg / 22.5) % 16] ?? "N";
+}
+
+function fmtUtc(ts: number): string {
+  return new Date(ts * 1000).toISOString().slice(11, 19);
 }
 
 // Return the active squawk code at unix timestamp ts, or null if none applies.
@@ -420,8 +435,18 @@ export function MapView({
   const [mapTooltip, setMapTooltip] = useState<{
     x: number;
     y: number;
-    altFt: number;
     dotPos: [number, number];
+    altFt: number;
+    ts: number;
+    callsign: string | null;
+    icao24: string;
+    icaoType: string | null;
+    cat: string | null;
+    gs: number | null;
+    vs: number | null;
+    ias: number | null;
+    track: number | null;
+    squawk: string | null;
   } | null>(null);
   const setMapTooltipRef = useRef(setMapTooltip);
   setMapTooltipRef.current = setMapTooltip;
@@ -570,12 +595,25 @@ export function MapView({
           const cursor = info.coordinate as [number, number] | undefined;
           const t = cursor ? projectOntoSegment(seg.from, seg.to, cursor) : 0;
           const altFt = Math.round(seg.altFt + t * (seg.altFtTo - seg.altFt));
+          const ts = seg.tsFrom + t * (seg.tsTo - seg.tsFrom);
           const dotPos: [number, number] = [
             seg.from[0] + t * (seg.to[0] - seg.from[0]),
             seg.from[1] + t * (seg.to[1] - seg.from[1]),
           ];
           onHoverPointRef.current({ flightId: seg.flightId, pointIdx: seg.pointIdx });
-          setMapTooltipRef.current({ x: info.x, y: info.y, altFt, dotPos });
+          setMapTooltipRef.current({
+            x: info.x, y: info.y, dotPos,
+            altFt, ts,
+            callsign: seg.callsign,
+            icao24: seg.icao24,
+            icaoType: seg.icaoType,
+            cat: seg.cat,
+            gs: seg.gs,
+            vs: seg.vs,
+            ias: seg.ias,
+            track: seg.track,
+            squawk: seg.squawk,
+          });
         } else {
           onHoverPointRef.current(null);
           setMapTooltipRef.current(null);
@@ -615,6 +653,7 @@ export function MapView({
         // slice(0,-1) guarantees i+1 < coords.length
         const next = coords[i + 1] ?? c;
         const ts = f.timestamps?.[i] ?? 0;
+        const tsNext = f.timestamps?.[i + 1] ?? ts;
         return {
           from: [c[0], c[1]],
           to: [next[0], next[1]],
@@ -628,6 +667,12 @@ export function MapView({
           vs: stepValueAt(f.path_vr, ts),
           gs: stepValueAt(f.path_gs, ts),
           ias: stepValueAt(f.path_ias, ts),
+          track: stepValueAt(f.path_tracks, ts),
+          callsign: f.callsign ?? null,
+          icao24: f.icao24,
+          icaoType: f.icao_type ?? null,
+          tsFrom: ts,
+          tsTo: tsNext,
         };
       });
     });
@@ -754,15 +799,89 @@ export function MapView({
             WebkitBackdropFilter: "blur(8px)",
             border: "1px solid var(--line-1)",
             borderRadius: "var(--radius-1)",
-            padding: "3px 7px",
+            padding: "5px 8px",
             fontSize: 11,
             color: "var(--fg-1)",
             whiteSpace: "nowrap",
             zIndex: 10,
             boxShadow: "var(--shadow-1)",
+            minWidth: 130,
           }}
         >
-          {mapTooltip.altFt.toLocaleString()} ft
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 2 }}>
+            <span style={{ fontWeight: 600, fontSize: 12 }}>
+              {mapTooltip.callsign ?? mapTooltip.icao24}
+            </span>
+            {mapTooltip.callsign && (
+              <span style={{ color: "var(--fg-3)", fontSize: 10 }}>{mapTooltip.icao24}</span>
+            )}
+          </div>
+          {(mapTooltip.icaoType ?? mapTooltip.cat) && (
+            <div style={{ fontSize: 10, color: "var(--fg-3)", marginBottom: 4 }}>
+              {[mapTooltip.icaoType, mapTooltip.cat].filter(Boolean).join(" · ")}
+            </div>
+          )}
+          <div style={{ borderTop: "1px solid var(--line-1)", marginBottom: 4 }} />
+          <table style={{ borderCollapse: "collapse", fontSize: 11, lineHeight: 1.6 }}>
+            <tbody>
+              <tr>
+                <td style={{ color: "var(--fg-3)", paddingRight: 8, verticalAlign: "top" }}>Alt</td>
+                <td style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: 500 }}>
+                  {mapTooltip.altFt.toLocaleString()} ft
+                </td>
+              </tr>
+              {mapTooltip.vs !== null && (
+                <tr>
+                  <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>VS</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                    {mapTooltip.vs > 0 ? "+" : ""}{mapTooltip.vs.toLocaleString()} fpm{" "}
+                    {mapTooltip.vs > 50 ? "↑" : mapTooltip.vs < -50 ? "↓" : ""}
+                  </td>
+                </tr>
+              )}
+              {mapTooltip.gs !== null && (
+                <tr>
+                  <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>GS</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                    {mapTooltip.gs.toLocaleString()} kt
+                  </td>
+                </tr>
+              )}
+              {mapTooltip.ias !== null && (
+                <tr>
+                  <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>IAS</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                    {mapTooltip.ias.toLocaleString()} kt
+                  </td>
+                </tr>
+              )}
+              {mapTooltip.track !== null && (
+                <tr>
+                  <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>Hdg</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                    {String(Math.round(mapTooltip.track)).padStart(3, "0")}°{" "}
+                    {trackToCompass(mapTooltip.track)}
+                  </td>
+                </tr>
+              )}
+              {mapTooltip.squawk !== null && (
+                <tr>
+                  <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>Sqk</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                    {mapTooltip.squawk}
+                  </td>
+                </tr>
+              )}
+              {mapTooltip.ts > 0 && (
+                <tr>
+                  <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>UTC</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                    {fmtUtc(mapTooltip.ts)}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
