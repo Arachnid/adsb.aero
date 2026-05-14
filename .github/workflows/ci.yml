@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.12"
           cache: pip
@@ -48,7 +48,7 @@ jobs:
           DOCKER_HOST: unix:///var/run/docker.sock
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-coverage
           path: server/coverage.xml
@@ -86,7 +86,7 @@ jobs:
         run: pnpm test:coverage
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ts-coverage
           path: web/coverage/
