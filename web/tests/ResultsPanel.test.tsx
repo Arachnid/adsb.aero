@@ -91,4 +91,179 @@ describe("ResultsPanel", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
+
+  it("renders a date divider for each group of flights on the same day", () => {
+    const flights = [
+      makeFlight({ flight_id: "a:1", start_ts: "2025-01-01T10:00:00Z", end_ts: "2025-01-01T12:00:00Z" }),
+      makeFlight({ flight_id: "b:2", start_ts: "2025-01-02T08:00:00Z", end_ts: "2025-01-02T10:00:00Z" }),
+    ];
+    render(<ResultsPanel flights={flights} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    expect(screen.getByText("2025-01-01")).toBeInTheDocument();
+    expect(screen.getByText("2025-01-02")).toBeInTheDocument();
+  });
+
+  it("renders one divider for multiple flights on the same date", () => {
+    const flights = [
+      makeFlight({ flight_id: "a:1", start_ts: "2025-03-15T08:00:00Z", end_ts: "2025-03-15T10:00:00Z", callsign: "EZY100" }),
+      makeFlight({ flight_id: "b:2", start_ts: "2025-03-15T12:00:00Z", end_ts: "2025-03-15T14:00:00Z", callsign: "EZY200" }),
+    ];
+    render(<ResultsPanel flights={flights} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    const dividers = screen.getAllByText("2025-03-15");
+    expect(dividers).toHaveLength(1);
+  });
+
+  it("shows +Nd suffix when flight end date differs from start date", () => {
+    const flight = makeFlight({
+      start_ts: "2025-06-30T23:00:00Z",
+      end_ts: "2025-07-01T01:30:00Z",
+    });
+    render(<ResultsPanel flights={[flight]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    expect(screen.getByText(/\+1d/)).toBeInTheDocument();
+  });
+
+  it("renders a sparkline SVG when the flight has path coordinates", () => {
+    const flight = makeFlight({
+      path: {
+        type: "LineString",
+        coordinates: [
+          [0, 51, 1000],
+          [1, 52, 5000],
+          [2, 53, 8000],
+        ] as [number, number, number][],
+      },
+    });
+    const { container } = render(
+      <ResultsPanel flights={[flight]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />,
+    );
+    expect(container.querySelector("svg")).not.toBeNull();
+  });
+
+  it("does not render a sparkline when path is absent", () => {
+    const { container } = render(
+      <ResultsPanel flights={[makeFlight()]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />,
+    );
+    expect(container.querySelector("svg")).toBeNull();
+  });
+
+  it("calls onSelectFlight with the flight id when a flight row is clicked", () => {
+    const onSelectFlight = vi.fn();
+    const flight = makeFlight();
+    render(
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+        onSelectFlight={onSelectFlight}
+      />,
+    );
+    fireEvent.click(screen.getByText("BAW123"));
+    expect(onSelectFlight).toHaveBeenCalledWith(flight.flight_id);
+  });
+
+  it("calls onSelectFlight with null when clicking the already-selected flight", () => {
+    const onSelectFlight = vi.fn();
+    const flight = makeFlight();
+    render(
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+        selectedFlightId={flight.flight_id}
+        onSelectFlight={onSelectFlight}
+      />,
+    );
+    fireEvent.click(screen.getByText("BAW123"));
+    expect(onSelectFlight).toHaveBeenCalledWith(null);
+  });
+
+  it("renders the sparkline hover tooltip when hoveredPoint matches the flight", () => {
+    const flight = makeFlight({
+      flight_id: "aabbcc:2025-01-01T10:00:00Z",
+      path: {
+        type: "LineString",
+        coordinates: [
+          [0, 51, 1000],
+          [1, 52, 5000],
+          [2, 53, 8000],
+        ] as [number, number, number][],
+      },
+    });
+    const { container } = render(
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+        hoveredPoint={{ flightId: flight.flight_id, pointIdx: 1 }}
+      />,
+    );
+    // Hover crosshair line is rendered inside the SVG
+    expect(container.querySelector("line")).not.toBeNull();
+  });
+
+  it("calls onHoverPoint with null when mouse leaves the sparkline", () => {
+    const onHoverPoint = vi.fn();
+    const flight = makeFlight({
+      path: {
+        type: "LineString",
+        coordinates: [
+          [0, 51, 1000],
+          [1, 52, 5000],
+        ] as [number, number, number][],
+      },
+    });
+    const { container } = render(
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+        onHoverPoint={onHoverPoint}
+      />,
+    );
+    const svg = container.querySelector("svg")!;
+    fireEvent.mouseLeave(svg);
+    expect(onHoverPoint).toHaveBeenCalledWith(null);
+  });
+
+  it("calls onHoverPoint with flight and point index on sparkline mouse move", () => {
+    const onHoverPoint = vi.fn();
+    const flight = makeFlight({
+      path: {
+        type: "LineString",
+        coordinates: [
+          [0, 51, 1000],
+          [1, 52, 5000],
+          [2, 53, 8000],
+        ] as [number, number, number][],
+      },
+    });
+    const { container } = render(
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+        onHoverPoint={onHoverPoint}
+      />,
+    );
+    const svg = container.querySelector("svg")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, width: 200, height: 20,
+      right: 200, bottom: 20, x: 0, y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+    fireEvent.mouseMove(svg, { clientX: 100, clientY: 10 });
+    expect(onHoverPoint).toHaveBeenCalledWith({
+      flightId: flight.flight_id,
+      pointIdx: expect.any(Number),
+    });
+  });
 });

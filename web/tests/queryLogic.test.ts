@@ -4,6 +4,9 @@ import {
   FilterGroup,
   isPredValid,
   isGroupValid,
+  isDateRangeValid,
+  dateRangeToApiParams,
+  countPredicates,
   makeId,
 } from "../src/components/query/QueryBuilder";
 import { collectGeometries, anyViewportFilter } from "../src/lib/queryGeometry";
@@ -332,5 +335,66 @@ describe("anyViewportFilter", () => {
   it("detects viewport in nested group", () => {
     const inner = group({ id: "1", kind: "region", regionName: "R", shape: "viewport", lat: null, lng: null, radiusNm: 25, polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [] });
     expect(anyViewportFilter(group(inner))).toBe(true);
+  });
+});
+
+// ---- isDateRangeValid -------------------------------------------------------
+
+describe("isDateRangeValid", () => {
+  it("false when from is empty", () => {
+    expect(isDateRangeValid({ from: "", to: "2025-01-07" })).toBe(false);
+  });
+  it("false when to is empty", () => {
+    expect(isDateRangeValid({ from: "2025-01-01", to: "" })).toBe(false);
+  });
+  it("true for a valid 7-day range", () => {
+    expect(isDateRangeValid({ from: "2025-01-01", to: "2025-01-07" })).toBe(true);
+  });
+  it("true for a single-day range (from === to)", () => {
+    expect(isDateRangeValid({ from: "2025-06-15", to: "2025-06-15" })).toBe(true);
+  });
+  it("false when to is before from", () => {
+    expect(isDateRangeValid({ from: "2025-01-07", to: "2025-01-01" })).toBe(false);
+  });
+  it("false for an invalid date string (triggers catch branch)", () => {
+    expect(isDateRangeValid({ from: "not-a-date", to: "2025-01-07" })).toBe(false);
+  });
+});
+
+// ---- dateRangeToApiParams ---------------------------------------------------
+
+describe("dateRangeToApiParams", () => {
+  it("converts inclusive range to exclusive ISO strings", () => {
+    const params = dateRangeToApiParams({ from: "2025-01-01", to: "2025-01-07" });
+    expect(params.startFrom).toBe("2025-01-01T00:00:00Z");
+    expect(params.startTo).toBe("2025-01-08T00:00:00Z");
+  });
+  it("adds exactly one day to the to date", () => {
+    const params = dateRangeToApiParams({ from: "2025-12-31", to: "2025-12-31" });
+    expect(params.startFrom).toBe("2025-12-31T00:00:00Z");
+    expect(params.startTo).toBe("2026-01-01T00:00:00Z");
+  });
+});
+
+// ---- countPredicates --------------------------------------------------------
+
+describe("countPredicates", () => {
+  it("returns 0 for empty group", () => {
+    expect(countPredicates(group())).toBe(0);
+  });
+  it("counts direct predicate items", () => {
+    const g = group(
+      { id: "1", kind: "callsign", pattern: "BAW" },
+      { id: "2", kind: "callsign", pattern: "DLH" },
+    );
+    expect(countPredicates(g)).toBe(2);
+  });
+  it("recursively counts predicates in nested groups", () => {
+    const inner = group(
+      { id: "1", kind: "callsign", pattern: "BAW" },
+      { id: "2", kind: "callsign", pattern: "DLH" },
+    );
+    const outer = group(inner, { id: "3", kind: "callsign", pattern: "EZY" });
+    expect(countPredicates(outer)).toBe(3);
   });
 });

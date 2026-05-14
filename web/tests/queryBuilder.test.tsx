@@ -435,3 +435,151 @@ describe("QueryBuilderBody", () => {
     });
   });
 });
+
+// ---- QueryBuilderAddMenu: remaining predicate types -------------------------
+
+describe("QueryBuilderAddMenu additional filter types", () => {
+  it("appends a starts_within predicate when Starts within is clicked", () => {
+    const onChange = vi.fn();
+    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
+    fireEvent.click(screen.getByText("Starts within"));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    expect(updated.items[0]).toMatchObject({ kind: "starts_within", shape: "circle", lat: null, lng: null });
+  });
+
+  it("appends an ends_within predicate when Ends within is clicked", () => {
+    const onChange = vi.fn();
+    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
+    fireEvent.click(screen.getByText("Ends within"));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    expect(updated.items[0]).toMatchObject({ kind: "ends_within", shape: "circle", lat: null });
+  });
+
+  it("appends a region predicate when Ever is clicked", () => {
+    const onChange = vi.fn();
+    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
+    fireEvent.click(screen.getByText("Ever"));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    expect(updated.items[0]).toMatchObject({ kind: "region", shape: "polygon", regionName: "Region 1" });
+  });
+
+  it("appends an always_within predicate when Always is clicked", () => {
+    const onChange = vi.fn();
+    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
+    fireEvent.click(screen.getByText("Always"));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    expect(updated.items[0]).toMatchObject({ kind: "always_within", shape: "polygon" });
+  });
+
+  it("appends a group_all predicate when All of is clicked", () => {
+    const onChange = vi.fn();
+    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
+    fireEvent.click(screen.getByText("All of"));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    expect(updated.items[0]).toMatchObject({ kind: "group", mode: "all", items: [] });
+  });
+
+  it("appends a group_any predicate when Any of is clicked", () => {
+    const onChange = vi.fn();
+    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
+    fireEvent.click(screen.getByText("Any of"));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    expect(updated.items[0]).toMatchObject({ kind: "group", mode: "any", items: [] });
+  });
+
+  it("numbers region predicates using existing region count", () => {
+    const onChange = vi.fn();
+    const root = makeGroup([
+      { id: makeId(), kind: "region", regionName: "Region 1", shape: "circle" as const, lat: 51, lng: 0, radiusNm: 10,
+        polygon: null, airspaceName: null, airspaceLabel: null,
+        altMin: null, altMinRef: "ft" as const, altMax: null, altMaxRef: "ft" as const,
+        timeFrom: "", timeTo: "", squawkCodes: [], dwellMinMin: null, dwellMaxMin: null,
+        distanceMinNm: null, distanceMaxNm: null },
+    ]);
+    render(<QueryBuilderAddMenu rootGroup={root} onGroupChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
+    fireEvent.click(screen.getByText("Ever"));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    const newPred = updated.items[1];
+    expect(newPred).toMatchObject({ kind: "region", regionName: "Region 2" });
+  });
+});
+
+// ---- GroupBlock (nested group) -----------------------------------------------
+
+describe("GroupBlock (nested group in QueryBuilderBody)", () => {
+  function nestedGroupProps(innerItems: FilterGroup["items"] = [], mode: "all" | "any" = "all") {
+    const inner: FilterGroup = { id: makeId(), kind: "group", mode, items: innerItems };
+    const root = makeGroup([inner]);
+    return { root, inner };
+  }
+
+  it("renders 'Empty group' placeholder for an empty child group", () => {
+    const { root } = nestedGroupProps();
+    render(<QueryBuilderBody {...bodyProps(root)} />);
+    expect(screen.getByText("Empty group")).toBeInTheDocument();
+  });
+
+  it("shows ALL and ANY mode toggle buttons in a child group header", () => {
+    const { root } = nestedGroupProps();
+    render(<QueryBuilderBody {...bodyProps(root)} />);
+    expect(screen.getByRole("button", { name: "ALL" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ANY" })).toBeInTheDocument();
+  });
+
+  it("calls onGroupChange with mode=any when ANY is clicked", () => {
+    const onChange = vi.fn();
+    const { root } = nestedGroupProps([], "all");
+    render(<QueryBuilderBody {...bodyProps(root, onChange)} />);
+    fireEvent.click(screen.getByRole("button", { name: "ANY" }));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    const inner = updated.items[0] as FilterGroup;
+    expect(inner.mode).toBe("any");
+  });
+
+  it("calls onGroupChange with mode=all when ALL is clicked from any mode", () => {
+    const onChange = vi.fn();
+    const { root } = nestedGroupProps([], "any");
+    render(<QueryBuilderBody {...bodyProps(root, onChange)} />);
+    fireEvent.click(screen.getByRole("button", { name: "ALL" }));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    const inner = updated.items[0] as FilterGroup;
+    expect(inner.mode).toBe("all");
+  });
+
+  it("calls onGroupChange removing the child group when X is clicked", () => {
+    const onChange = vi.fn();
+    const { root } = nestedGroupProps();
+    render(<QueryBuilderBody {...bodyProps(root, onChange)} />);
+    fireEvent.click(screen.getByTitle("Remove group"));
+    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+    expect(updated.items).toHaveLength(0);
+  });
+
+  it("shows 'All filters must match' label for all-mode nested group", () => {
+    const { root } = nestedGroupProps([], "all");
+    render(<QueryBuilderBody {...bodyProps(root)} />);
+    expect(screen.getByText("All filters must match")).toBeInTheDocument();
+  });
+
+  it("shows 'Any filter must match' label for any-mode nested group", () => {
+    const { root } = nestedGroupProps([], "any");
+    render(<QueryBuilderBody {...bodyProps(root)} />);
+    expect(screen.getByText("Any filter must match")).toBeInTheDocument();
+  });
+
+  it("renders a callsign predicate inside a nested group", () => {
+    const innerItems: FilterGroup["items"] = [
+      { id: makeId(), kind: "callsign", pattern: "BAW" },
+    ];
+    const { root } = nestedGroupProps(innerItems);
+    render(<QueryBuilderBody {...bodyProps(root)} />);
+    expect(screen.getByDisplayValue("BAW")).toBeInTheDocument();
+  });
+});

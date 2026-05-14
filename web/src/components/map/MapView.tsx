@@ -41,7 +41,7 @@ type Seg = {
 };
 
 // Step-interpolate (forward-fill) a [[ts, value], ...] series at a given timestamp.
-function stepValueAt(series: number[][] | null | undefined, ts: number): number | null {
+export function stepValueAt(series: number[][] | null | undefined, ts: number): number | null {
   if (!series || series.length === 0) return null;
   let val: number | null = null;
   for (const entry of series) {
@@ -54,7 +54,7 @@ function stepValueAt(series: number[][] | null | undefined, ts: number): number 
 }
 
 // Project cursor (lng/lat) onto segment [from, to], return t in [0, 1].
-function projectOntoSegment(
+export function projectOntoSegment(
   from: [number, number],
   to: [number, number],
   cursor: [number, number],
@@ -66,7 +66,7 @@ function projectOntoSegment(
   return Math.max(0, Math.min(1, ((cursor[0] - from[0]) * dx + (cursor[1] - from[1]) * dy) / lenSq));
 }
 
-function trackToCompass(deg: number): string {
+export function trackToCompass(deg: number): string {
   const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"] as const;
   return dirs[Math.round(deg / 22.5) % 16] ?? "N";
 }
@@ -77,7 +77,7 @@ function fmtUtc(ts: number): string {
 
 // Return the active squawk code at unix timestamp ts, or null if none applies.
 // runs must be sorted ascending by timestamp (as returned by the API).
-function squawkAt(runs: [number, string][], ts: number): string | null {
+export function squawkAt(runs: [number, string][], ts: number): string | null {
   let code: string | null = null;
   for (const [runTs, c] of runs) {
     if (runTs <= ts) code = c;

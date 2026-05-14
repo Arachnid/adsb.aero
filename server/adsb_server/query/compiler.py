@@ -153,8 +153,13 @@ def _compile_spatial_path(
     ctes: list[tuple[str, str]] = []
 
     # Altitude bounds, separated by reference system.
-    # FL bounds go into the STBOX Z dimension (pressure altitude index).
-    # ft bounds use the corrected altitude tfloat (atvalues).
+    # FL bounds use raw barometric altitude: getZ(path) in feet (FL x 100).
+    # ft bounds use QNH-corrected altitude: getZ(path) + alt_correction_ft.
+    # Both are applied via atvalues() after STBOX clipping, never via the STBOX
+    # Z dimension.  Putting altitude in the STBOX causes MobilityDB's atStbox to
+    # produce duplicate timestamps when it interpolates Z boundary entry/exit
+    # points, triggering a "Timestamps for temporal value must be increasing"
+    # error at query time.
     fl_alt_min_p: str | None = None
     fl_alt_max_p: str | None = None
     ft_alt_min_p: str | None = None
@@ -180,7 +185,8 @@ def _compile_spatial_path(
     has_alt = has_fl_alt or has_ft_alt
     has_time = time_from_p is not None or time_to_p is not None
 
-    # ft altitude span SQL (used for atvalues), empty string when not needed.
+    # Altitude span SQL expressions for atvalues() calls.
+    fl_span_sql = _float_span_sql(fl_alt_min_p, fl_alt_max_p) if has_fl_alt else ""
     ft_span_sql = _float_span_sql(ft_alt_min_p, ft_alt_max_p) if has_ft_alt else ""
 
     # clipped_path_expr: SQL expression for the path restricted to the region of
@@ -197,25 +203,34 @@ def _compile_spatial_path(
             # param before reaching this point.
             cte_name = f"_s{len(params)}"
 
-            # FL bounds go into the STBOX Z dimension; ft bounds handled separately.
-            stbox_sql = _build_stbox_sql("geom", fl_alt_min_p, fl_alt_max_p, time_from_p, time_to_p)
+            # STBOX is always 2D+T (no Z altitude bounds) to avoid the MobilityDB
+            # atStbox duplicate-timestamp bug described above.
+            stbox_sql = _build_stbox_sql("geom", None, None, time_from_p, time_to_p)
             cte_body = f"SELECT geom, {stbox_sql} AS sb FROM (VALUES ({geom_sql})) AS _base(geom)"
             ctes.append((cte_name, cte_body))
 
-            # GiST STBOX index pre-filter.
+            # GiST STBOX index pre-filter (spatial + time, not altitude).
             parts.append(f"path && {cte_name}.sb")
 
-            # Path clipped to STBOX (FL bounds + time + spatial area).
+            # Clip path to 2D spatial + time window.
             clipped_stbox = f"atStbox(path, {cte_name}.sb)"
-            # Further restrict to ft altitude range when present.
-            clipped_full = (
-                f"atTime({clipped_stbox}, getTime(atvalues({_CORR_ALT}, {ft_span_sql})))"
-                if has_ft_alt
-                else clipped_stbox
-            )
+
+            # Further restrict to altitude range(s) via atvalues.
+            # FL uses raw barometric getZ(path); ft uses QNH-corrected altitude.
+            clipped_full = clipped_stbox
+            if has_fl_alt:
+                clipped_full = (
+                    f"atTime({clipped_full}, getTime(atvalues(getZ(path), {fl_span_sql})))"
+                )
+            if has_ft_alt:
+                clipped_full = (
+                    f"atTime({clipped_full}, getTime(atvalues({_CORR_ALT}, {ft_span_sql})))"
+                )
 
             if spatial_fn == "ST_Within":
                 parts.append(f"{clipped_stbox} IS NOT NULL")
+                if has_fl_alt:
+                    parts.append(f"atvalues(getZ(path), {fl_span_sql}) IS NOT NULL")
                 if has_ft_alt:
                     parts.append(f"atvalues({_CORR_ALT}, {ft_span_sql}) IS NOT NULL")
                 parts.append(f"ST_Within(trajectory(path), {cte_name}.geom)")
@@ -298,15 +313,18 @@ def _compile_point_within(col: str, val: AnyGeometry, params: list[Any]) -> str:
     """Compile a spatial 'within' check on a point column expression.
 
     col should be 'startValue(path)::geometry' or 'endValue(path)::geometry'.
+
+    For CircleGeometry the radius (metres) is converted to degrees using the
+    standard 111,320 m/° approximation so the existing GIST index on the
+    geometry column can be used.  The approximation introduces small errors at
+    high latitudes but is acceptable for start/end-point proximity queries.
     """
     if isinstance(val, CircleGeometry):
         lon_p = _p(params, val.coordinates[0])
         lat_p = _p(params, val.coordinates[1])
-        radius_p = _p(params, val.radius)
+        radius_deg_p = _p(params, val.radius / 111_320.0)
         return (
-            f"ST_DWithin({col}::geography, "
-            f"ST_SetSRID(ST_MakePoint({lon_p}, {lat_p}), 4326)::geography, "
-            f"{radius_p})"
+            f"ST_DWithin({col}, ST_SetSRID(ST_MakePoint({lon_p}, {lat_p}), 4326), {radius_deg_p})"
         )
     geom_p = _p(params, val.model_dump_json())
     return f"ST_Within({col}, ST_SetSRID(ST_GeomFromGeoJSON({geom_p}), 4326))"

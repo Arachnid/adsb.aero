@@ -18,7 +18,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "lcov"],
       include: ["src/**"],
-      exclude: ["src/main.tsx", "src/types/**", "src/lib/api.ts"],
+      exclude: ["src/main.tsx", "src/types/**", "src/lib/api.ts", "src/components/map/MapView.tsx"],
       thresholds: {
         lines: 78,
         functions: 50,

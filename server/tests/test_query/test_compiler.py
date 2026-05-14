@@ -95,7 +95,7 @@ class TestTrajectoryIntersects:
         assert "atStbox" not in sql
         assert "stbox" not in sql
 
-    def test_geometry_altitude_min_fl_uses_3d_stbox_cte(self) -> None:
+    def test_geometry_altitude_min_fl_uses_atvalues(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -105,19 +105,20 @@ class TestTrajectoryIntersects:
             )
         )
         compiled = compile_predicate(pred, params)
-        # CTE carries geometry + 3D STBOX; WHERE references the CTE alias.
+        # CTE carries geometry + 2D STBOX; FL altitude filtered via atvalues(getZ).
         assert isinstance(compiled, CompiledPredicate)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body
+        assert "ST_3DMakeBox(" not in cte_body
         assert "stbox(" in cte_body
         assert "path && " in compiled
         assert "atStbox(path," in compiled
-        assert "eIntersects(atStbox(" in compiled
+        assert "atvalues(getZ(path)," in compiled
+        assert "eIntersects(atTime(atStbox(" in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
         assert 10000.0 in params  # FL100 x 100
 
-    def test_geometry_altitude_max_fl_uses_3d_stbox_cte(self) -> None:
+    def test_geometry_altitude_max_fl_uses_atvalues(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -129,12 +130,13 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body
-        assert "eIntersects(atStbox(" in compiled
+        assert "ST_3DMakeBox(" not in cte_body
+        assert "atvalues(getZ(path)," in compiled
+        assert "eIntersects(atTime(atStbox(" in compiled
         assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
         assert 40000.0 in params  # FL400 x 100
 
-    def test_geometry_both_altitude_bounds_fl_uses_3d_stbox_cte(self) -> None:
+    def test_geometry_both_altitude_bounds_fl_uses_atvalues(self) -> None:
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -148,8 +150,9 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body
-        assert "eIntersects(atStbox(" in compiled
+        assert "ST_3DMakeBox(" not in cte_body
+        assert "atvalues(getZ(path)," in compiled
+        assert "eIntersects(atTime(atStbox(" in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
         assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
         assert 10000.0 in params  # FL100 x 100
@@ -173,8 +176,8 @@ class TestTrajectoryIntersects:
         assert "eIntersects(" in compiled
         assert 10000.0 in params  # ft value passed directly
 
-    def test_geometry_mixed_refs_uses_both_stbox_and_atvalues(self) -> None:
-        # floor in ft, ceiling in fl — STBOX gets FL ceiling Z, atvalues handles ft floor.
+    def test_geometry_mixed_refs_uses_both_atvalues(self) -> None:
+        # floor in ft, ceiling in fl — both applied via atvalues (no STBOX Z).
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -188,7 +191,8 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body  # FL ceiling in STBOX Z
+        assert "ST_3DMakeBox(" not in cte_body  # no Z in STBOX
+        assert "atvalues(getZ(path)," in compiled  # FL ceiling via getZ
         assert "atvalues(" in compiled  # ft floor via corrected alt
         assert "alt_correction_ft" in compiled
         assert 10000.0 in params  # FL100 x 100
@@ -233,7 +237,7 @@ class TestTrajectoryIntersects:
         assert 15000.0 in params
 
     def test_geometry_mixed_fl_min_ft_max(self) -> None:
-        # FL floor in STBOX Z (pressure altitude); ft ceiling via atvalues (corrected alt).
+        # FL floor via atvalues(getZ(path)); ft ceiling via atvalues(corrected alt).
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -246,8 +250,8 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body  # FL floor in STBOX Z
-        assert "atvalues(" in compiled  # ft ceiling via corrected alt
+        assert "ST_3DMakeBox(" not in cte_body
+        assert "atvalues(getZ(path)," in compiled  # FL floor via getZ
         assert "alt_correction_ft" in compiled
         assert 35000.0 in params  # FL350 x 100
         assert 50000.0 in params
@@ -435,8 +439,8 @@ class TestTrajectoryIntersects:
         assert 35000.0 in params
         assert len(params) == 3
 
-    def test_all_fields_fl_uses_3d_t_stbox_cte(self) -> None:
-        # geometry + FL altitude + time → 3D+T STBOX in CTE; altitude enforced via atStbox
+    def test_all_fields_fl_uses_2d_t_stbox_and_atvalues(self) -> None:
+        # geometry + FL altitude + time → 2D+T STBOX in CTE; FL altitude via atvalues(getZ)
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -452,10 +456,11 @@ class TestTrajectoryIntersects:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body
+        assert "ST_3DMakeBox(" not in cte_body
         assert "stbox(" in cte_body
         assert "span(" in cte_body
-        assert "eIntersects(atStbox(" in compiled
+        assert "atvalues(getZ(path)," in compiled
+        assert "eIntersects(atTime(atStbox(" in compiled
         assert "end_ts >=" in compiled
         assert "start_ts <" in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
@@ -495,7 +500,7 @@ class TestTrajectoryWithin:
         assert "ST_Within(trajectory(path)," in sql
         assert "atStbox" not in sql
 
-    def test_altitude_bounds_fl_uses_atstbox_cte(self) -> None:
+    def test_altitude_bounds_fl_uses_atvalues_cte(self) -> None:
         params: list = []
         pred = TrajectoryWithin(
             trajectory_within=SpatioTemporalAltitudeValue(
@@ -507,9 +512,10 @@ class TestTrajectoryWithin:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body
+        assert "ST_3DMakeBox(" not in cte_body
         assert "path && " in compiled
         assert "atStbox(path," in compiled
+        assert "atvalues(getZ(path)," in compiled
         assert "IS NOT NULL" in compiled
         assert "ST_Within(trajectory(path)," in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
@@ -585,7 +591,7 @@ class TestSquawkFilter:
         assert ["7700"] in params
 
     def test_squawk_codes_with_geometry_and_altitude_fl_uses_stbox(self) -> None:
-        # With geometry + FL altitude: clip to STBOX then to geometry for squawk correlation.
+        # With geometry + FL altitude: atTime(atStbox) clips by altitude, atgeometry by region.
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
@@ -597,7 +603,7 @@ class TestSquawkFilter:
         )
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
-        assert "atgeometry(atStbox(path," in compiled
+        assert "atgeometry(atTime(atStbox(path," in compiled
         assert "getTime(atgeometry" in compiled
         assert "atTime(squawk_seq" in compiled
         assert ["7700"] in params
@@ -665,18 +671,21 @@ class TestPointWithin:
         sql = compile_predicate(pred, params)
         assert "ST_Within(endValue(path)::geometry," in sql
 
-    def test_starts_within_circle_uses_st_dwithin_geography(self) -> None:
+    def test_starts_within_circle_uses_st_dwithin_geometry_degrees(self) -> None:
         params: list = []
         pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_CIRCLE))
         sql = compile_predicate(pred, params)
-        assert "ST_DWithin(startValue(path)::geometry::geography," in sql
-        assert len(params) == 3  # lon, lat, radius
+        # geometry DWithin with radius converted to degrees (radius / 111_320 m/°)
+        assert "ST_DWithin(startValue(path)::geometry, ST_SetSRID(ST_MakePoint(" in sql
+        assert "::geometry::geography" not in sql
+        assert len(params) == 3  # lon, lat, radius_deg
 
-    def test_ends_within_circle_uses_st_dwithin_geography(self) -> None:
+    def test_ends_within_circle_uses_st_dwithin_geometry_degrees(self) -> None:
         params: list = []
         pred = EndsWithin(ends_within=SpatioTemporalValue(geometry=_CIRCLE))
         sql = compile_predicate(pred, params)
-        assert "ST_DWithin(endValue(path)::geometry::geography," in sql
+        assert "ST_DWithin(endValue(path)::geometry, ST_SetSRID(ST_MakePoint(" in sql
+        assert "::geometry::geography" not in sql
 
 
 # ---------------------------------------------------------------------------
