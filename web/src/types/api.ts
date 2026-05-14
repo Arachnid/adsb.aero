@@ -242,6 +242,30 @@ export interface components {
              */
             emitter_category: string | null;
             /**
+             * Registration
+             * @description Aircraft registration mark (tail number), from the airframes reference table. Null when the icao24 is not in the database.
+             * @example G-EUOF
+             */
+            registration: string | null;
+            /**
+             * Model
+             * @description Aircraft model description from the airframes reference table. Null when the icao24 is not in the database.
+             * @example AIRBUS A-319
+             */
+            model: string | null;
+            /**
+             * Year
+             * @description Year of manufacture from the airframes reference table. Null when unknown or not in the database.
+             * @example 2003
+             */
+            year: number | null;
+            /**
+             * Operator
+             * @description Owner or operator name from the airframes reference table. Null when unknown or not in the database.
+             * @example British Airways
+             */
+            operator: string | null;
+            /**
              * Start Ts
              * Format: date-time
              * @description UTC timestamp of the first observed position in this leg.

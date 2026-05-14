@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { Plane } from "../Icons";
 import type { FlightDetail } from "../../lib/api";
 import type { HoveredPoint } from "../map/MapView";
@@ -307,6 +307,14 @@ function FlightRow({
   const sub = [flight.icao_type, flight.emitter_category].filter(Boolean).join(" · ") || "—";
   const coords = flight.path?.coordinates ?? null;
 
+  const detailRows: [string, string, boolean][] = [
+    ["ICAO24", flight.icao24, true],
+    ...(flight.registration != null ? [["Reg", flight.registration, false] as [string, string, boolean]] : []),
+    ...(flight.model != null ? [["Model", flight.model, false] as [string, string, boolean]] : []),
+    ...(flight.year != null ? [["Year", String(flight.year), false] as [string, string, boolean]] : []),
+    ...(flight.operator != null ? [["Operator", flight.operator, false] as [string, string, boolean]] : []),
+  ];
+
   return (
     <div
       data-flight-id={flight.flight_id}
@@ -339,6 +347,35 @@ function FlightRow({
       </div>
       {coords && (
         <SparklineChart coords={coords} hoveredIdx={hoveredPointIdx} onHoverIdx={onHoverPointIdx} />
+      )}
+      {selected && (
+        <div
+          style={{
+            marginTop: 8,
+            paddingTop: 7,
+            borderTop: "1px solid var(--line-1)",
+            display: "grid",
+            gridTemplateColumns: "52px 1fr",
+            columnGap: 8,
+            rowGap: 3,
+            fontSize: 11,
+          }}
+        >
+          {detailRows.map(([lbl, val, mono]) => (
+            <Fragment key={lbl}>
+              <span style={{ color: "var(--fg-3)" }}>{lbl}</span>
+              <span
+                style={{
+                  color: "var(--fg-1)",
+                  fontFamily: mono ? "var(--font-mono, monospace)" : undefined,
+                  wordBreak: "break-word",
+                }}
+              >
+                {val}
+              </span>
+            </Fragment>
+          ))}
+        </div>
       )}
     </div>
   );
