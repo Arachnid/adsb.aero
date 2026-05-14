@@ -721,6 +721,26 @@ export interface components {
              *     ]
              */
             squawk_codes?: string[] | null;
+            /**
+             * Dwell Min S
+             * @description Minimum time the flight must spend inside the geometry (seconds, inclusive). Measured as the total duration of the path clipped to the geometry plus any altitude and time constraints. Requires `geometry`.
+             */
+            dwell_min_s?: number | null;
+            /**
+             * Dwell Max S
+             * @description Maximum time the flight may spend inside the geometry (seconds, inclusive). Requires `geometry`.
+             */
+            dwell_max_s?: number | null;
+            /**
+             * Distance Min M
+             * @description Minimum distance the flight must cover inside the geometry (metres, inclusive). Measured along the clipped path. Requires `geometry`.
+             */
+            distance_min_m?: number | null;
+            /**
+             * Distance Max M
+             * @description Maximum distance the flight may cover inside the geometry (metres, inclusive). Requires `geometry`.
+             */
+            distance_max_m?: number | null;
         };
         /**
          * SpatioTemporalValue

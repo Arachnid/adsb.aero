@@ -73,6 +73,10 @@ interface IntersectsPred extends BasePred {
   timeFrom: string;
   timeTo: string;
   squawkCodes: string[];
+  dwellMinMin: number | null;
+  dwellMaxMin: number | null;
+  distanceMinNm: number | null;
+  distanceMaxNm: number | null;
 }
 interface AlwaysWithinPred extends BasePred {
   kind: "always_within";
@@ -91,6 +95,10 @@ interface AlwaysWithinPred extends BasePred {
   timeFrom: string;
   timeTo: string;
   squawkCodes: string[];
+  dwellMinMin: number | null;
+  dwellMaxMin: number | null;
+  distanceMinNm: number | null;
+  distanceMaxNm: number | null;
 }
 interface CallsignPred extends BasePred {
   kind: "callsign";
@@ -159,6 +167,10 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
       timeFrom: "",
       timeTo: "",
       squawkCodes: [],
+      dwellMinMin: null,
+      dwellMaxMin: null,
+      distanceMinNm: null,
+      distanceMaxNm: null,
     };
   }
   if (kind === "aircraft") {
@@ -960,6 +972,10 @@ function RegionCard({
   const [timeOpen, setTimeOpen] = useState(pred.timeFrom !== "" || pred.timeTo !== "");
   const [squawkOpen, setSquawkOpen] = useState(pred.squawkCodes.length > 0);
   const [squawkInput, setSquawkInput] = useState("");
+  const [dwellDistOpen, setDwellDistOpen] = useState(
+    pred.dwellMinMin !== null || pred.dwellMaxMin !== null ||
+    pred.distanceMinNm !== null || pred.distanceMaxNm !== null
+  );
 
   const handleShapeChange = (s: Shape): void => {
     onChange({ ...pred, shape: s });
@@ -978,6 +994,11 @@ function RegionCard({
   const toggleSquawk = (checked: boolean): void => {
     if (!checked) onChange({ ...pred, squawkCodes: [] });
     setSquawkOpen(checked);
+  };
+
+  const toggleDwellDist = (checked: boolean): void => {
+    if (!checked) onChange({ ...pred, dwellMinMin: null, dwellMaxMin: null, distanceMinNm: null, distanceMaxNm: null });
+    setDwellDistOpen(checked);
   };
 
   const addSquawkCode = (raw: string): void => {
@@ -1239,6 +1260,78 @@ function RegionCard({
           </div>
         )}
       </div>
+      {pred.shape !== "none" && (
+        <div className="optional-group" style={{ marginTop: 4 }}>
+          <label className="optional-group-label">
+            <input
+              type="checkbox"
+              checked={dwellDistOpen}
+              onChange={(e) => { toggleDwellDist(e.target.checked); }}
+            />
+            Dwell &amp; distance
+          </label>
+          {dwellDistOpen && (
+            <div className="optional-group-body" style={{ gap: 6 }}>
+              <div className="pred-row">
+                <div>
+                  <FieldLabel>Min dwell (min)</FieldLabel>
+                  <input
+                    className="text-field mono"
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={pred.dwellMinMin ?? ""}
+                    onChange={(e) => {
+                      onChange({ ...pred, dwellMinMin: e.target.value === "" ? null : +e.target.value });
+                    }}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Max dwell (min)</FieldLabel>
+                  <input
+                    className="text-field mono"
+                    type="number"
+                    min="0"
+                    placeholder="∞"
+                    value={pred.dwellMaxMin ?? ""}
+                    onChange={(e) => {
+                      onChange({ ...pred, dwellMaxMin: e.target.value === "" ? null : +e.target.value });
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="pred-row">
+                <div>
+                  <FieldLabel>Min dist (nm)</FieldLabel>
+                  <input
+                    className="text-field mono"
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={pred.distanceMinNm ?? ""}
+                    onChange={(e) => {
+                      onChange({ ...pred, distanceMinNm: e.target.value === "" ? null : +e.target.value });
+                    }}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Max dist (nm)</FieldLabel>
+                  <input
+                    className="text-field mono"
+                    type="number"
+                    min="0"
+                    placeholder="∞"
+                    value={pred.distanceMaxNm ?? ""}
+                    onChange={(e) => {
+                      onChange({ ...pred, distanceMaxNm: e.target.value === "" ? null : +e.target.value });
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </PredCard>
   );
 }

@@ -844,3 +844,122 @@ class TestLogicalPredicates:
         sql = compile_predicate(pred, params)
         assert " AND " in sql
         assert " OR " in sql
+
+
+# ---------------------------------------------------------------------------
+# Dwell time / distance filters
+# ---------------------------------------------------------------------------
+
+
+class TestDwellDistance:
+    def test_dwell_min_s_no_geometry_raises(self) -> None:
+        with pytest.raises(ValueError, match="require geometry"):
+            SpatioTemporalAltitudeValue(geometry=None, altitude_min=1000, dwell_min_s=300)
+
+    def test_dwell_max_s_no_geometry_raises(self) -> None:
+        with pytest.raises(ValueError, match="require geometry"):
+            SpatioTemporalAltitudeValue(geometry=None, altitude_min=1000, dwell_max_s=3600)
+
+    def test_distance_min_m_no_geometry_raises(self) -> None:
+        with pytest.raises(ValueError, match="require geometry"):
+            SpatioTemporalAltitudeValue(geometry=None, altitude_min=1000, distance_min_m=10000)
+
+    def test_distance_max_m_no_geometry_raises(self) -> None:
+        with pytest.raises(ValueError, match="require geometry"):
+            SpatioTemporalAltitudeValue(geometry=None, altitude_min=1000, distance_max_m=500000)
+
+    def test_dwell_min_s_with_geometry_emits_duration_ge(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, dwell_min_s=600.0
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "EXTRACT(EPOCH FROM duration(getTime(" in sql
+        assert ">= " in sql
+        assert 600.0 in params
+
+    def test_dwell_max_s_with_geometry_emits_duration_le(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, dwell_max_s=1800.0
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "EXTRACT(EPOCH FROM duration(getTime(" in sql
+        assert "<= " in sql
+        assert 1800.0 in params
+
+    def test_distance_min_m_with_geometry_emits_length_ge(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, distance_min_m=50000.0
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "length(trajectory(" in sql
+        assert "::geography)" in sql
+        assert ">= " in sql
+        assert 50000.0 in params
+
+    def test_distance_max_m_with_geometry_emits_length_le(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, distance_max_m=200000.0
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "length(trajectory(" in sql
+        assert "<= " in sql
+        assert 200000.0 in params
+
+    def test_dwell_and_distance_all_four_bounds(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON,
+                dwell_min_s=300.0,
+                dwell_max_s=3600.0,
+                distance_min_m=10000.0,
+                distance_max_m=500000.0,
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert sql.count("EXTRACT(EPOCH FROM duration(getTime(") == 2
+        assert sql.count("length(trajectory(") == 2
+        assert 300.0 in params
+        assert 3600.0 in params
+        assert 10000.0 in params
+        assert 500000.0 in params
+
+    def test_dwell_with_geometry_and_altitude_uses_clipped_path(self) -> None:
+        # Dwell should reference the clipped path (restricted to STBOX), not the raw path.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON,
+                altitude_min=100, altitude_min_ref="fl",
+                dwell_min_s=600.0,
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        assert compiled.ctes
+        assert "atStbox(path," in compiled
+        assert "atgeometry(" in compiled
+        assert "EXTRACT(EPOCH FROM duration(getTime(atgeometry(" in compiled
+
+    def test_dwell_trajectory_within(self) -> None:
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, dwell_min_s=120.0
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "ST_Within(trajectory(path)," in sql
+        assert "EXTRACT(EPOCH FROM duration(getTime(" in sql
+        assert 120.0 in params

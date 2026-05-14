@@ -65,6 +65,10 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
         ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
         ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
         ...(pred.squawkCodes.length > 0 ? { squawk_codes: pred.squawkCodes } : {}),
+        ...(pred.dwellMinMin !== null ? { dwell_min_s: pred.dwellMinMin * 60 } : {}),
+        ...(pred.dwellMaxMin !== null ? { dwell_max_s: pred.dwellMaxMin * 60 } : {}),
+        ...(pred.distanceMinNm !== null ? { distance_min_m: pred.distanceMinNm * 1852 } : {}),
+        ...(pred.distanceMaxNm !== null ? { distance_max_m: pred.distanceMaxNm * 1852 } : {}),
       };
       return { trajectory_intersects: v };
     }
@@ -80,6 +84,10 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
         ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
         ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
         ...(pred.squawkCodes.length > 0 ? { squawk_codes: pred.squawkCodes } : {}),
+        ...(pred.dwellMinMin !== null ? { dwell_min_s: pred.dwellMinMin * 60 } : {}),
+        ...(pred.dwellMaxMin !== null ? { dwell_max_s: pred.dwellMaxMin * 60 } : {}),
+        ...(pred.distanceMinNm !== null ? { distance_min_m: pred.distanceMinNm * 1852 } : {}),
+        ...(pred.distanceMaxNm !== null ? { distance_max_m: pred.distanceMaxNm * 1852 } : {}),
       };
       return { trajectory_within: v };
     }

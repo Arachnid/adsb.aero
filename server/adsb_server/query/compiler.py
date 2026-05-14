@@ -258,6 +258,30 @@ def _compile_spatial_path(
     if time_to_p is not None:
         parts.append(f"start_ts < {time_to_p}")
 
+    # Dwell time / distance filters on the clipped path inside the geometry.
+    # The model validator guarantees geometry is set when these are present,
+    # so clipped_path_expr is always non-None here.
+    if v.dwell_min_s is not None:
+        dmin_p = _p(params, v.dwell_min_s)
+        parts.append(
+            f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) >= {dmin_p}"
+        )
+    if v.dwell_max_s is not None:
+        dmax_p = _p(params, v.dwell_max_s)
+        parts.append(
+            f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) <= {dmax_p}"
+        )
+    if v.distance_min_m is not None:
+        distmin_p = _p(params, v.distance_min_m)
+        parts.append(
+            f"length(trajectory({clipped_path_expr})::geography) >= {distmin_p}"
+        )
+    if v.distance_max_m is not None:
+        distmax_p = _p(params, v.distance_max_m)
+        parts.append(
+            f"length(trajectory({clipped_path_expr})::geography) <= {distmax_p}"
+        )
+
     # Squawk filter: check the given codes at the instants the path was inside the
     # region of interest.  When there is no geometry, check the entire squawk_seq.
     if v.squawk_codes:

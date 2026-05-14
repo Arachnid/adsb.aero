@@ -398,6 +398,27 @@ class SpatioTemporalAltitudeValue(BaseModel):
         "Without `geometry`, any code broadcast during the flight matches.",
         examples=[["7700", "7600"]],
     )
+    dwell_min_s: float | None = Field(
+        default=None,
+        description="Minimum time the flight must spend inside the geometry (seconds, inclusive). "
+        "Measured as the total duration of the path clipped to the geometry plus any "
+        "altitude and time constraints. Requires `geometry`.",
+    )
+    dwell_max_s: float | None = Field(
+        default=None,
+        description="Maximum time the flight may spend inside the geometry (seconds, inclusive). "
+        "Requires `geometry`.",
+    )
+    distance_min_m: float | None = Field(
+        default=None,
+        description="Minimum distance the flight must cover inside the geometry (metres, inclusive). "
+        "Measured along the clipped path. Requires `geometry`.",
+    )
+    distance_max_m: float | None = Field(
+        default=None,
+        description="Maximum distance the flight may cover inside the geometry (metres, inclusive). "
+        "Requires `geometry`.",
+    )
 
     @model_validator(mode="after")
     def _require_at_least_one(self) -> SpatioTemporalAltitudeValue:
@@ -408,8 +429,25 @@ class SpatioTemporalAltitudeValue(BaseModel):
             and self.time_from is None
             and self.time_to is None
             and not self.squawk_codes
+            and self.dwell_min_s is None
+            and self.dwell_max_s is None
+            and self.distance_min_m is None
+            and self.distance_max_m is None
         ):
             raise ValueError("at least one constraint must be set")
+        return self
+
+    @model_validator(mode="after")
+    def _dwell_distance_require_geometry(self) -> SpatioTemporalAltitudeValue:
+        if (
+            self.dwell_min_s is not None
+            or self.dwell_max_s is not None
+            or self.distance_min_m is not None
+            or self.distance_max_m is not None
+        ) and self.geometry is None:
+            raise ValueError(
+                "dwell_min_s, dwell_max_s, distance_min_m, and distance_max_m require geometry"
+            )
         return self
 
 
