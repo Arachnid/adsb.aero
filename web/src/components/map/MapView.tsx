@@ -429,6 +429,7 @@ export function MapView({
   const chartsOnRef = useRef(chartsOn);
   const airspacePickingRef = useRef(airspacePickingActive);
   const onPickAirspaceRef = useRef(onPickAirspace);
+  const selectedFlightIdRef = useRef(selectedFlightId);
   // Persists the main flight layers so the hover-dot effect can append without rebuilding them.
   const mainLayersRef = useRef<(LineLayer<Seg> | ScatterplotLayer<FlightDetail>)[]>([]);
 
@@ -462,6 +463,7 @@ export function MapView({
   chartsOnRef.current = chartsOn;
   airspacePickingRef.current = airspacePickingActive;
   onPickAirspaceRef.current = onPickAirspace;
+  selectedFlightIdRef.current = selectedFlightId;
 
   useEffect(() => {
     const map = mapRef.current;
@@ -592,6 +594,13 @@ export function MapView({
         canvas.style.cursor = info.picked ? "pointer" : "";
         if (info.picked) {
           const seg = info.object as Seg;
+          const sel = selectedFlightIdRef.current;
+          if (sel !== null && seg.flightId !== sel) {
+            canvas.style.cursor = "";
+            onHoverPointRef.current(null);
+            setMapTooltipRef.current(null);
+            return;
+          }
           const cursor = info.coordinate as [number, number] | undefined;
           const t = cursor ? projectOntoSegment(seg.from, seg.to, cursor) : 0;
           const altFt = Math.round(seg.altFt + t * (seg.altFtTo - seg.altFt));
