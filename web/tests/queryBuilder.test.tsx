@@ -30,6 +30,8 @@ function bodyProps(group: FilterGroup, onChange = vi.fn()) {
     pickingId: null,
     onArmDraw: noop as (id: string) => void,
     drawingId: null,
+    onArmAirspacePicker: noop as (id: string) => void,
+    airspacePickingId: null,
     dateRange: null,
   };
 }
@@ -340,6 +342,31 @@ describe("QueryBuilderBody", () => {
       render(<QueryBuilderBody {...bodyProps(group)} />);
       fireEvent.click(screen.getByLabelText("Squawk filter"));
       expect(screen.getByPlaceholderText("e.g. 7700")).toBeDefined();
+    });
+
+    it("shows altitude inputs when altMin is pre-set (e.g. from airspace selection)", () => {
+      const group = makeGroup([{ ...basePred, altMin: 5000, altMinRef: "ft" as const }]);
+      render(<QueryBuilderBody {...bodyProps(group)} />);
+      // Section must be visible even though the user never clicked the checkbox
+      expect(screen.getByText("Alt min")).toBeDefined();
+      expect(screen.getByText("Alt max")).toBeDefined();
+    });
+
+    it("shows time inputs when timeFrom is pre-set", () => {
+      const group = makeGroup([{ ...basePred, timeFrom: "2024-01-01T10:00" }]);
+      render(<QueryBuilderBody {...bodyProps(group)} />);
+      expect(screen.getAllByText("From").length).toBeGreaterThan(0);
+    });
+
+    it("unchecking altitude checkbox clears the values", () => {
+      const onChange = vi.fn();
+      const group = makeGroup([{ ...basePred, altMin: 5000, altMinRef: "ft" as const }]);
+      render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
+      fireEvent.click(screen.getByLabelText("Altitude range"));
+      const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+      const pred = updated.items[0];
+      expect(pred.kind === "region" && pred.altMin).toBeNull();
+      expect(pred.kind === "region" && pred.altMax).toBeNull();
     });
   });
 

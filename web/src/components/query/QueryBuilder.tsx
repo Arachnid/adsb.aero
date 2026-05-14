@@ -968,14 +968,28 @@ function RegionCard({
   name: string;
   dateRange: DataRange | null;
 }): React.ReactElement {
-  const [altOpen, setAltOpen] = useState(pred.altMin !== null || pred.altMax !== null);
-  const [timeOpen, setTimeOpen] = useState(pred.timeFrom !== "" || pred.timeTo !== "");
-  const [squawkOpen, setSquawkOpen] = useState(pred.squawkCodes.length > 0);
+  const hasAltData = pred.altMin !== null || pred.altMax !== null;
+  const hasTimeData = pred.timeFrom !== "" || pred.timeTo !== "";
+  const hasSquawkData = pred.squawkCodes.length > 0;
+  const hasDwellDistData =
+    pred.dwellMinMin !== null ||
+    pred.dwellMaxMin !== null ||
+    pred.distanceMinNm !== null ||
+    pred.distanceMaxNm !== null;
+
+  const [altOpenLocal, setAltOpenLocal] = useState(hasAltData);
+  const [timeOpenLocal, setTimeOpenLocal] = useState(hasTimeData);
+  const [squawkOpenLocal, setSquawkOpenLocal] = useState(hasSquawkData);
   const [squawkInput, setSquawkInput] = useState("");
-  const [dwellDistOpen, setDwellDistOpen] = useState(
-    pred.dwellMinMin !== null || pred.dwellMaxMin !== null ||
-    pred.distanceMinNm !== null || pred.distanceMaxNm !== null
-  );
+  const [dwellDistOpenLocal, setDwellDistOpenLocal] = useState(hasDwellDistData);
+
+  // A section is open if the user has explicitly opened it OR if there is already data in it.
+  // This prevents data set externally (e.g. altitude bounds from airspace selection) from
+  // being silently included in the query while the section appears closed/unchecked.
+  const altOpen = altOpenLocal || hasAltData;
+  const timeOpen = timeOpenLocal || hasTimeData;
+  const squawkOpen = squawkOpenLocal || hasSquawkData;
+  const dwellDistOpen = dwellDistOpenLocal || hasDwellDistData;
 
   const handleShapeChange = (s: Shape): void => {
     onChange({ ...pred, shape: s });
@@ -983,22 +997,22 @@ function RegionCard({
 
   const toggleAlt = (checked: boolean): void => {
     if (!checked) onChange({ ...pred, altMin: null, altMinRef: "ft", altMax: null, altMaxRef: "ft" });
-    setAltOpen(checked);
+    setAltOpenLocal(checked);
   };
 
   const toggleTime = (checked: boolean): void => {
     if (!checked) onChange({ ...pred, timeFrom: "", timeTo: "" });
-    setTimeOpen(checked);
+    setTimeOpenLocal(checked);
   };
 
   const toggleSquawk = (checked: boolean): void => {
     if (!checked) onChange({ ...pred, squawkCodes: [] });
-    setSquawkOpen(checked);
+    setSquawkOpenLocal(checked);
   };
 
   const toggleDwellDist = (checked: boolean): void => {
     if (!checked) onChange({ ...pred, dwellMinMin: null, dwellMaxMin: null, distanceMinNm: null, distanceMaxNm: null });
-    setDwellDistOpen(checked);
+    setDwellDistOpenLocal(checked);
   };
 
   const addSquawkCode = (raw: string): void => {
