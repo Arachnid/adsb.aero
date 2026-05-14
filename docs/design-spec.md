@@ -10,10 +10,10 @@ Use cases include "where do people arrive at this airfield from", "what routes d
 
 ## Technology stack
 
-- **Database**: PostgreSQL 17 with PostGIS 3.5+. Native partitioning on the trace partitions. Single instance. Containerised.
+- **Database**: PostgreSQL 17 with PostGIS 3.5+ and MobilityDB. Native partitioning on the trace partitions. Single instance. Containerised.
 - **Ingestion**: Python with Dramatiq + Redis for task queueing. Multiprocessing for per-aircraft parallelism within a batch.
 - **API**: Python with FastAPI and asyncpg. Custom JSON DSL for query expression. Pydantic models for request/response validation.
-- **Frontend**: TypeScript + React + Vite + MapLibre GL JS + deck.gl + TailwindCSS. State via React's built-in primitives plus TanStack Query for server state.
+- **Frontend**: TypeScript + React + Vite + MapLibre GL JS + deck.gl. State via React's built-in primitives plus TanStack Query for server state.
 - **Deployment**: Docker Compose for single-host. All services in containers. Configuration via environment variables. Same images deployable to managed Kubernetes/Cloud Run later.
 - **Hosting**: OVH dedicated server (EPYC 4244P, 64GB RAM, 4×960GB NVMe in RAID 5 giving ~2.88TB usable). Postgres tuned for NVMe (`random_page_cost=1.1`, `effective_io_concurrency=256`, `shared_buffers=16GB`, etc.). Backups, DR, and machine-level operational concerns are handled via OVHcloud's services and outside the scope of this spec.
 - **Observability**: Prometheus + Grafana + Loki for metrics and logs. Sentry for errors.
@@ -22,13 +22,15 @@ Use cases include "where do people arrive at this airfield from", "what routes d
 
 All altitudes are stored internally as **pressure altitudes** (referenced to 1013.25 hPa) — exactly what ADS-B broadcasts. QNH-corrected altitude is a derived view, computed at query time when needed.
 
-Rationale: pressure altitude is the source of truth from the aircraft. QNH correction depends on ERA5 reanalysis data which has a multi-day publication lag. Storing pressure altitudes lets us:
+Rationale: pressure altitude is the source of truth from the aircraft. QNH correction depends on NWP model output (currently GFS) which is fetched after the fact. Storing pressure altitudes lets us:
 
 - Ingest flights without waiting for pressure data
 - Re-run corrections later if methodology changes (different reanalysis source, different interpolation)
 - Avoid baking a derived value into permanent storage
 
-ERA5 data is loaded into a separate `pressure_field` table or kept as cached NetCDFs. When a query needs QNH-corrected altitude — for display or for any altitude-based filtering — the API joins to ERA5 and applies `qnh_alt = pressure_alt + (mslp_hpa - 1013.25) × 27.3` on the fly. For typical UK conditions the correction is <300ft and well within most query tolerances.
+GFS MSLP data is fetched via Herbie (cfgrib backend) and cached as NetCDFs. At ingest time the correction `correction_ft = (mslp_hpa - 1013.25) × 27.3` is computed per vertex and stored as the `alt_correction_ft` temporal series on the flight row. For typical UK conditions the correction is <300ft.
+
+At query time, altitude bounds can be specified in feet (pressure altitude) or flight levels (FL × 100 ft, pressure). When filtering against QNH-corrected altitude the stored `alt_correction_ft` is added to the trajectory before comparison — no NWP join is needed at query time because corrections are baked into the flight row at ingest.
 
 ## Data model
 
@@ -45,26 +47,34 @@ Key columns:
 - `emitter_category` VARCHAR — ADS-B emitter category. When the trace doesn't broadcast it, looked up from a Doc 8643 → emitter category mapping table at ingest. Nullable only as a last resort when neither is available.
 - `start_ts`, `end_ts` TIMESTAMPTZ
 - `start_point`, `end_point` GEOMETRY(POINTZM, 4326) — first and last vertices of the trajectory. X=lon, Y=lat, Z=pressure-alt-ft, M=unix-epoch-seconds. Used for "starts/ends within radius R of point P" queries.
-- `path_geom` GEOMETRY(LINESTRINGZM, 4326) — X=lon, Y=lat, Z=pressure-alt-ft, M=unix-epoch-seconds. Single geometry encoding position, altitude, and time per vertex.
-- `path_tracks` SMALLINT[] — per-vertex track angle in degrees (0–359), sampled from ADS-B's broadcast track value (Airborne Velocity message)
+- `path` GEOMETRY(LINESTRINGZM, 4326) — X=lon, Y=lat, Z=pressure-alt-ft, M=unix-epoch-seconds. Single geometry encoding position, altitude, and time per vertex.
+- `timestamps` FLOAT8[] — parallel array of unix epoch seconds, one per path vertex. Redundant with the M dimension but kept for efficient API serialisation.
+- `path_tracks` tfloat — track angle in degrees 0–359, as a MobilityDB temporal float series. Simplified independently with its own epsilon.
+- `path_gs` tfloat — ground speed in knots (MobilityDB temporal float). Null if not broadcast.
+- `path_vr` tfloat — vertical rate in fpm (MobilityDB temporal float). Null if not broadcast.
+- `path_ias` tfloat — indicated airspeed in knots (MobilityDB temporal float). Sparse: present for ~27% of flights that broadcast IAS.
+- `alt_correction_ft` tfloat — per-vertex QNH altitude correction in feet. Computed at ingest from GFS MSLP. Null if GFS data was not available for the flight's time window.
 - `squawk_runs` JSONB — array of `[start_ts, squawk]` pairs marking each squawk change. A flight that never changes squawk has a single-entry array. Most flights have 1–3 entries.
+- `raw_point_count` INT — airborne point count before simplification.
 - `ingest_batch_date` DATE — provenance
 
-Min/max altitude are not stored as columns; they're queryable via expression indexes on `ST_ZMin(path_geom)` and `ST_ZMax(path_geom)` (see indexes below). Mean speed is similarly derivable from start_point, end_point, start_ts, end_ts at query time. Per-vertex speed is derivable from consecutive vertex positions and timestamps.
+Min/max altitude are not stored as columns; they're queryable via expression indexes on `ST_ZMin` and `ST_ZMax` of the trajectory bounding box (see indexes below). Mean speed is similarly derivable from start_point, end_point, start_ts, end_ts at query time.
 
-VFR/IFR classification is **not** in this schema. It would require ERA5-corrected altitudes for the airspace test, and it's a derived attribute that can be added later as a separate column or table once the methodology is stable.
+VFR/IFR classification is **not** in this schema. It would require QNH-corrected altitudes for the airspace test, and it's a derived attribute that can be added later as a separate column or table once the methodology is stable.
 
 Indexes:
 
-- GIST on `path_geom` using `gist_geometry_ops_nd` (4D bounding-volume index). This serves both 4D queries (lat/lon/alt/time) and 2D-only queries; PostGIS treats missing dimensions in the query geometry as unbounded. For pure 2D-heavy workloads a separate 2D GIST index gives 2-3× speedup, but for v1 the single ND index is sufficient. Add a 2D index later if profiling shows need.
+- GIST on `path` using `gist_geometry_ops_nd` (4D bounding-volume index). This serves both 4D queries (lat/lon/alt/time) and 2D-only queries; PostGIS treats missing dimensions in the query geometry as unbounded. For pure 2D-heavy workloads a separate 2D GIST index gives 2-3× speedup, but for v1 the single ND index is sufficient. Add a 2D index later if profiling shows need.
 - GIST on `start_point` and `end_point` (for radius queries against airfields)
 - B-tree on `start_ts`, `end_ts`, `icao24`, `icao_type`, `emitter_category`
-- Expression indexes on `ST_ZMin(path_geom)` and `ST_ZMax(path_geom)` to support altitude-range filters without storing min/max columns
+- Expression indexes on `ST_ZMin(trajectory(path)::box3d)` and `ST_ZMax(trajectory(path)::box3d)` to support altitude-range filters
 - Composite indexes per query pattern as profiling reveals need
 
 Partitioned by `start_ts` using native Postgres declarative partitioning. Monthly partitions. `pg_partman` automates partition creation.
 
-Geometry is **already simplified** at ingest using 2D TD-TR (synchronised Euclidean distance) for spatial fidelity at ε=50m, plus an altitude pass that recursively inserts vertices into each TD-TR-kept inter-vertex span wherever altitude interpolation exceeds ε=100ft (against pressure altitude). Stored result is a LINESTRINGZM with vertices that satisfy both bounds. The `path_tracks` array has one entry per vertex, taken from the closest broadcast track sample to that vertex's timestamp.
+Geometry is **already simplified** at ingest using 2D TD-TR (synchronised Euclidean distance) for spatial fidelity at ε=50m, plus an altitude pass that recursively inserts vertices into each TD-TR-kept inter-vertex span wherever altitude interpolation exceeds ε=100ft (against pressure altitude). Stored result is a path LINESTRINGZM with vertices that satisfy both spatial and altitude bounds.
+
+Each scalar time series (`path_tracks`, `path_gs`, `path_vr`, `path_ias`) is then independently simplified using TD-TR on the subset of raw points that survived the geometry simplification, with series-specific epsilon values (track: 5°, GS: 5 kt, VR: 50 fpm, IAS: 5 kt). Only vertices where the series value deviates from linear interpolation beyond the epsilon are retained. None-valued points are excluded from each series. The result is a sparse temporal series per scalar, stored as MobilityDB `tfloat`.
 
 ### staging_flights — in-progress flights
 
@@ -168,24 +178,25 @@ Single endpoint, `POST /query`, accepting a JSON DSL. Returns flight summaries b
       {
         "trajectory_intersects": {
           "geometry": {"type": "Polygon", "coordinates": [...]},
-          "altitude_min_ft": 5000,
-          "min_duration_seconds": 60
+          "altitude_min": 5000,
+          "altitude_min_ref": "ft",
+          "altitude_max": 180,
+          "altitude_max_ref": "fl",
+          "time_from": "2025-01-01T00:00:00Z",
+          "time_to": "2025-04-01T00:00:00Z",
+          "dwell_min_s": 60
         }
       },
       {
         "ends_within": {
-          "center": [-1.18, 50.65],
-          "radius_m": 3000
+          "geometry": {"type": "Circle", "coordinates": [-1.18, 50.65], "radius": 3000}
         }
       },
-      {"aircraft": {"icao_type": ["DA40", "DA42"]}},
-      {"time_range": {"from": "2025-01-01", "to": "2025-04-01"}},
-      {"emitter_category": ["A1"]}
+      {"icao_type": ["DA40", "DA42"]},
+      {"emitter_category": ["A1"]},
+      {"callsign_matches": "^G-"}
     ]
   },
-  "select": ["flight_id", "callsign", "start_point", "end_point",
-             "start_ts", "end_ts"],
-  "order_by": [{"field": "start_ts", "direction": "desc"}],
   "limit": 1000,
   "cursor": null
 }
@@ -193,18 +204,19 @@ Single endpoint, `POST /query`, accepting a JSON DSL. Returns flight summaries b
 
 Predicate types:
 
-- `trajectory_intersects`: GeoJSON geometry plus optional altitude band (interpreted as QNH at query time), time window, minimum duration in region
-- `trajectory_within`, `trajectory_disjoint`: spatial relations
-- `starts_within`, `ends_within`: radius queries against `start_point` / `end_point`
-- `aircraft`: type / category filters
-- `emitter_category`: filter by ADS-B emitter category (A1-A7, B1-B4, etc.)
-- `time_range`: start/end window
-- `callsign_matches`: regex match
-- `and` / `or` / `not`: boolean composition (recursive)
+- `trajectory_intersects`: flight path ever intersects a geometry. Optional: `altitude_min`/`altitude_max` (with `_ref`: `"ft"` for feet or `"fl"` for flight level), `time_from`/`time_to`, `squawk_codes`, `dwell_min_s`/`dwell_max_s` (seconds spent inside), `distance_min_m`/`distance_max_m` (path length inside geometry).
+- `trajectory_within`: flight path always stays within a geometry (same optional fields).
+- `starts_within`, `ends_within`: spatial/temporal constraints on the start or end point only. Geometry types: Circle, Polygon (including airspace-sourced polygons), or viewport rectangle.
+- `icao_type`: filter by one or more ICAO type designators.
+- `emitter_category`: filter by ADS-B emitter category (A1-A7, B1-B7, C1-C3).
+- `callsign_matches`: regex match against callsign.
+- `and` / `or` / `not`: boolean composition (recursive).
 
-The server compiles the predicate tree to PostGIS SQL via a Pydantic-based query compiler. Each predicate type knows how to emit its WHERE fragment; boolean composition wraps fragments. Field selection becomes the SELECT clause with appropriate joins.
+Altitude bounds are applied against **QNH-corrected altitude** when the flight has `alt_correction_ft` data: the stored correction series is added to the trajectory before comparison. Flights without correction data fall back to pressure altitude (±300ft uncertainty documented in API responses). Flight-level bounds (ref `"fl"`) are converted to feet by multiplying by 100.
 
-For altitude-based predicates, the compiler joins to ERA5 data to apply QNH correction within the SQL where ERA5 coverage exists; for time ranges where ERA5 is missing, predicates fall back to comparing against pressure altitude with a documented ±300ft uncertainty.
+Dwell-time and distance-inside-geometry predicates require a geometry to be specified (server-side validated). Both measures operate on the path clipped to the geometry and altitude/time window — so "dwell ≥ 10 min inside polygon at 2000–5000 ft" correctly measures only time within both constraints simultaneously.
+
+The server compiles the predicate tree to MobilityDB/PostGIS SQL via a Pydantic-based query compiler. Each predicate type emits its WHERE fragment; boolean composition wraps fragments.
 
 Result limits enforced at the API: max 10,000 flights per response. For "passed through London" type queries that match millions, return a sampled subset with a flag indicating the result is sampled.
 
@@ -221,15 +233,17 @@ Cursor-based pagination, not offset.
 
 Map-centric SPA. The UI breaks into:
 
-- **Map**: MapLibre + deck.gl. Layers — basemap, airspace overlay, query results as trajectories via `PathLayer`.
-- **Query builder**: structured UI for building DSL queries. Polygon drawing tools, attribute filters, time range pickers, radius-from-airport pickers. Compiles to JSON DSL and posts to `/query`.
-- **Results panel**: list of matching flights ordered by `start_ts` descending. Clicking a flight highlights it; by default all results in the current page are plotted simultaneously.
-- **Pagination**: results panel pages through large result sets via the cursor. Each page's flights are plotted as a batch on the map.
-- **Flight inspection**: detail popup with metadata, altitude/speed profile.
+- **Map**: MapLibre + deck.gl. Layers: basemap (dark/light/satellite), airspace chart overlay (OpenAIP), query results as `LineLayer` segments coloured by the active colour mode. Start points shown as green dots, end points as red dots.
+- **Colour modes**: altitude, emitter category, squawk code, vertical rate, ground speed, indicated airspeed (IAS). Switched via a toolbar. VS/GS/IAS use diverging colour scales; flights without data for the active mode are shown grey.
+- **Query builder**: structured UI building the JSON DSL. Predicates: aircraft type/emitter, callsign regex, starts-within, ends-within, ever (trajectory_intersects), always (trajectory_within). Each spatial predicate supports circle, drawn polygon, current viewport, or airspace-from-map. Ever/Always predicates support optional altitude range (ft or FL), time window, squawk filter, dwell time, and distance-inside-geometry bounds. Altitude bounds auto-populate from airspace boundaries when an airspace zone is selected. A global departure-date window picker (up to 7-day range) constrains all results.
+- **Airspace selection**: clicking on the map while in airspace-pick mode queries OpenAIP candidates near the cursor and lets the user confirm a zone. The zone's polygon becomes the query geometry; its altitude limits (ft or FL) are automatically applied as altitude bounds.
+- **Results panel**: list of matching flights ordered by `start_ts` descending. Shows callsign, ICAO24, type, departure time, duration, and an altitude sparkline. Clicking a flight selects it; the selected trace is highlighted and dimmed non-selected traces are shown at 20% opacity.
+- **Hover infobox**: hovering over any trace segment shows an infobox with callsign, ICAO24, type, emitter category, interpolated altitude (ft), vertical rate (fpm ↑/↓), ground speed (kt), IAS (kt, if available), heading (degrees + 16-point compass), squawk code, and UTC time — all interpolated to the exact cursor position along the segment. When a flight is selected, hovering over other traces shows no infobox.
+- **Pagination**: results panel pages through large result sets via cursor. Each page's flights are plotted as a batch on the map.
 
-State: React's primitives. Server state via TanStack Query with smart cache invalidation when filters change.
+State: React's primitives (useState/useReducer). Server state via TanStack Query with cache invalidation when filters change.
 
-Authentication: none initially (read-only public data). If rate limiting becomes necessary, IP-based via the API.
+Authentication: none (read-only public data). If rate limiting becomes necessary, IP-based via the API.
 
 ## Engineering practices
 
@@ -251,7 +265,7 @@ Authentication: none initially (read-only public data). If rate limiting becomes
 
 ### Testing
 
-- Python: `pytest`. Unit tests for pure functions (geometry, ERA5 lookup, flight splitting, emitter-category synthesis), integration tests against a real Postgres+PostGIS in Docker (use `testcontainers`), end-to-end tests for the API.
+- Python: `pytest`. Unit tests for pure functions (geometry, pressure correction, flight splitting, emitter-category synthesis), integration tests against a real Postgres+PostGIS+MobilityDB in Docker (use `testcontainers`), end-to-end tests for the API.
 - TypeScript: `vitest` for unit tests, `playwright` for end-to-end browser tests against a deployed test instance.
 - Coverage: `coverage.py` for Python, `vitest` built-in coverage for TS. Coverage reports generated on every CI run and on every commit (via pre-commit).
 - Coverage targets: 90%+ on geometry, query DSL compiler, flight splitting, and emitter-category synthesis (the algorithmic core); 80%+ on API route handlers; integration tests cover what unit tests can't.
@@ -281,11 +295,11 @@ adsb-aero/
 ├── server/                    # Python: ingestion + API
 │   ├── adsb_server/
 │   │   ├── ingestion/         # Batch worker + Dramatiq tasks
-│   │   ├── geometry/          # TD-TR, altitude pass, simplification
+│   │   ├── geometry/          # TD-TR, altitude pass, simplification, WKT helpers
 │   │   ├── api/               # FastAPI routes
 │   │   ├── query/             # DSL Pydantic models + SQL compiler
 │   │   ├── db/                # asyncpg, schema migrations (Alembic)
-│   │   ├── era5/              # Pressure data fetch + lookup
+│   │   ├── pressure/          # GFS MSLP fetch (Herbie/cfgrib) + QNH correction computation
 │   │   └── reference_data/    # Doc 8643, airspace, airports loaders
 │   ├── config/
 │   ├── tests/
@@ -329,20 +343,26 @@ If the OVH server becomes inadequate or operational burden too high:
 - **Redis**: managed Redis at any provider.
 - **API + ingestion containers**: deploy to Cloud Run, Fargate, or managed Kubernetes. The images are unchanged.
 - **Frontend**: already static, deploys to Cloudflare Pages, Netlify, or any static host.
-- **Object storage** (for ERA5 cache, OpenAIP cache): already S3-compatible, just point at the cloud provider's offering.
+- **Object storage** (for GFS/NWP cache, OpenAIP cache): already S3-compatible, just point at the cloud provider's offering.
 
 The compose file becomes the dev config; cloud deploys use Helm charts or Terraform pointing at the same images.
 
-## Initial implementation order
+## Implementation status
 
-1. **Repo skeleton + tooling**: project structure, ruff/mypy/eslint/prettier/sqlfluff configs, pre-commit hooks, CI pipeline with coverage reporting, Docker Compose with Postgres+PostGIS.
-2. **Schema + Python DB tooling**: Postgres schema with pg_partman, Alembic migrations, asyncpg connection pool, Pydantic settings. No reference data tables yet.
-3. **Ingestion pipeline**: tarball download, parse, split into flights, simplify, synthesize emitter category, write to `flights`. Staging flights included from the start — in-progress flights feed back into the next batch naturally. Backfill 30 days of UK data as proof-of-concept. `emitter_category` derived from Doc 8643 inline.
-4. **API v1**: query endpoint with the JSON DSL, flight detail and bulk-path endpoints, health check. Flight data only — no airspace or airport endpoints yet.
-5. **Frontend v1**: map, basic query builder (bbox + time + emitter-category filters), results plotting with paging. Flight data only — no airspace overlays or radius-from-airport pickers yet.
-6. **Reference data + enrichment**: Doc 8643 type designators (type → emitter category mapping table), OpenSky aircraft metadata, OurAirports airports, OpenAIP airspace. Each as its own loader with periodic-refresh scheduling. API endpoints for airspace and airport lookup. Frontend gains airspace overlay and radius-from-airport query support.
-7. **ERA5 + on-demand QNH correction**: pressure data fetch, on-demand correction in the query layer for altitude-based predicates and for display.
-8. **Frontend v2**: polygon drawing, multi-region queries, full radius-from-airfield pickers.
-9. **Operational stack**: monitoring, alerting, runbooks.
-10. **Scale up**: ingest whole-world data, validate performance, tune.
-11. **Future**: VFR/IFR classification (separate column or table), streaming ingest, public launch, hardening.
+### Completed
+
+1. **Repo skeleton + tooling** ✓ — project structure, ruff/mypy/eslint/prettier/sqlfluff configs, pre-commit hooks, Docker Compose with Postgres+PostGIS+MobilityDB.
+2. **Schema + Python DB tooling** ✓ — Postgres+MobilityDB schema, Alembic migrations, asyncpg connection pool, Pydantic settings.
+3. **Ingestion pipeline** ✓ — tarball download, parse, split into flights, TD-TR simplification (spatial + per-scalar-series), emitter category synthesis from Doc 8643, staging-flight carry-over, batch state tracking. Scalar time series (`path_tracks`, `path_gs`, `path_vr`, `path_ias`) stored as MobilityDB `tfloat`.
+4. **API v1** ✓ — query endpoint with the JSON DSL, flight detail and bulk-path endpoints, health check.
+5. **Reference data** ✓ — Doc 8643 type designators, OpenAIP airspace (overlay + zone selection in query builder). OpenSky aircraft metadata and OurAirports airports not yet loaded.
+6. **GFS altitude correction** ✓ — GFS MSLP fetch via Herbie/cfgrib, per-vertex QNH correction computed at ingest and stored as `alt_correction_ft` tfloat. Query compiler applies stored corrections for altitude-based predicates. Altitude bounds accept ft or FL references.
+7. **Frontend** ✓ — full query builder (all DSL predicates, polygon drawing, airspace selection, altitude/time/squawk/dwell/distance optional filters), map with multiple colour modes (alt/cat/VS/GS/IAS/squawk), results panel with altitude sparklines, rich hover infobox, flight selection with trace dimming.
+
+### Remaining
+
+8. **OurAirports integration**: radius-from-airfield pickers in the query builder. Requires loading OurAirports data and a typeahead search UI.
+9. **OpenSky aircraft metadata**: enrich callsign and registration from the OpenSky aircraft database. Requires periodic-refresh loader.
+10. **Operational stack**: Prometheus + Grafana + Loki monitoring, Alertmanager alerting, runbooks.
+11. **Scale up**: ingest whole-world data, validate performance under load, tune indexes and query plans.
+12. **Future**: VFR/IFR classification (separate column or table), streaming ingest from adsb.lol live feed, public launch, CI with GitHub Actions, hardening.
