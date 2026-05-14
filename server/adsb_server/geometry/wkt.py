@@ -47,6 +47,19 @@ def tint_seq(values: list[int], timestamps: list[float]) -> str:
     return f"[{', '.join(instants)}]"
 
 
+def tint_from_series(series: list[tuple[float, float]]) -> str | None:
+    """Return a MobilityDB tint (stepwise) sequence from (ts, value) pairs, or None if empty.
+
+    Values are rounded to the nearest integer.
+    series: list of (ts_epoch, value) pairs.
+    Output: '[val@ts, ...]'
+    """
+    if not series:
+        return None
+    instants = [f"{round(v)}@{_fmt_ts(ts)}" for ts, v in series]
+    return f"[{', '.join(instants)}]"
+
+
 def tfloat_stepwise_seq(values: list[float], timestamps: list[float]) -> str | None:
     """Return a MobilityDB tfloat stepwise sequence string, or None if empty.
 

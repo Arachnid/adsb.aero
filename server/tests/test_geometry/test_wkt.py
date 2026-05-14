@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq, ttext_seq
+from adsb_server.geometry.wkt import tgeompoint_seq, tint_from_series, tint_seq, ttext_seq
 
 
 def test_tgeompoint_seq_format() -> None:
@@ -113,6 +113,41 @@ def test_ttext_seq_preserves_order() -> None:
     idx_7700 = result.index('"7700"@')
     idx_1200 = result.index('"1200"@')
     assert idx_2000 < idx_7700 < idx_1200
+
+
+def test_tint_from_series_empty_returns_none() -> None:
+    assert tint_from_series([]) is None
+
+
+def test_tint_from_series_single_value() -> None:
+    result = tint_from_series([(1609275898.0, 275.0)])
+    assert result is not None
+    assert result.startswith("[")
+    assert result.endswith("]")
+    assert "275@" in result
+
+
+def test_tint_from_series_rounds_to_integer() -> None:
+    result = tint_from_series([(100.0, 449.7), (200.0, 450.3)])
+    assert result is not None
+    assert "450@" in result
+    assert "450@" in result  # 449.7 rounds to 450, 450.3 rounds to 450
+
+
+def test_tint_from_series_multiple_values() -> None:
+    result = tint_from_series([(100.0, 90.0), (200.0, 180.0), (300.0, 270.0)])
+    assert result is not None
+    assert "90@" in result
+    assert "180@" in result
+    assert "270@" in result
+    assert result.count("@") == 3
+
+
+def test_tint_from_series_timestamp_format() -> None:
+    result = tint_from_series([(0.0, 0.0)])
+    assert result is not None
+    assert "0@1970-01-01T00:00:00" in result
+    assert "+00" in result
 
 
 from adsb_server.geometry.wkt import tfloat_stepwise_seq  # noqa: E402

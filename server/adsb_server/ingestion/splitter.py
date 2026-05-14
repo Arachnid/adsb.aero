@@ -7,7 +7,14 @@ import logging
 from collections import Counter
 from datetime import UTC, datetime
 
-from adsb_server.geometry.simplify import simplify_flight
+from adsb_server.geometry.simplify import (
+    gs_deviation,
+    ias_deviation,
+    simplify_flight,
+    simplify_series,
+    track_deviation,
+    vr_deviation,
+)
 from adsb_server.ingestion.models import (
     FinalizedFlight,
     RawFlight,
@@ -118,6 +125,40 @@ def build_squawk_runs(points: list[RawPoint]) -> list[tuple[float, str]]:
     return runs
 
 
+# TD-TR epsilons for secondary scalar passes.
+_TRACK_EPSILON_DEG = 5.0
+_GS_EPSILON_KT = 5.0
+_VR_EPSILON_FPM = 50.0
+_IAS_EPSILON_KT = 5.0
+
+
+def build_scalar_series(
+    sub: list[RawPoint],
+) -> tuple[
+    list[tuple[float, float]],
+    list[tuple[float, float]],
+    list[tuple[float, float]],
+    list[tuple[float, float]],
+]:
+    """Apply per-field TD-TR on a sub-list of path-kept RawPoints.
+
+    Returns (path_tracks_series, path_gs_series, path_vr_series, path_ias_series).
+    Each series is a list of (ts, value) pairs after removing points redundant
+    under linear interpolation within the stated epsilon.  None-valued points are
+    excluded from the output series.
+    """
+    trk_idx = simplify_series(sub, _TRACK_EPSILON_DEG, track_deviation)
+    gs_idx = simplify_series(sub, _GS_EPSILON_KT, gs_deviation)
+    vr_idx = simplify_series(sub, _VR_EPSILON_FPM, vr_deviation)
+    ias_idx = simplify_series(sub, _IAS_EPSILON_KT, ias_deviation)
+
+    trk = [(sub[i].ts, sub[i].track % 360.0) for i in trk_idx if sub[i].track is not None]
+    gs_ = [(sub[i].ts, sub[i].gs) for i in gs_idx if sub[i].gs is not None]
+    vr_ = [(sub[i].ts, sub[i].vr) for i in vr_idx if sub[i].vr is not None]
+    ias = [(sub[i].ts, sub[i].ias) for i in ias_idx if sub[i].ias is not None]
+    return trk, gs_, vr_, ias
+
+
 def _finalize_segment(
     header: TraceHeader,
     seg_points: list[RawPoint],
@@ -141,15 +182,16 @@ def _finalize_segment(
         kept_indices = [0, len(interp_points) - 1]
 
     vertices: list[tuple[float, float, float, float]] = []
-    path_tracks: list[int] = []
     for i in kept_indices:
         p = interp_points[i]
         alt_ft = p.alt_baro if p.alt_baro is not None else 0.0
         vertices.append((p.lon, p.lat, alt_ft, p.ts))
-        track_int = round(p.track) % 360 if p.track is not None else 0
-        path_tracks.append(track_int)
 
-    squawk_runs = build_squawk_runs([interp_points[i] for i in kept_indices])
+    sub = [interp_points[i] for i in kept_indices]
+    squawk_runs = build_squawk_runs(sub)
+    path_tracks_series, path_gs_series, path_vr_series, path_ias_series = (
+        build_scalar_series(sub)
+    )
 
     start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
     end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
@@ -162,9 +204,12 @@ def _finalize_segment(
         start_ts=start_ts,
         end_ts=end_ts,
         vertices=vertices,
-        path_tracks=path_tracks,
         squawk_runs=squawk_runs,
         raw_point_count=len(seg_points),
+        path_tracks_series=path_tracks_series,
+        path_gs_series=path_gs_series,
+        path_vr_series=path_vr_series,
+        path_ias_series=path_ias_series,
     )
 
 

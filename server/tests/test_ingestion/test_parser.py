@@ -30,9 +30,17 @@ def _make_entry(
     flags: int = 0,
     vr: float | None = None,
     aircraft_obj: object = None,
+    source: str | None = None,
+    alt_geom: float | None = None,
+    geom_vr: float | None = None,
+    ias: float | None = None,
+    roll: float | None = None,
 ) -> list[object]:
-    """Build a minimal trace entry."""
-    return [offset, lat, lon, alt_baro, gs, track, flags, vr, aircraft_obj]
+    """Build a minimal trace entry (indices 0-13)."""
+    entry: list[object] = [offset, lat, lon, alt_baro, gs, track, flags, vr, aircraft_obj]
+    if any(v is not None for v in (source, alt_geom, geom_vr, ias, roll)):
+        entry += [source, alt_geom, geom_vr, ias, roll]
+    return entry
 
 
 class TestParseGroundPoints:
@@ -252,3 +260,50 @@ class TestParseHeader:
         )
         _, points = _parse_trace_json(data)
         assert len(points) == 1
+
+
+class TestScalarFields:
+    def test_gs_parsed_from_index_4(self) -> None:
+        data = _make_trace(trace_entries=[_make_entry(gs=482.5)])
+        _, points = _parse_trace_json(data)
+        assert points[0].gs == 482.5
+
+    def test_gs_null_becomes_none(self) -> None:
+        data = _make_trace(trace_entries=[_make_entry(gs=None)])
+        _, points = _parse_trace_json(data)
+        assert points[0].gs is None
+
+    def test_vr_parsed_from_index_7(self) -> None:
+        data = _make_trace(trace_entries=[_make_entry(vr=1984.0)])
+        _, points = _parse_trace_json(data)
+        assert points[0].vr == 1984.0
+
+    def test_vr_null_becomes_none(self) -> None:
+        data = _make_trace(trace_entries=[_make_entry(vr=None)])
+        _, points = _parse_trace_json(data)
+        assert points[0].vr is None
+
+    def test_ias_parsed_from_index_12(self) -> None:
+        data = _make_trace(trace_entries=[_make_entry(ias=275.0)])
+        _, points = _parse_trace_json(data)
+        assert points[0].ias == 275.0
+
+    def test_ias_null_becomes_none(self) -> None:
+        data = _make_trace(trace_entries=[_make_entry(ias=None)])
+        _, points = _parse_trace_json(data)
+        assert points[0].ias is None
+
+    def test_ias_absent_when_short_entry(self) -> None:
+        # Entries with fewer than 13 fields (pre-2022 format) give ias=None.
+        data = _make_trace(trace_entries=[_make_entry()])  # only 9 fields
+        _, points = _parse_trace_json(data)
+        assert points[0].ias is None
+
+    def test_all_three_scalars_together(self) -> None:
+        data = _make_trace(
+            trace_entries=[_make_entry(gs=450.0, vr=-1536.0, ias=270.0)]
+        )
+        _, points = _parse_trace_json(data)
+        assert points[0].gs == 450.0
+        assert points[0].vr == -1536.0
+        assert points[0].ias == 270.0

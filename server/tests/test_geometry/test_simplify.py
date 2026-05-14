@@ -8,8 +8,13 @@ from adsb_server.geometry.simplify import (
     DeviationFn,
     _td_tr,
     altitude_deviation,
+    gs_deviation,
+    ias_deviation,
     simplify_flight,
+    simplify_series,
     spatial_deviation,
+    track_deviation,
+    vr_deviation,
 )
 from adsb_server.ingestion.models import RawFlight, RawPoint
 
@@ -196,3 +201,144 @@ class TestSimplifyFlight:
         # All-None squawk: no boundaries added, identical to original algorithm.
         points = [_pt(i * 0.001, 0.0, ts=float(i), alt_baro=10000.0) for i in range(50)]
         assert simplify_flight(points) == [0, 49]
+
+
+# ---------------------------------------------------------------------------
+# Scalar deviation functions
+# ---------------------------------------------------------------------------
+
+
+def _pt_scalar(
+    ts: float,
+    gs: float | None = None,
+    vr: float | None = None,
+    ias: float | None = None,
+    track: float | None = None,
+) -> RawPoint:
+    return RawPoint(
+        ts=ts, lat=0.0, lon=0.0, alt_baro=10000.0, track=track,
+        squawk=None, new_leg=False, callsign=None, emitter_category=None,
+        gs=gs, vr=vr, ias=ias,
+    )
+
+
+class TestGsDeviation:
+    def test_exact_interpolation_zero(self) -> None:
+        a = _pt_scalar(0.0, gs=400.0)
+        b = _pt_scalar(10.0, gs=500.0)
+        mid = _pt_scalar(5.0, gs=450.0)
+        assert gs_deviation(mid, a, b) == pytest.approx(0.0)
+
+    def test_spike_returns_deviation(self) -> None:
+        a = _pt_scalar(0.0, gs=400.0)
+        b = _pt_scalar(10.0, gs=400.0)
+        spike = _pt_scalar(5.0, gs=450.0)
+        assert gs_deviation(spike, a, b) == pytest.approx(50.0)
+
+    def test_missing_gs_returns_zero(self) -> None:
+        a = _pt_scalar(0.0, gs=400.0)
+        b = _pt_scalar(10.0, gs=500.0)
+        null_mid = _pt_scalar(5.0, gs=None)
+        assert gs_deviation(null_mid, a, b) == 0.0
+
+
+class TestVrDeviation:
+    def test_exact_interpolation_zero(self) -> None:
+        a = _pt_scalar(0.0, vr=0.0)
+        b = _pt_scalar(10.0, vr=2000.0)
+        mid = _pt_scalar(5.0, vr=1000.0)
+        assert vr_deviation(mid, a, b) == pytest.approx(0.0)
+
+    def test_spike_returns_deviation(self) -> None:
+        a = _pt_scalar(0.0, vr=0.0)
+        b = _pt_scalar(10.0, vr=0.0)
+        spike = _pt_scalar(5.0, vr=200.0)
+        assert vr_deviation(spike, a, b) == pytest.approx(200.0)
+
+
+class TestIasDeviation:
+    def test_exact_interpolation_zero(self) -> None:
+        a = _pt_scalar(0.0, ias=250.0)
+        b = _pt_scalar(10.0, ias=300.0)
+        mid = _pt_scalar(5.0, ias=275.0)
+        assert ias_deviation(mid, a, b) == pytest.approx(0.0)
+
+    def test_missing_ias_returns_zero(self) -> None:
+        a = _pt_scalar(0.0, ias=250.0)
+        b = _pt_scalar(10.0, ias=300.0)
+        null_mid = _pt_scalar(5.0, ias=None)
+        assert ias_deviation(null_mid, a, b) == 0.0
+
+
+class TestTrackDeviation:
+    def test_straight_flight_zero(self) -> None:
+        a = _pt_scalar(0.0, track=90.0)
+        b = _pt_scalar(10.0, track=90.0)
+        mid = _pt_scalar(5.0, track=90.0)
+        assert track_deviation(mid, a, b) == pytest.approx(0.0)
+
+    def test_turning_midpoint_zero_when_exact(self) -> None:
+        a = _pt_scalar(0.0, track=80.0)
+        b = _pt_scalar(10.0, track=100.0)
+        mid = _pt_scalar(5.0, track=90.0)
+        assert track_deviation(mid, a, b) == pytest.approx(0.0)
+
+    def test_wrap_around_handled(self) -> None:
+        # 350° → 10° turn: midpoint should be ~0°, not 180°
+        a = _pt_scalar(0.0, track=350.0)
+        b = _pt_scalar(10.0, track=10.0)
+        mid = _pt_scalar(5.0, track=0.0)
+        assert track_deviation(mid, a, b) == pytest.approx(0.0)
+
+    def test_missing_track_returns_zero(self) -> None:
+        a = _pt_scalar(0.0, track=90.0)
+        b = _pt_scalar(10.0, track=90.0)
+        null_mid = _pt_scalar(5.0, track=None)
+        assert track_deviation(null_mid, a, b) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# simplify_series
+# ---------------------------------------------------------------------------
+
+
+class TestSimplifySeriesGs:
+    def test_two_points_unchanged(self) -> None:
+        sub = [_pt_scalar(0.0, gs=400.0), _pt_scalar(10.0, gs=500.0)]
+        assert simplify_series(sub, 5.0, gs_deviation) == [0, 1]
+
+    def test_constant_gs_only_endpoints(self) -> None:
+        # Five points at constant gs — only endpoints needed.
+        sub = [_pt_scalar(float(i), gs=450.0) for i in range(5)]
+        assert simplify_series(sub, 5.0, gs_deviation) == [0, 4]
+
+    def test_spike_kept(self) -> None:
+        # Middle point spikes 20 kt above constant line → kept with epsilon=5.
+        sub = [
+            _pt_scalar(0.0, gs=400.0),
+            _pt_scalar(5.0, gs=420.0),  # 20 kt above interpolation
+            _pt_scalar(10.0, gs=400.0),
+        ]
+        kept = simplify_series(sub, 5.0, gs_deviation)
+        assert 1 in kept
+
+    def test_small_deviation_removed(self) -> None:
+        # Middle point only 2 kt above line → removed with epsilon=5.
+        sub = [
+            _pt_scalar(0.0, gs=400.0),
+            _pt_scalar(5.0, gs=402.0),
+            _pt_scalar(10.0, gs=400.0),
+        ]
+        kept = simplify_series(sub, 5.0, gs_deviation)
+        assert kept == [0, 2]
+
+    def test_null_gs_not_selected(self) -> None:
+        # Points with gs=None have deviation 0, so they're never selected as
+        # the max-deviation point. Endpoints are always included though.
+        sub = [
+            _pt_scalar(0.0, gs=400.0),
+            _pt_scalar(5.0, gs=None),
+            _pt_scalar(10.0, gs=400.0),
+        ]
+        kept = simplify_series(sub, 5.0, gs_deviation)
+        assert kept == [0, 2]

@@ -120,6 +120,15 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
 
         alt_baro = _parse_alt_baro(entry[3] if len(entry) > 3 else None)
 
+        # gs at index 4
+        gs_raw = entry[4] if len(entry) > 4 else None
+        gs: float | None = None
+        if gs_raw is not None:
+            try:
+                gs = float(gs_raw)
+            except (TypeError, ValueError):
+                gs = None
+
         # track at index 5
         track_raw = entry[5] if len(entry) > 5 else None
         track: float | None = None
@@ -137,9 +146,27 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
             flags = 0
         new_leg = bool(flags & 2)
 
+        # vr at index 7
+        vr_raw = entry[7] if len(entry) > 7 else None
+        vr: float | None = None
+        if vr_raw is not None:
+            try:
+                vr = float(vr_raw)
+            except (TypeError, ValueError):
+                vr = None
+
         # aircraft_obj at index 8
         aircraft_obj = entry[8] if len(entry) > 8 else None
         callsign, squawk, emitter_category = _parse_aircraft_obj(aircraft_obj)
+
+        # ias at index 12 (2022+ format only)
+        ias_raw = entry[12] if len(entry) > 12 else None
+        ias: float | None = None
+        if ias_raw is not None:
+            try:
+                ias = float(ias_raw)
+            except (TypeError, ValueError):
+                ias = None
 
         points.append(
             RawPoint(
@@ -152,6 +179,9 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
                 new_leg=new_leg,
                 callsign=callsign,
                 emitter_category=emitter_category,
+                gs=gs,
+                vr=vr,
+                ias=ias,
             )
         )
 

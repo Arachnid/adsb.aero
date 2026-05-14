@@ -19,6 +19,9 @@ class RawPoint:
     new_leg: bool
     callsign: str | None  # stripped, from aircraft_obj["flight"]
     emitter_category: str | None  # from aircraft_obj["category"]
+    gs: float | None = None   # ground speed in knots
+    vr: float | None = None   # vertical rate in fpm (barometric, or geometric when flags & 4)
+    ias: float | None = None  # indicated airspeed in knots (Mode S EHS, sparse)
     alt_baro_interpolated: bool = False  # True when alt_baro was filled by interpolation
     track_interpolated: bool = False  # True when track was filled by interpolation
 
@@ -53,6 +56,11 @@ class FinalizedFlight:
     start_ts: datetime  # UTC
     end_ts: datetime  # UTC
     vertices: list[tuple[float, float, float, float]]  # (lon, lat, alt_ft, ts)
-    path_tracks: list[int]  # per-vertex track in degrees (0-359), same length as vertices
     squawk_runs: list[tuple[float, str]]  # [(unix_ts, squawk_code), ...] run-length encoding
     raw_point_count: int  # number of points before simplification
+    # Scalar time-series derived from points surviving path simplification,
+    # then further reduced by their own TD-TR pass. Empty list → NULL column.
+    path_tracks_series: list[tuple[float, float]]   # [(ts, degrees), ...]  NOT NULL in DB
+    path_gs_series: list[tuple[float, float]]        # [(ts, knots), ...]
+    path_vr_series: list[tuple[float, float]]        # [(ts, fpm), ...]
+    path_ias_series: list[tuple[float, float]]       # [(ts, knots), ...]

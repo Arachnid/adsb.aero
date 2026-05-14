@@ -18,10 +18,16 @@ if TYPE_CHECKING:
 
 from adsb_server.config import get_settings
 from adsb_server.geometry.simplify import simplify_flight
-from adsb_server.geometry.wkt import tfloat_stepwise_seq, tgeompoint_seq, tint_seq, ttext_seq
+from adsb_server.geometry.wkt import (
+    tfloat_stepwise_seq,
+    tgeompoint_seq,
+    tint_from_series,
+    ttext_seq,
+)
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import count_traces, stream_tarball
 from adsb_server.ingestion.splitter import (
+    build_scalar_series,
     build_squawk_runs,
     interpolate_missing_values,
     split_flights,
@@ -39,10 +45,14 @@ _CORRECTION_WORKERS = 16
 _UPSERT_FLIGHT_SQL = """
 INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
     start_ts, end_ts, path, path_tracks,
-    squawk_seq, alt_correction_ft, raw_point_count, ingest_batch_date)
+    squawk_seq, alt_correction_ft,
+    path_gs, path_vr, path_ias,
+    raw_point_count, ingest_batch_date)
 VALUES ($1,$2,$3,$4,$5,$6,
     $7::tgeompoint, $8::tint,
-    $9::ttext, $10::tfloat, $11, $12)
+    $9::ttext, $10::tfloat,
+    $11::tint, $12::tint, $13::tint,
+    $14, $15)
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
@@ -50,6 +60,7 @@ ON CONFLICT (icao24, start_ts) DO UPDATE SET
     path=EXCLUDED.path, path_tracks=EXCLUDED.path_tracks,
     squawk_seq=EXCLUDED.squawk_seq,
     alt_correction_ft=EXCLUDED.alt_correction_ft,
+    path_gs=EXCLUDED.path_gs, path_vr=EXCLUDED.path_vr, path_ias=EXCLUDED.path_ias,
     raw_point_count=EXCLUDED.raw_point_count,
     ingest_batch_date=EXCLUDED.ingest_batch_date
 """
@@ -58,7 +69,9 @@ _FlightParams = tuple[
     str, str | None, str | None, str | None,
     datetime, datetime,
     str, str,
-    str | None, str | None, int, date,
+    str | None, str | None,
+    str | None, str | None, str | None,
+    int, date,
 ]
 
 
@@ -79,7 +92,6 @@ def _flight_to_params(
     alt_correction_ft: str | None,
 ) -> _FlightParams:
     """Convert a FinalizedFlight into the parameter tuple for the UPSERT SQL."""
-    timestamps = [v[3] for v in flight.vertices]
     return (
         flight.icao24,
         flight.callsign,
@@ -88,9 +100,12 @@ def _flight_to_params(
         flight.start_ts,
         flight.end_ts,
         tgeompoint_seq(flight.vertices),
-        tint_seq(flight.path_tracks, timestamps),
+        tint_from_series(flight.path_tracks_series),
         ttext_seq(flight.squawk_runs),
         alt_correction_ft,
+        tint_from_series(flight.path_gs_series),
+        tint_from_series(flight.path_vr_series),
+        tint_from_series(flight.path_ias_series),
         flight.raw_point_count,
         batch_date,
     )
@@ -98,13 +113,13 @@ def _flight_to_params(
 
 def _simplify_in_progress(
     flight: RawFlight,
-) -> tuple[list[tuple[float, float, float, float]], list[int], list[RawPoint]] | None:
+) -> tuple[list[tuple[float, float, float, float]], list[RawPoint]] | None:
     """
     Build the simplified path for an in-progress flight.
 
-    Returns (vertices, path_tracks, kept_raw_points) or None if fewer than
-    2 airborne points (cannot form valid geometry).  Exposed so that callers
-    can compute altitude corrections from the vertices before building DB params.
+    Returns (vertices, kept_raw_points) or None if fewer than 2 airborne points.
+    Exposed so that callers can compute altitude corrections from the vertices
+    before building DB params.
     """
     airborne = [p for p in flight.points if p.alt_baro is not None]
     if len(airborne) < 2:
@@ -115,14 +130,11 @@ def _simplify_in_progress(
     if len(kept) < 2:
         kept = [0, len(interp) - 1]
 
-    vertices: list[tuple[float, float, float, float]] = []
-    path_tracks: list[int] = []
-    for i in kept:
-        p = interp[i]
-        vertices.append((p.lon, p.lat, p.alt_baro or 0.0, p.ts))
-        path_tracks.append(round(p.track) % 360 if p.track is not None else 0)
-
-    return vertices, path_tracks, [interp[i] for i in kept]
+    vertices: list[tuple[float, float, float, float]] = [
+        (p.lon, p.lat, p.alt_baro or 0.0, p.ts)
+        for p in (interp[i] for i in kept)
+    ]
+    return vertices, [interp[i] for i in kept]
 
 
 def _in_progress_flight_to_params(
@@ -142,10 +154,13 @@ def _in_progress_flight_to_params(
     if result is None:
         return None
 
-    vertices, path_tracks, kept_points = result
+    vertices, kept_points = result
     start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
     end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
-    timestamps = [v[3] for v in vertices]
+
+    path_tracks_series, path_gs_series, path_vr_series, path_ias_series = (
+        build_scalar_series(kept_points)
+    )
 
     return (
         flight.icao24,
@@ -155,9 +170,12 @@ def _in_progress_flight_to_params(
         start_ts,
         end_ts,
         tgeompoint_seq(vertices),
-        tint_seq(path_tracks, timestamps),
+        tint_from_series(path_tracks_series),
         ttext_seq(build_squawk_runs(kept_points)),
         alt_correction_ft,
+        tint_from_series(path_gs_series),
+        tint_from_series(path_vr_series),
+        tint_from_series(path_ias_series),
         len(flight.points),
         batch_date,
     )
@@ -305,7 +323,8 @@ async def run_batch(
                     in_progress_flights[in_progress.icao24] = in_progress
                     simplified = _simplify_in_progress(in_progress)
                     if simplified is not None:
-                        in_progress_for_correction.append((in_progress, simplified[0]))
+                        vertices_ip, _kept = simplified
+                        in_progress_for_correction.append((in_progress, vertices_ip))
 
             # Phase 3: compute altitude corrections in parallel threads.
             # scipy's RegularGridInterpolator releases the GIL, so threads

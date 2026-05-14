@@ -92,6 +92,64 @@ def _td_tr(
             stack.append((max_idx, e))
 
 
+def track_deviation(p: RawPoint, a: RawPoint, b: RawPoint) -> float:
+    """TD-TR track deviation in degrees (circular shortest-arc interpolation)."""
+    if p.track is None or a.track is None or b.track is None:
+        return 0.0
+    dt = b.ts - a.ts
+    t = (p.ts - a.ts) / dt if dt > 0 else 0.5
+    arc = ((b.track - a.track) + 180.0) % 360.0 - 180.0
+    interp = (a.track + t * arc) % 360.0
+    diff = abs(p.track - interp) % 360.0
+    return float(min(diff, 360.0 - diff))
+
+
+def gs_deviation(p: RawPoint, a: RawPoint, b: RawPoint) -> float:
+    """TD-TR ground-speed deviation in knots."""
+    if p.gs is None or a.gs is None or b.gs is None:
+        return 0.0
+    dt = b.ts - a.ts
+    t = (p.ts - a.ts) / dt if dt > 0 else 0.5
+    return float(abs(p.gs - (a.gs + t * (b.gs - a.gs))))
+
+
+def vr_deviation(p: RawPoint, a: RawPoint, b: RawPoint) -> float:
+    """TD-TR vertical-rate deviation in fpm."""
+    if p.vr is None or a.vr is None or b.vr is None:
+        return 0.0
+    dt = b.ts - a.ts
+    t = (p.ts - a.ts) / dt if dt > 0 else 0.5
+    return float(abs(p.vr - (a.vr + t * (b.vr - a.vr))))
+
+
+def ias_deviation(p: RawPoint, a: RawPoint, b: RawPoint) -> float:
+    """TD-TR indicated-airspeed deviation in knots."""
+    if p.ias is None or a.ias is None or b.ias is None:
+        return 0.0
+    dt = b.ts - a.ts
+    t = (p.ts - a.ts) / dt if dt > 0 else 0.5
+    return float(abs(p.ias - (a.ias + t * (b.ias - a.ias))))
+
+
+def simplify_series(
+    points: list[RawPoint],
+    epsilon: float,
+    dev_fn: DeviationFn,
+) -> list[int]:
+    """Apply a single TD-TR pass on a list of RawPoints; return sorted kept indices.
+
+    Intended for secondary simplification of scalar series (gs, vr, ias, track)
+    on the sub-list of points that already survived the path simplification.
+    Both endpoints are always included in the kept set.
+    """
+    n = len(points)
+    if n <= 2:
+        return list(range(n))
+    kept: set[int] = {0, n - 1}
+    _td_tr(points, 0, n - 1, epsilon, dev_fn, kept)
+    return sorted(kept)
+
+
 def simplify_flight(
     points: list[RawPoint],
     spatial_m: float = 50.0,

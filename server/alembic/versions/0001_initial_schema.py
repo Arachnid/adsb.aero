@@ -43,7 +43,10 @@ def upgrade() -> None:
             start_ts          TIMESTAMPTZ  NOT NULL,
             end_ts            TIMESTAMPTZ  NOT NULL,
             path              tgeompoint   NOT NULL,
-            path_tracks       tint         NOT NULL,
+            path_tracks       tint,
+            path_gs           tint,
+            path_vr           tint,
+            path_ias          tint,
             squawk_seq        ttext,
             alt_correction_ft tfloat,
             alt_min_pressure_ft FLOAT4
