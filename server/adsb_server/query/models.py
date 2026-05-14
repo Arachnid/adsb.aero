@@ -92,6 +92,9 @@ class FlightDetail(FlightSummary):
         "Coordinates are `[longitude, latitude, altitude_ft]`. "
         "Altitude is pressure altitude in feet (QNH correction not applied). "
         "Ground-roll points are excluded. "
+        "Simplified using two-pass TD-TR: spatial pass with ε=50 m (cross-track error), "
+        "then altitude pass with ε=100 ft on the surviving vertices. "
+        "Squawk change points are always preserved and divide simplification intervals. "
         "Omitted when the request sets `include_path` to false.",
         examples=[{
             "type": "LineString",
@@ -108,11 +111,43 @@ class FlightDetail(FlightSummary):
         "Same length as `coordinates`. Omitted when `include_path` is false.",
         examples=[[1743501600.0, 1743505200.0, 1743508800.0]],
     )
-    path_tracks: list[int] | None = Field(
+    path_tracks: list[list[float]] | None = Field(
         default=None,
-        description="Magnetic track (heading) in degrees 0-359 for each vertex in `path.coordinates`. "  # noqa: E501
-        "Same length as `coordinates`. Omitted when `include_path` is false.",
-        examples=[[90, 315, 315]],
+        description="Ground track (heading) timeseries as `[[unix_epoch_s, degrees_0_359], ...]`. "
+        "Rounded to the nearest integer degree. "
+        "Derived from the path-simplified points, then further reduced by TD-TR with ε=5°. "
+        "Step-interpolated: forward-fill each entry to the next. "
+        "Timestamps are independent of `timestamps` (different simplification pass). "
+        "Omitted when `include_path` is false.",
+        examples=[[[1743501600.0, 90], [1743505200.0, 315]]],
+    )
+    path_gs: list[list[float]] | None = Field(
+        default=None,
+        description="Ground speed timeseries as `[[unix_epoch_s, knots], ...]`. "
+        "Rounded to the nearest integer knot. "
+        "Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. "
+        "Step-interpolated: forward-fill each entry to the next. "
+        "Null when no ground speed data was available for this flight.",
+        examples=[[[1743501600.0, 450], [1743505200.0, 460]]],
+    )
+    path_vr: list[list[float]] | None = Field(
+        default=None,
+        description="Vertical rate timeseries as `[[unix_epoch_s, fpm], ...]`. "
+        "Rounded to the nearest integer fpm. Positive = climbing, negative = descending. "
+        "Derived from the path-simplified points, then further reduced by TD-TR with ε=100 fpm. "
+        "Step-interpolated: forward-fill each entry to the next. "
+        "Null when no vertical rate data was available for this flight.",
+        examples=[[[1743501600.0, 0], [1743505200.0, -512]]],
+    )
+    path_ias: list[list[float]] | None = Field(
+        default=None,
+        description="Indicated airspeed timeseries as `[[unix_epoch_s, knots], ...]`. "
+        "Rounded to the nearest integer knot. "
+        "Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. "
+        "Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). "
+        "Step-interpolated: forward-fill each entry to the next. "
+        "Null when no IAS data was available for this flight.",
+        examples=[[[1743501600.0, 275]]],
     )
     squawk_runs: list[tuple[float, str]] | None = Field(
         default=None,

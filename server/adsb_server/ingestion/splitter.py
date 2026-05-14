@@ -128,7 +128,7 @@ def build_squawk_runs(points: list[RawPoint]) -> list[tuple[float, str]]:
 # TD-TR epsilons for secondary scalar passes.
 _TRACK_EPSILON_DEG = 5.0
 _GS_EPSILON_KT = 5.0
-_VR_EPSILON_FPM = 50.0
+_VR_EPSILON_FPM = 100.0
 _IAS_EPSILON_KT = 5.0
 
 

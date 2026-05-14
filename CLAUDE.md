@@ -29,6 +29,10 @@ ADS-B historical query platform at adsb.aero. Map-based UI for querying flight t
 
 All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) suppress tabular and interactive output when stdout is not a TTY. Always pipe through `cat`: `docker ps | cat`, `docker exec infra-postgres-1 psql ... | cat`, etc.
 
+**psql errors go to stderr**: always append `2>&1` before `| cat` when running psql so errors are visible: `docker exec infra-postgres-1 psql -U adsb -d postgres -c "..." 2>&1 | cat`. Without `2>&1`, a failed psql command silently produces no output.
+
+**Dropping the adsb database**: connect to the `postgres` database, not `adsb`, otherwise psql fails with "cannot drop the currently open database": `docker exec infra-postgres-1 psql -U adsb -d postgres -c "DROP DATABASE IF EXISTS adsb;" 2>&1 | cat`. Recreate with `CREATE DATABASE adsb TEMPLATE template_mobilitydb;`.
+
 **Compose setup**: All compose files live in `infra/`. Run all `docker compose` commands from that directory. The `.env` file lives at the repo root; `infra/.env` is a symlink to it (create once with `ln -sf ../.env infra/.env` if missing).
 
 **Dev stack**: `make dev` (or `cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`). Adds the `vite` service and mounts `infra/nginx/dev.conf`. Browser entry point: `http://localhost`.

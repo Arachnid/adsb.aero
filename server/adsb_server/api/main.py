@@ -128,6 +128,9 @@ _FLIGHT_COLS = f"""
     ST_AsGeoJSON(endValue(f.path)::geometry, 6) AS end_point,
     asText(f.path) AS path_text,
     asText(f.path_tracks) AS path_tracks_text,
+    asText(f.path_gs) AS path_gs_text,
+    asText(f.path_vr) AS path_vr_text,
+    asText(f.path_ias) AS path_ias_text,
     asText(f.squawk_seq) AS squawk_seq_text,
     asText(f.alt_correction_ft) AS alt_correction_ft_text,
     f.raw_point_count,
@@ -140,21 +143,15 @@ _INSTANT_RE = re.compile(
     r"POINT\s+Z\s*\(\s*([^\s]+)\s+([^\s]+)\s+([^\s]+)\s*\)@([^,\]\)]+)",
     re.IGNORECASE,
 )
-_TINT_INSTANT_RE = re.compile(r"(-?\d+)@")
+_TINT_SERIES_RE = re.compile(r"(-?\d+)@(\d{4}-\d{2}-\d{2}[^,\[\]\{\}]*)")
 _TTEXT_INSTANT_RE = re.compile(r"([^@,\[\]]+)@([^,\[\]]+)")
 _TFLOAT_INSTANT_RE = re.compile(r"(-?[\d.]+(?:[eE][+-]?\d+)?)@(\d{4}-\d{2}-\d{2}[^,\[\]\{\}]*)")
 
 
-def _parse_path(
-    path_text: str,
-    path_tracks_text: str,
-) -> tuple[GeoJSONLineStringZ, list[float], list[int]]:
-    """Parse MobilityDB tgeompoint and tint text representations.
+def _parse_path(path_text: str) -> tuple[GeoJSONLineStringZ, list[float]]:
+    """Parse MobilityDB tgeompoint text into a GeoJSON LineString and unix timestamps.
 
-    path_text format:    '[POINT Z (lon lat alt)@YYYY-MM-DD HH:MM:SS+00, ...]'
-    path_tracks_text:    '[val@YYYY-MM-DD HH:MM:SS+00, ...]'
-
-    Returns (GeoJSON LineString, timestamps as unix epochs, track angles).
+    Format: '[POINT Z (lon lat alt)@YYYY-MM-DD HH:MM:SS+00, ...]'
     Coordinates rounded to 6 decimal places.
     """
     coords_3d: list[tuple[float, float, float]] = []
@@ -164,15 +161,25 @@ def _parse_path(
         lat = round(float(m.group(2)), 6)
         alt = round(float(m.group(3)), 6)
         ts_str = m.group(4).strip()
-        # Normalise "+00" → "+00:00" so fromisoformat accepts it
         if ts_str.endswith("+00"):
             ts_str = ts_str + ":00"
         timestamps.append(datetime.fromisoformat(ts_str).timestamp())
         coords_3d.append((lon, lat, alt))
+    return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps
 
-    path_tracks = [int(m.group(1)) for m in _TINT_INSTANT_RE.finditer(path_tracks_text)]
 
-    return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps, path_tracks
+def _parse_tint_series(text: str | None) -> list[list[float]] | None:
+    """Parse a MobilityDB stepwise tint text into [[epoch_s, value], ...] pairs."""
+    if not text:
+        return None
+    result: list[list[float]] = []
+    for m in _TINT_SERIES_RE.finditer(text):
+        val = int(m.group(1))
+        ts_str = m.group(2).strip()
+        if ts_str.endswith("+00"):
+            ts_str += ":00"
+        result.append([datetime.fromisoformat(ts_str).timestamp(), val])
+    return result if result else None
 
 
 def _parse_squawk_seq(text: str | None) -> list[tuple[float, str]]:
@@ -205,10 +212,17 @@ def _parse_alt_correction(text: str | None) -> list[list[float]] | None:
 def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDetail:
     path = None
     timestamps = None
-    filtered_tracks = None
+    path_tracks = None
+    path_gs = None
+    path_vr = None
+    path_ias = None
     squawk_runs = None
     if include_path:
-        path, timestamps, filtered_tracks = _parse_path(row["path_text"], row["path_tracks_text"])
+        path, timestamps = _parse_path(row["path_text"])
+        path_tracks = _parse_tint_series(row["path_tracks_text"])
+        path_gs = _parse_tint_series(row["path_gs_text"])
+        path_vr = _parse_tint_series(row["path_vr_text"])
+        path_ias = _parse_tint_series(row["path_ias_text"])
         squawk_runs = _parse_squawk_seq(row["squawk_seq_text"])
     alt_correction_ft = _parse_alt_correction(row["alt_correction_ft_text"])
     return FlightDetail(
@@ -224,7 +238,10 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
         point_count=row["point_count"],
         path=path,
         timestamps=timestamps,
-        path_tracks=filtered_tracks,
+        path_tracks=path_tracks,
+        path_gs=path_gs,
+        path_vr=path_vr,
+        path_ias=path_ias,
         squawk_runs=squawk_runs,
         alt_correction_ft=alt_correction_ft,
         raw_point_count=row["raw_point_count"],

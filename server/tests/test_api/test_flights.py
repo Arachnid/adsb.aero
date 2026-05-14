@@ -38,8 +38,18 @@ async def test_get_flight_happy_path(api_client: AsyncClient) -> None:
     assert len(timestamps) == 3
     assert timestamps[0] == pytest.approx(1743501600.0)
 
-    # Tracks
-    assert data["path_tracks"] == [90, 315, 315]
+    # path_tracks: [[ts, degrees], ...] timeseries (independent of path vertices)
+    pt = data["path_tracks"]
+    assert pt is not None
+    assert len(pt) == 3
+    assert pt[0] == [pytest.approx(1743501600.0), 90]
+    assert pt[1] == [pytest.approx(1743505200.0), 315]
+    assert pt[2] == [pytest.approx(1743508800.0), 315]
+
+    # New series: null in test data (not inserted)
+    assert data["path_gs"] is None
+    assert data["path_vr"] is None
+    assert data["path_ias"] is None
 
     # Squawk runs: two instants with the same code define the temporal extent
     assert data["squawk_runs"] == [[1743501600.0, "1234"], [1743508800.0, "1234"]]
