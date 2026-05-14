@@ -57,9 +57,11 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
     case "region": {
       const geom = shapeToGeometry(pred, bounds);
       const v: SpatioTemporalAltitudeValue = {
+        altitude_min_ref: "ft",
+        altitude_max_ref: "ft",
         ...(geom ? { geometry: geom } : {}),
-        ...(pred.altMin !== null ? { altitude_min_ft: pred.altMin } : {}),
-        ...(pred.altMax !== null ? { altitude_max_ft: pred.altMax } : {}),
+        ...(pred.altMin !== null ? { altitude_min: pred.altMin } : {}),
+        ...(pred.altMax !== null ? { altitude_max: pred.altMax } : {}),
         ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
         ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
         ...(pred.squawkCodes.length > 0 ? { squawk_codes: pred.squawkCodes } : {}),
@@ -70,9 +72,11 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
     case "always_within": {
       const geom = shapeToGeometry(pred, bounds);
       const v: SpatioTemporalAltitudeValue = {
+        altitude_min_ref: "ft",
+        altitude_max_ref: "ft",
         ...(geom ? { geometry: geom } : {}),
-        ...(pred.altMin !== null ? { altitude_min_ft: pred.altMin } : {}),
-        ...(pred.altMax !== null ? { altitude_max_ft: pred.altMax } : {}),
+        ...(pred.altMin !== null ? { altitude_min: pred.altMin } : {}),
+        ...(pred.altMax !== null ? { altitude_max: pred.altMax } : {}),
         ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
         ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
         ...(pred.squawkCodes.length > 0 ? { squawk_codes: pred.squawkCodes } : {}),

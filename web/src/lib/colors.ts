@@ -88,22 +88,59 @@ export function catToColor(cat: string | null | undefined): RGBA {
   return (cat !== null && cat !== undefined && CAT_COLORS[cat]) || CAT_DEFAULT;
 }
 
-// Time-of-day: hue rotates through the day.
-// 00:00 → blue, 06:00 → red/orange, 12:00 → yellow, 18:00 → purple.
-function hslToRgb(hDeg: number, s: number, l: number): [number, number, number] {
-  const h = ((hDeg % 360) + 360) % 360;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number): number => {
-    const k = (n + h / 30) % 12;
-    return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-  };
-  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+export const GRAY: RGBA = [150, 150, 150, 180];
+
+// Interpolate through an evenly-spaced stop array at t ∈ [0, 1].
+function piecewiseLerp(stops: RGBA[], t: number): RGBA {
+  const n = stops.length;
+  const idx = Math.max(0, Math.min(t, 1)) * (n - 1);
+  const lo = Math.min(Math.floor(idx), n - 2);
+  const c0 = stops[lo]; const c1 = stops[lo + 1];
+  if (!c0 || !c1) return GRAY;
+  return lerpColor(c0, c1, idx - lo);
 }
 
-export function todToColor(startTs: string): RGBA {
-  const d = new Date(startTs);
-  const hour = d.getUTCHours() + d.getUTCMinutes() / 60;
-  const hue = ((hour / 24) * 360 + 240) % 360;
-  const [r, g, b] = hslToRgb(hue, 0.85, 0.55);
-  return [r, g, b, 220];
+// Vertical speed: diverging red (descending) → gray (level) → blue (climbing).
+// Stops are evenly spaced in sqrt-curved space; physical breakpoints ≈ ±3000,
+// ±1300, ±300, 0 fpm. This keeps ±500 fpm visually distinct from level.
+const VS_STOPS: RGBA[] = [
+  [220,  50,  50, 220], // ≈ −3000 fpm — deep red
+  [245, 110,  60, 220], // ≈ −1300 fpm — orange-red
+  [200, 175, 165, 220], // ≈ −  300 fpm — warm gray
+  [170, 170, 170, 220], //      0 fpm — neutral gray
+  [165, 175, 205, 220], // ≈ +  300 fpm — cool gray
+  [ 90, 140, 240, 220], // ≈ +1300 fpm — medium blue
+  [ 50,  90, 220, 220], // ≈ +3000 fpm — deep blue
+];
+
+export function vsToColor(vsFpm: number | null | undefined): RGBA {
+  if (vsFpm == null) return GRAY;
+  const clamped = Math.max(-3000, Math.min(vsFpm, 3000));
+  // Signed sqrt: maps ±500 fpm to ±41% of full scale (vs ±17% linearly).
+  const sign = clamped >= 0 ? 1 : -1;
+  const curved = sign * Math.sqrt(Math.abs(clamped) / 3000); // [-1, 1]
+  return piecewiseLerp(VS_STOPS, (curved + 1) / 2);
+}
+
+// Ground speed and IAS: dark navy → blue → green → yellow → red.
+// Stops evenly spaced in sqrt-curved space; physical breakpoints for GS ≈
+// 0, 24, 96, 216, 384, 600 kt — GA cruise (120–200 kt) lands in the
+// blue-green range, clearly distinct from jet cruise (450+ kt, yellow-red).
+const SPEED_STOPS: RGBA[] = [
+  [ 50,  50,  80, 220], //   0 kt — dark navy
+  [ 60,  90, 160, 220], // ≈  25 kt — navy blue
+  [ 80, 165, 230, 220], // ≈  95 kt — light blue
+  [ 80, 205, 130, 220], // ≈ 215 kt — green
+  [230, 200,  70, 220], // ≈ 385 kt — yellow
+  [220,  50,  50, 220], // max kt — red
+];
+
+export function gsToColor(gsKt: number | null | undefined): RGBA {
+  if (gsKt == null) return GRAY;
+  return piecewiseLerp(SPEED_STOPS, Math.sqrt(Math.max(0, Math.min(gsKt, 600)) / 600));
+}
+
+export function iasToColor(iasKt: number | null | undefined): RGBA {
+  if (iasKt == null) return GRAY;
+  return piecewiseLerp(SPEED_STOPS, Math.sqrt(Math.max(0, Math.min(iasKt, 450)) / 450));
 }

@@ -18,6 +18,8 @@ ADS-B historical query platform at adsb.aero. Map-based UI for querying flight t
 - New code includes its tests in the same change. Coverage drops on changed files block the commit.
 - Type hints on every Python function. TypeScript strict mode, no `any` without a comment justifying it.
 
+**Update CLAUDE.md** any time something doesn't work the first time and you learn the correct approach. This file should always reflect what is actually true about working in this repo.
+
 ## Test-running
 
 - Server: `pytest` from an activated venv, or `server/.venv/bin/pytest` (integration tests use testcontainers; Docker must be running)
@@ -44,6 +46,12 @@ All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) s
 **Rebuilding a service**: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d <service>` from `infra/` (include both `-f` flags when in dev).
 
 **Full dev setup guide**: `docs/dev-setup.md`.
+
+## Web / TypeScript types
+
+After any Python API model change, regenerate frontend types with `make gen-types` (runs from repo root). This exports the OpenAPI schema from the live FastAPI app and runs `openapi-typescript` to update `web/src/types/api.ts`. Do not edit that file by hand.
+
+`pnpm tsc --noEmit` for a type-check without building. The `dist/` directory may be owned by root (written by Docker); if `pnpm build` fails with EACCES on `dist/`, that's a permissions issue unrelated to the code — use `sudo -A rm -rf web/dist` to clear it.
 
 ## Python environment
 

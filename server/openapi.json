@@ -129,7 +129,8 @@
                             ]
                           ]
                         },
-                        "altitude_min_ft": 35000,
+                        "altitude_min": 35000,
+                        "altitude_min_ref": "ft",
                         "time_from": "2026-03-30T00:00:00Z",
                         "time_to": "2026-03-31T00:00:00Z"
                       }
@@ -259,9 +260,6 @@
                 },
                 {
                   "$ref": "#/components/schemas/TrajectoryWithin"
-                },
-                {
-                  "$ref": "#/components/schemas/TrajectoryDisjoint"
                 },
                 {
                   "$ref": "#/components/schemas/StartsWithin"
@@ -595,7 +593,7 @@
                 "type": "null"
               }
             ],
-            "description": "Simplified flight path as a GeoJSON LineString. Coordinates are `[longitude, latitude, altitude_ft]`. Altitude is pressure altitude in feet (QNH correction not applied). Ground-roll points are excluded. Omitted when the request sets `include_path` to false.",
+            "description": "Simplified flight path as a GeoJSON LineString. Coordinates are `[longitude, latitude, altitude_ft]`. Altitude is pressure altitude in feet (QNH correction not applied). Ground-roll points are excluded. Simplified using two-pass TD-TR: spatial pass with \u03b5=50 m (cross-track error), then altitude pass with \u03b5=100 ft on the surviving vertices. Squawk change points are always preserved and divide simplification intervals. Omitted when the request sets `include_path` to false.",
             "examples": [
               {
                 "coordinates": [
@@ -645,7 +643,10 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "integer"
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
                 },
                 "type": "array"
               },
@@ -654,12 +655,103 @@
               }
             ],
             "title": "Path Tracks",
-            "description": "Magnetic track (heading) in degrees 0-359 for each vertex in `path.coordinates`. Same length as `coordinates`. Omitted when `include_path` is false.",
+            "description": "Ground track (heading) timeseries as `[[unix_epoch_s, degrees_0_359], ...]`. Rounded to the nearest integer degree. Derived from the path-simplified points, then further reduced by TD-TR with \u03b5=5\u00b0. Step-interpolated: forward-fill each entry to the next. Timestamps are independent of `timestamps` (different simplification pass). Omitted when `include_path` is false.",
             "examples": [
               [
-                90,
-                315,
-                315
+                [
+                  1743501600.0,
+                  90
+                ],
+                [
+                  1743505200.0,
+                  315
+                ]
+              ]
+            ]
+          },
+          "path_gs": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Gs",
+            "description": "Ground speed timeseries as `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with \u03b5=5 kt. Step-interpolated: forward-fill each entry to the next. Null when no ground speed data was available for this flight.",
+            "examples": [
+              [
+                [
+                  1743501600.0,
+                  450
+                ],
+                [
+                  1743505200.0,
+                  460
+                ]
+              ]
+            ]
+          },
+          "path_vr": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Vr",
+            "description": "Vertical rate timeseries as `[[unix_epoch_s, fpm], ...]`. Rounded to the nearest integer fpm. Positive = climbing, negative = descending. Derived from the path-simplified points, then further reduced by TD-TR with \u03b5=100 fpm. Step-interpolated: forward-fill each entry to the next. Null when no vertical rate data was available for this flight.",
+            "examples": [
+              [
+                [
+                  1743501600.0,
+                  0
+                ],
+                [
+                  1743505200.0,
+                  -512
+                ]
+              ]
+            ]
+          },
+          "path_ias": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Ias",
+            "description": "Indicated airspeed timeseries as `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with \u03b5=5 kt. Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). Step-interpolated: forward-fill each entry to the next. Null when no IAS data was available for this flight.",
+            "examples": [
+              [
+                [
+                  1743501600.0,
+                  275
+                ]
               ]
             ]
           },
@@ -692,6 +784,36 @@
                 [
                   1743501600.0,
                   "1234"
+                ]
+              ]
+            ]
+          },
+          "alt_correction_ft": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Correction Ft",
+            "description": "QNH altitude correction timeseries as `[[unix_epoch_s, correction_ft], ...]`. Step-interpolated: forward-fill each entry to the next to get the correction at any time. Add to the pressure altitude from `path.coordinates[*][2]` to obtain feet MSL. Null when no correction data was available at ingestion time.",
+            "examples": [
+              [
+                [
+                  1743501600.0,
+                  14.5
+                ],
+                [
+                  1743505200.0,
+                  14.5
                 ]
               ]
             ]
@@ -1081,9 +1203,6 @@
                 "$ref": "#/components/schemas/TrajectoryWithin"
               },
               {
-                "$ref": "#/components/schemas/TrajectoryDisjoint"
-              },
-              {
                 "$ref": "#/components/schemas/StartsWithin"
               },
               {
@@ -1132,9 +1251,6 @@
                 },
                 {
                   "$ref": "#/components/schemas/TrajectoryWithin"
-                },
-                {
-                  "$ref": "#/components/schemas/TrajectoryDisjoint"
                 },
                 {
                   "$ref": "#/components/schemas/StartsWithin"
@@ -1204,9 +1320,6 @@
               },
               {
                 "$ref": "#/components/schemas/TrajectoryWithin"
-              },
-              {
-                "$ref": "#/components/schemas/TrajectoryDisjoint"
               },
               {
                 "$ref": "#/components/schemas/StartsWithin"
@@ -1360,7 +1473,7 @@
             "title": "Geometry",
             "description": "GeoJSON geometry or Circle to test the flight path against. Omit for a time- or altitude-only filter."
           },
-          "altitude_min_ft": {
+          "altitude_min": {
             "anyOf": [
               {
                 "type": "number"
@@ -1369,10 +1482,20 @@
                 "type": "null"
               }
             ],
-            "title": "Altitude Min Ft",
-            "description": "Minimum altitude bound in feet (inclusive). Compared against the bounding box of the simplified path \u2014 an approximation."
+            "title": "Altitude Min",
+            "description": "Lower altitude bound (inclusive). Interpretation depends on `altitude_min_ref`."
           },
-          "altitude_max_ft": {
+          "altitude_min_ref": {
+            "type": "string",
+            "enum": [
+              "fl",
+              "ft"
+            ],
+            "title": "Altitude Min Ref",
+            "description": "Reference system for `altitude_min`. `'fl'`: flight level (e.g. `100` = FL100 = 10 000 ft pressure altitude). `'ft'` (default): feet MSL using the stored QNH correction.",
+            "default": "ft"
+          },
+          "altitude_max": {
             "anyOf": [
               {
                 "type": "number"
@@ -1381,8 +1504,18 @@
                 "type": "null"
               }
             ],
-            "title": "Altitude Max Ft",
-            "description": "Maximum altitude bound in feet (inclusive). Compared against the bounding box of the simplified path \u2014 an approximation."
+            "title": "Altitude Max",
+            "description": "Upper altitude bound (inclusive). Interpretation depends on `altitude_max_ref`."
+          },
+          "altitude_max_ref": {
+            "type": "string",
+            "enum": [
+              "fl",
+              "ft"
+            ],
+            "title": "Altitude Max Ref",
+            "description": "Reference system for `altitude_max`. `'fl'`: flight level (e.g. `100` = FL100 = 10 000 ft pressure altitude). `'ft'` (default): feet MSL using the stored QNH correction.",
+            "default": "ft"
           },
           "time_from": {
             "anyOf": [
@@ -1395,7 +1528,7 @@
               }
             ],
             "title": "Time From",
-            "description": "Inclusive lower bound: the flight must still be active at this time (end_ts >= time_from)."
+            "description": "Inclusive lower bound on the time window. When combined with `geometry` or altitude, constrains the intersection to occur within this window. Without geometry/altitude, filters by activity window (end_ts >= time_from)."
           },
           "time_to": {
             "anyOf": [
@@ -1408,7 +1541,28 @@
               }
             ],
             "title": "Time To",
-            "description": "Exclusive upper bound: the flight must have started by this time (start_ts < time_to)."
+            "description": "Exclusive upper bound on the time window. When combined with `geometry` or altitude, constrains the intersection to occur within this window. Without geometry/altitude, filters by activity window (start_ts < time_to)."
+          },
+          "squawk_codes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squawk Codes",
+            "description": "Transponder squawk codes to match (OR semantics). When `geometry` is set, only squawk codes broadcast while the flight was inside the geometry (and within any altitude/time window) are checked. Without `geometry`, any code broadcast during the flight matches.",
+            "examples": [
+              [
+                "7700",
+                "7600"
+              ]
+            ]
           }
         },
         "type": "object",
@@ -1512,19 +1666,6 @@
         "title": "StartsWithin",
         "description": "Flights whose departure point falls within the given geometry and/or departs within the given time window."
       },
-      "TrajectoryDisjoint": {
-        "properties": {
-          "trajectory_disjoint": {
-            "$ref": "#/components/schemas/SpatioTemporalAltitudeValue"
-          }
-        },
-        "type": "object",
-        "required": [
-          "trajectory_disjoint"
-        ],
-        "title": "TrajectoryDisjoint",
-        "description": "Flights whose simplified path does not intersect the given geometry and/or were active during the given time window."
-      },
       "TrajectoryIntersects": {
         "properties": {
           "trajectory_intersects": {
@@ -1536,7 +1677,7 @@
           "trajectory_intersects"
         ],
         "title": "TrajectoryIntersects",
-        "description": "Flights whose simplified path crosses the given geometry and/or were active during the given time window."
+        "description": "Flights whose simplified path intersects the given constraints.\n\nWhen geometry, altitude, and/or time are combined, all constraints are applied\nsimultaneously \u2014 the intersection must occur at the right altitude and within the\ntime window, not just at any point during the flight. Squawk codes are similarly\nchecked only at instants when the path was inside the geometry (if provided)."
       },
       "TrajectoryWithin": {
         "properties": {
@@ -1549,7 +1690,7 @@
           "trajectory_within"
         ],
         "title": "TrajectoryWithin",
-        "description": "Flights whose entire simplified path lies within the given geometry and/or were active during the given time window."
+        "description": "Flights whose entire simplified path lies within the given geometry.\n\nAltitude and time constraints narrow the portion of the path that must lie within\nthe geometry; squawk codes are checked only at instants when the path was inside\nthe geometry (if provided)."
       },
       "ValidationError": {
         "properties": {

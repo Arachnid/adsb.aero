@@ -10,13 +10,13 @@ import { useEffect, useRef, useState } from "react";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { LineLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { FlightDetail } from "../../lib/api";
-import { altToColor, catToColor, squawkToColor, todToColor, type RGBA } from "../../lib/colors";
+import { altToColor, catToColor, squawkToColor, vsToColor, gsToColor, iasToColor, type RGBA } from "../../lib/colors";
 
 import workerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 setWorkerUrl(workerUrl);
 
 type Basemap = "dark" | "light" | "sat";
-type ColorMode = "alt" | "cat" | "tod" | "sqk";
+export type ColorMode = "alt" | "cat" | "vs" | "gs" | "ias" | "sqk";
 
 // Precomputed segment for LineLayer — one per adjacent vertex pair in a path.
 type Seg = {
@@ -27,10 +27,25 @@ type Seg = {
   altFtTo: number;
   cat: string | null;
   squawk: string | null;
-  startTs: string;
   flightId: string;
   pointIdx: number;
+  vs: number | null;
+  gs: number | null;
+  ias: number | null;
 };
+
+// Step-interpolate (forward-fill) a [[ts, value], ...] series at a given timestamp.
+function stepValueAt(series: number[][] | null | undefined, ts: number): number | null {
+  if (!series || series.length === 0) return null;
+  let val: number | null = null;
+  for (const entry of series) {
+    const entryTs = entry[0]; const entryVal = entry[1];
+    if (entryTs === undefined || entryVal === undefined) continue;
+    if (entryTs <= ts) val = entryVal;
+    else break;
+  }
+  return val;
+}
 
 // Project cursor (lng/lat) onto segment [from, to], return t in [0, 1].
 function projectOntoSegment(
@@ -608,9 +623,11 @@ export function MapView({
           altFtTo: next[2],
           cat: f.emitter_category ?? null,
           squawk: squawkAt(runs, ts),
-          startTs: f.start_ts,
           flightId: f.flight_id,
           pointIdx: i,
+          vs: stepValueAt(f.path_vr, ts),
+          gs: stepValueAt(f.path_gs, ts),
+          ias: stepValueAt(f.path_ias, ts),
         };
       });
     });
@@ -619,13 +636,12 @@ export function MapView({
 
     const getColor = (s: Seg): RGBA => {
       const base =
-        colorMode === "alt"
-          ? altToColor(s.altMid)
-          : colorMode === "cat"
-            ? catToColor(s.cat)
-            : colorMode === "sqk"
-              ? squawkToColor(s.squawk)
-              : todToColor(s.startTs);
+        colorMode === "alt" ? altToColor(s.altMid) :
+        colorMode === "cat" ? catToColor(s.cat) :
+        colorMode === "sqk" ? squawkToColor(s.squawk) :
+        colorMode === "vs"  ? vsToColor(s.vs) :
+        colorMode === "gs"  ? gsToColor(s.gs) :
+        iasToColor(s.ias);
       if (hasSel && s.flightId !== selectedFlightId) {
         return [base[0], base[1], base[2], Math.round(base[3] * 0.2)];
       }

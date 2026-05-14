@@ -1,4 +1,4 @@
-type ColorMode = "alt" | "cat" | "tod" | "sqk";
+import type { ColorMode } from "../map/MapView";
 
 interface LegendProps {
   colorMode: ColorMode;
@@ -25,7 +25,12 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
       }}
     >
       <LegendTitle>
-        {colorMode === "alt" ? "Altitude (ft)" : colorMode === "cat" ? "Category" : colorMode === "sqk" ? "Squawk" : "Time of day"}
+        {colorMode === "alt" ? "Altitude (ft)" :
+         colorMode === "cat" ? "Category" :
+         colorMode === "sqk" ? "Squawk" :
+         colorMode === "vs"  ? "Vert. speed (fpm)" :
+         colorMode === "gs"  ? "Ground speed (kt)" :
+                               "Indicated AS (kt)"}
       </LegendTitle>
 
       {colorMode === "alt" && (
@@ -94,12 +99,30 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
         </>
       )}
 
-      {colorMode === "tod" && (
+      {colorMode === "vs" && (
         <>
-          <LegendRow swatch="#6ea8ff">00–06</LegendRow>
-          <LegendRow swatch="#f0e066">06–12</LegendRow>
-          <LegendRow swatch="#f0a04d">12–18</LegendRow>
-          <LegendRow swatch="#9b6ef0">18–24</LegendRow>
+          {/* 7 stops evenly spaced in sqrt space ≈ −3000, −1300, −300, 0, +300, +1300, +3000 fpm */}
+          <GradientBar gradient="linear-gradient(to right, #dc3232 0%, #f56e3c 16.7%, #c8afa5 33.3%, #aaaaaa 50%, #a5afcd 66.7%, #5a8cf0 83.3%, #325adc 100%)" />
+          <GradientLabels left="−3000" center="0" right="+3000" />
+          <LegendRow swatch="#969696">No data</LegendRow>
+        </>
+      )}
+
+      {colorMode === "gs" && (
+        <>
+          {/* 6 stops evenly spaced in sqrt space ≈ 0, 24, 96, 216, 384, 600 kt */}
+          <GradientBar gradient="linear-gradient(to right, #323250 0%, #3c5aa0 20%, #50a5e6 40%, #50cd82 60%, #e6c846 80%, #dc3232 100%)" />
+          <GradientLabels left="0" center="~215" right="600" />
+          <LegendRow swatch="#969696">No data</LegendRow>
+        </>
+      )}
+
+      {colorMode === "ias" && (
+        <>
+          {/* 6 stops evenly spaced in sqrt space ≈ 0, 18, 72, 162, 288, 450 kt */}
+          <GradientBar gradient="linear-gradient(to right, #323250 0%, #3c5aa0 20%, #50a5e6 40%, #50cd82 60%, #e6c846 80%, #dc3232 100%)" />
+          <GradientLabels left="0" center="~160" right="450" />
+          <LegendRow swatch="#969696">No data</LegendRow>
         </>
       )}
     </div>
@@ -126,6 +149,22 @@ function LegendTitle({
       }}
     >
       {children}
+    </div>
+  );
+}
+
+function GradientBar({ gradient }: { gradient: string }): React.ReactElement {
+  return (
+    <div style={{ height: 8, borderRadius: 2, background: gradient, marginBottom: 4 }} />
+  );
+}
+
+function GradientLabels({ left, center, right }: { left: string; center: string; right: string }): React.ReactElement {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, color: "var(--fg-3)", marginBottom: 4 }}>
+      <span>{left}</span>
+      <span>{center}</span>
+      <span>{right}</span>
     </div>
   );
 }

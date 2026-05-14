@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MapView, MapBounds, HoveredPoint } from "./components/map/MapView";
+import { MapView, MapBounds, HoveredPoint, ColorMode } from "./components/map/MapView";
 
 // Numeric codes from the OpenAIP API
 const AIRSPACE_TYPES: Record<number, string> = {
@@ -66,7 +66,6 @@ import { compileGroup } from "./lib/compileQuery";
 import { postQuery, getDataRange, FlightDetail, ApiError, DataRange } from "./lib/api";
 
 type Basemap = "dark" | "light" | "sat";
-type ColorMode = "alt" | "cat" | "tod" | "sqk";
 type Theme = "dark" | "light";
 
 const SIDEBAR_W = 340;
