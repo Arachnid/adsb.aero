@@ -207,6 +207,8 @@ describe("QueryBuilderBody", () => {
       lng: null,
       radiusNm: 25,
       polygon: null,
+      airspaceName: null,
+      airspaceLabel: null,
       timeFrom: "",
       timeTo: "",
     };
@@ -274,29 +276,37 @@ describe("QueryBuilderBody", () => {
       regionName: "Region 1",
       shape: "none" as const,
       polygon: null,
+      airspaceName: null,
+      airspaceLabel: null,
       lat: null,
       lng: null,
       radiusNm: 25,
       altMin: null,
+      altMinRef: "ft" as const,
       altMax: null,
+      altMaxRef: "ft" as const,
       timeFrom: "",
       timeTo: "",
       squawkCodes: [] as string[],
+      dwellMinMin: null,
+      dwellMaxMin: null,
+      distanceMinNm: null,
+      distanceMaxNm: null,
     };
 
     it("shows altitude checkbox even when shape=none", () => {
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
       expect(screen.getByText("Altitude range")).toBeDefined();
-      expect(screen.queryByText("Alt min (ft)")).toBeNull();
+      expect(screen.queryByText("Alt min")).toBeNull();
     });
 
     it("shows altitude inputs after checking the altitude checkbox", () => {
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
       fireEvent.click(screen.getByLabelText("Altitude range"));
-      expect(screen.getByText("Alt min (ft)")).toBeDefined();
-      expect(screen.getByText("Alt max (ft)")).toBeDefined();
+      expect(screen.getByText("Alt min")).toBeDefined();
+      expect(screen.getByText("Alt max")).toBeDefined();
     });
 
     it("shows Time range checkbox", () => {
@@ -371,6 +381,8 @@ describe("QueryBuilderBody", () => {
       lng: null,
       radiusNm: 25,
       polygon: null,
+      airspaceName: null,
+      airspaceLabel: null,
       timeFrom: "",
       timeTo: "",
     };
@@ -389,7 +401,7 @@ describe("QueryBuilderBody", () => {
       const onChange = vi.fn();
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
-      fireEvent.click(screen.getByText("Viewport"));
+      fireEvent.click(screen.getByText("View"));
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
       const pred = updated.items[0];
       expect(pred.kind === "starts_within" && pred.shape).toBe("viewport");

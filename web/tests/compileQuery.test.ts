@@ -14,6 +14,18 @@ function anyGroup(...items: FilterGroup["items"]): FilterGroup {
 const BOUNDS: MapBounds = [-2, 50, 2, 52];
 const POLYGON: [number, number][] = [[-2, 50], [2, 50], [2, 52], [-2, 52]];
 
+// Fields required by IntersectsPred / AlwaysWithinPred that have no bearing on most tests.
+const REGION_DEFAULTS = {
+  altMinRef: "ft" as const,
+  altMaxRef: "ft" as const,
+  airspaceName: null,
+  airspaceLabel: null,
+  dwellMinMin: null,
+  dwellMaxMin: null,
+  distanceMinNm: null,
+  distanceMaxNm: null,
+};
+
 // ---- empty group -----------------------------------------------------------
 
 describe("empty group", () => {
@@ -179,9 +191,11 @@ describe("region", () => {
       id: "1", kind: "region", regionName: "R", shape: "circle",
       lat: 51.5, lng: -0.1, radiusNm: 20,
       polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      ...REGION_DEFAULTS,
     });
     expect(compileGroup(g, null)).toEqual({
       trajectory_intersects: {
+        altitude_min_ref: "ft", altitude_max_ref: "ft",
         geometry: { type: "Circle", coordinates: [-0.1, 51.5], radius: 20 * 1852 },
       },
     });
@@ -192,10 +206,11 @@ describe("region", () => {
       id: "1", kind: "region", regionName: "R", shape: "circle",
       lat: 51.5, lng: -0.1, radiusNm: 20,
       polygon: null, altMin: 10000, altMax: 40000, timeFrom: "", timeTo: "", squawkCodes: [],
+      ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
-    expect(result.trajectory_intersects.altitude_min_ft).toBe(10000);
-    expect(result.trajectory_intersects.altitude_max_ft).toBe(40000);
+    expect(result.trajectory_intersects.altitude_min).toBe(10000);
+    expect(result.trajectory_intersects.altitude_max).toBe(40000);
   });
 
   it("omits altitude fields when null", () => {
@@ -203,19 +218,23 @@ describe("region", () => {
       id: "1", kind: "region", regionName: "R", shape: "circle",
       lat: 51.5, lng: -0.1, radiusNm: 20,
       polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
-    expect("altitude_min_ft" in result.trajectory_intersects).toBe(false);
-    expect("altitude_max_ft" in result.trajectory_intersects).toBe(false);
+    expect("altitude_min" in result.trajectory_intersects).toBe(false);
+    expect("altitude_max" in result.trajectory_intersects).toBe(false);
   });
 
-  it("none shape always produces trajectory_intersects (even empty)", () => {
+  it("none shape always produces trajectory_intersects with default refs", () => {
     const g = group({
       id: "1", kind: "region", regionName: "R", shape: "none",
       lat: null, lng: null, radiusNm: 25,
       polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      ...REGION_DEFAULTS,
     });
-    expect(compileGroup(g, null)).toEqual({ trajectory_intersects: {} });
+    expect(compileGroup(g, null)).toEqual({
+      trajectory_intersects: { altitude_min_ref: "ft", altitude_max_ref: "ft" },
+    });
   });
 
   it("includes time fields", () => {
@@ -224,6 +243,7 @@ describe("region", () => {
       lat: null, lng: null, radiusNm: 25,
       polygon: null, altMin: null, altMax: null,
       timeFrom: "2025-03-15T06:00", timeTo: "2025-03-15T18:00", squawkCodes: [],
+      ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
     expect(result.trajectory_intersects.time_from).toBe("2025-03-15T06:00:00Z");
@@ -236,6 +256,7 @@ describe("region", () => {
       lat: null, lng: null, radiusNm: 25,
       polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
       squawkCodes: ["7700", "7600"],
+      ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
     expect(result.trajectory_intersects.squawk_codes).toEqual(["7700", "7600"]);
@@ -246,6 +267,7 @@ describe("region", () => {
       id: "1", kind: "region", regionName: "R", shape: "none",
       lat: null, lng: null, radiusNm: 25,
       polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
     expect("squawk_codes" in result.trajectory_intersects).toBe(false);
@@ -260,9 +282,11 @@ describe("always_within", () => {
       id: "1", kind: "always_within", regionName: "R", shape: "circle",
       lat: 51.5, lng: -0.1, radiusNm: 20,
       polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      ...REGION_DEFAULTS,
     });
     expect(compileGroup(g, null)).toEqual({
       trajectory_within: {
+        altitude_min_ref: "ft", altitude_max_ref: "ft",
         geometry: { type: "Circle", coordinates: [-0.1, 51.5], radius: 20 * 1852 },
       },
     });
@@ -274,10 +298,11 @@ describe("always_within", () => {
       lat: 51.5, lng: -0.1, radiusNm: 20,
       polygon: null, altMin: 5000, altMax: 30000,
       timeFrom: "2025-04-01T00:00", timeTo: "2025-04-01T12:00", squawkCodes: [],
+      ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_within: Record<string, unknown> };
-    expect(result.trajectory_within.altitude_min_ft).toBe(5000);
-    expect(result.trajectory_within.altitude_max_ft).toBe(30000);
+    expect(result.trajectory_within.altitude_min).toBe(5000);
+    expect(result.trajectory_within.altitude_max).toBe(30000);
     expect(result.trajectory_within.time_from).toBe("2025-04-01T00:00:00Z");
     expect(result.trajectory_within.time_to).toBe("2025-04-01T12:00:00Z");
   });
@@ -288,6 +313,7 @@ describe("always_within", () => {
       lat: null, lng: null, radiusNm: 25,
       polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
       squawkCodes: ["1200"],
+      ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_within: Record<string, unknown> };
     expect(result.trajectory_within.squawk_codes).toEqual(["1200"]);

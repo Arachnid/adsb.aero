@@ -31,11 +31,11 @@ interface AirspaceCandidate {
 
 function formatAltLimit(limit: AltLimit | null): string {
   if (!limit) return "GND";
-  return limit.ref === "fl" ? `FL${limit.value}` : `${limit.value.toLocaleString()} ft`;
+  return limit.ref === "fl" ? `FL${String(limit.value)}` : `${limit.value.toLocaleString()} ft`;
 }
 
 function airspaceSubtitle(c: AirspaceCandidate): string {
-  const type = AIRSPACE_TYPES[c.typeCode] ?? `Type ${c.typeCode}`;
+  const type = AIRSPACE_TYPES[c.typeCode] ?? `Type ${String(c.typeCode)}`;
   const cls = c.icaoClassCode !== null
     ? `Class ${ICAO_CLASSES[c.icaoClassCode] ?? String(c.icaoClassCode)}`
     : null;
@@ -244,14 +244,14 @@ export function App(): React.ReactElement {
         geometry: { type: string; coordinates: number[][][] };
       }> }) => {
         const candidates: AirspaceCandidate[] = data.items
-          .filter((item) => item.geometry?.type === "Polygon")
+          .filter((item) => item.geometry.type === "Polygon")
           .map((item) => ({
             id: item._id,
             name: item.name,
             typeCode: item.type,
             icaoClassCode: typeof item.icaoClass === "number" && item.icaoClass <= 6
               ? item.icaoClass : null,
-            country: item.country ?? "",
+            country: item.country,
             lowerLimit: openaipLimit(item.lowerLimit),
             upperLimit: openaipLimit(item.upperLimit),
             polygon: (item.geometry.coordinates[0] ?? []) as [number, number][],
@@ -260,8 +260,9 @@ export function App(): React.ReactElement {
         if (candidates.length === 0) {
           setAirspaceMenu(null);
         } else if (candidates.length === 1) {
+          const only = candidates[0];
           setAirspaceMenu(null);
-          applyAirspace(predId, candidates[0]!);
+          if (only) applyAirspace(predId, only);
         } else {
           setAirspaceMenu((m) => m ? { ...m, candidates } : null);
         }
@@ -602,7 +603,7 @@ function AirspacePickerMenu({
       if (ref.current && !ref.current.contains(e.target as Node)) onDismiss();
     };
     document.addEventListener("mousedown", handler);
-    return () => { document.removeEventListener("mousedown", handler); };
+    return (): void => { document.removeEventListener("mousedown", handler); };
   }, [onDismiss]);
 
   return (
@@ -649,8 +650,8 @@ function AirspacePickerMenu({
             textAlign: "left",
             color: "var(--fg-1)",
           }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-2)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-2)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
         >
           <AirspaceShapePreview polygon={c.polygon} />
           <div style={{ minWidth: 0 }}>

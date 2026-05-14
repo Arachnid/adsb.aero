@@ -594,19 +594,19 @@ function ShapeToggle({
 }): React.ReactElement {
   return (
     <div className="shape-toggle">
-      <button className={shape === "none" ? "active" : ""} onClick={() => onChange("none")}>
+      <button className={shape === "none" ? "active" : ""} onClick={() => { onChange("none"); }}>
         —
       </button>
-      <button className={shape === "circle" ? "active" : ""} onClick={() => onChange("circle")}>
+      <button className={shape === "circle" ? "active" : ""} onClick={() => { onChange("circle"); }}>
         <Circle size={12} /> Circle
       </button>
-      <button className={shape === "polygon" ? "active" : ""} onClick={() => onChange("polygon")}>
+      <button className={shape === "polygon" ? "active" : ""} onClick={() => { onChange("polygon"); }}>
         <Polygon size={12} /> Poly
       </button>
-      <button className={shape === "viewport" ? "active" : ""} onClick={() => onChange("viewport")}>
+      <button className={shape === "viewport" ? "active" : ""} onClick={() => { onChange("viewport"); }}>
         <Viewport size={12} /> View
       </button>
-      <button className={shape === "airspace" ? "active" : ""} onClick={() => onChange("airspace")}>
+      <button className={shape === "airspace" ? "active" : ""} onClick={() => { onChange("airspace"); }}>
         <Zone size={12} /> Zone
       </button>
     </div>
