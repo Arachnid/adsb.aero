@@ -10,7 +10,7 @@ import io
 import json
 import re
 import tarfile
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time as dt_time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -694,3 +694,247 @@ async def test_run_batch_keeps_herbie_cache_when_flag_set(
                     herbie_cache_dir=herbie_dir, keep_herbie_cache=True)
 
     assert old_cache.exists(), "old herbie cache dir should be kept when flag is set"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _process_and_correct (called directly, not via process pool)
+# ---------------------------------------------------------------------------
+
+
+class TestProcessAndCorrect:
+    """Call _process_and_correct in the main process so coverage can track it."""
+
+    def _make_state(
+        self,
+        staging: dict | None = None,
+        cutoff_ts: float | None = None,
+    ):
+        from unittest.mock import MagicMock
+
+        import adsb_server.ingestion.batch as batch_mod
+
+        batch_date = date(2021, 1, 1)
+        ct = (
+            cutoff_ts
+            if cutoff_ts is not None
+            else datetime.combine(batch_date, dt_time.max, tzinfo=UTC).timestamp()
+        )
+        return batch_mod._WorkerState(
+            correction_interp=MagicMock(),
+            t_min=0.0,
+            t_max=1e12,
+            batch_date=batch_date,
+            cutoff_ts=ct,
+            staging=staging or {},
+        )
+
+    def test_valid_trace_produces_finalized_flight(self, monkeypatch):
+        import adsb_server.ingestion.batch as batch_mod
+
+        monkeypatch.setattr(batch_mod, "_worker_state", self._make_state())
+        monkeypatch.setattr(batch_mod, "compute_correction_series", lambda *a, **kw: None)
+
+        raw = _make_trace_bytes("aabbcc")  # Dec 2020 timestamps, well before Jan 2021 cutoff
+        params_list, in_progress = batch_mod._process_and_correct(
+            ("traces/aa/trace_full_aabbcc.json.gz", raw)
+        )
+        assert len(params_list) == 1
+        assert params_list[0][0] == "aabbcc"  # icao24
+        assert in_progress is None
+
+    def test_in_progress_returned_when_points_near_cutoff(self, monkeypatch):
+        import adsb_server.ingestion.batch as batch_mod
+
+        cutoff_ts = datetime(2021, 1, 1, 23, 59, 59, tzinfo=UTC).timestamp()
+        monkeypatch.setattr(batch_mod, "_worker_state", self._make_state(cutoff_ts=cutoff_ts))
+        monkeypatch.setattr(batch_mod, "compute_correction_series", lambda *a, **kw: None)
+
+        raw = _make_trace_bytes(
+            "aabbcc",
+            base_ts=cutoff_ts - 30,
+            entries=[
+                [0.0, 51.5, -0.1, 35000.0, 450.0, 90.0, 0, None, None],
+                [30.0, 51.6, -0.2, 35100.0, 455.0, 91.0, 0, None, None],
+            ],
+        )
+        params_list, in_progress = batch_mod._process_and_correct(
+            ("traces/aa/trace_full_aabbcc.json.gz", raw)
+        )
+        assert in_progress is not None
+        assert in_progress.icao24 == "aabbcc"
+
+    def test_orphan_with_staging_produces_flight(self, monkeypatch):
+        from adsb_server.ingestion.models import RawFlight, RawPoint
+
+        import adsb_server.ingestion.batch as batch_mod
+
+        pts = [
+            RawPoint(ts=1000.0, lat=51.5, lon=-0.1, alt_baro=35000.0, track=90.0,
+                     squawk=None, new_leg=False, callsign=None, emitter_category=None),
+            RawPoint(ts=1060.0, lat=51.6, lon=-0.2, alt_baro=35100.0, track=91.0,
+                     squawk=None, new_leg=False, callsign=None, emitter_category=None),
+        ]
+        staging_flight = RawFlight(
+            icao24="aabbcc", callsign=None, icao_type="B738",
+            emitter_category=None, points=pts,
+        )
+        monkeypatch.setattr(batch_mod, "_worker_state", self._make_state(staging={"aabbcc": staging_flight}))
+        monkeypatch.setattr(batch_mod, "compute_correction_series", lambda *a, **kw: None)
+
+        params_list, in_progress = batch_mod._process_and_correct(("aabbcc", None))
+        assert isinstance(params_list, list)
+        assert len(params_list) >= 1
+
+    def test_icao_type_inherited_from_staging_for_orphan(self, monkeypatch):
+        """Orphan with no trace bytes gets icao_type from its staging entry."""
+        from adsb_server.ingestion.models import RawFlight, RawPoint
+
+        import adsb_server.ingestion.batch as batch_mod
+
+        pts = [
+            RawPoint(ts=1000.0, lat=51.5, lon=-0.1, alt_baro=35000.0, track=90.0,
+                     squawk=None, new_leg=False, callsign=None, emitter_category=None),
+            RawPoint(ts=1060.0, lat=51.6, lon=-0.2, alt_baro=35100.0, track=91.0,
+                     squawk=None, new_leg=False, callsign=None, emitter_category=None),
+        ]
+        staging_flight = RawFlight(
+            icao24="aabbcc", callsign=None, icao_type="A320",
+            emitter_category=None, points=pts,
+        )
+        monkeypatch.setattr(batch_mod, "_worker_state", self._make_state(staging={"aabbcc": staging_flight}))
+        monkeypatch.setattr(batch_mod, "compute_correction_series", lambda *a, **kw: None)
+
+        params_list, _ = batch_mod._process_and_correct(("aabbcc", None))
+        assert params_list
+        assert params_list[0][2] == "A320"  # icao_type at index 2
+
+    def test_parse_failure_returns_empty(self, monkeypatch):
+        import adsb_server.ingestion.batch as batch_mod
+
+        monkeypatch.setattr(batch_mod, "_worker_state", self._make_state())
+
+        params_list, in_progress = batch_mod._process_and_correct(
+            ("traces/aa/trace_full_aabbcc.json.gz", b"not valid gzip or json")
+        )
+        assert params_list == []
+        assert in_progress is None
+
+    def test_orphan_not_in_staging_returns_empty(self, monkeypatch):
+        import adsb_server.ingestion.batch as batch_mod
+
+        monkeypatch.setattr(batch_mod, "_worker_state", self._make_state(staging={}))
+
+        params_list, in_progress = batch_mod._process_and_correct(("unknown_icao24", None))
+        assert params_list == []
+        assert in_progress is None
+
+    def test_correction_series_wkt_included_in_params(self, monkeypatch):
+        """When compute_correction_series returns data, alt_correction_ft is a WKT string."""
+        import adsb_server.ingestion.batch as batch_mod
+
+        monkeypatch.setattr(batch_mod, "_worker_state", self._make_state())
+        # Return a real (corr_ts, corr_vals) tuple instead of None
+        monkeypatch.setattr(
+            batch_mod,
+            "compute_correction_series",
+            lambda *a, **kw: ([1609275898.0, 1609275928.0], [100.0, 102.0]),
+        )
+
+        raw = _make_trace_bytes("aabbcc")
+        params_list, _ = batch_mod._process_and_correct(
+            ("traces/aa/trace_full_aabbcc.json.gz", raw)
+        )
+        assert params_list
+        assert params_list[0][9] is not None  # alt_correction_ft at index 9
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _log_progress
+# ---------------------------------------------------------------------------
+
+
+class TestLogProgress:
+    def test_emits_when_interval_exceeded(self, monkeypatch):
+        import adsb_server.ingestion.batch as batch_mod
+
+        monkeypatch.setattr(batch_mod, "_LOG_INTERVAL_SECS", 0.0)
+        last = 0.0
+        result = batch_mod._log_progress(500, 100, 0.0, last)
+        assert result > last  # last_log_time was updated
+
+    def test_suppressed_when_too_soon(self):
+        import time
+
+        import adsb_server.ingestion.batch as batch_mod
+
+        now = time.monotonic()
+        result = batch_mod._log_progress(500, 100, now - 10, now)
+        assert result == now  # unchanged — not enough time has passed
+
+
+# ---------------------------------------------------------------------------
+# Additional _cleanup_old_herbie_cache edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupHerbieCacheEdgeCases:
+    def test_skips_non_directory_entries(self, tmp_path):
+        from adsb_server.ingestion.batch import _cleanup_old_herbie_cache
+
+        (tmp_path / "loose_file.bin").write_bytes(b"data")
+        old_dir = tmp_path / "gfs.20240101"
+        old_dir.mkdir()
+
+        _cleanup_old_herbie_cache(tmp_path, date(2024, 3, 15))
+
+        assert (tmp_path / "loose_file.bin").exists()
+        assert not old_dir.exists()
+
+    def test_skips_dir_with_impossible_date(self, tmp_path):
+        from adsb_server.ingestion.batch import _cleanup_old_herbie_cache
+
+        invalid = tmp_path / "gfs.20241399"  # month 13 → ValueError
+        invalid.mkdir()
+
+        _cleanup_old_herbie_cache(tmp_path, date(2024, 3, 15))
+
+        assert invalid.exists()
+
+    def test_handles_os_error_on_iterdir(self, tmp_path, monkeypatch):
+        from pathlib import Path
+
+        from adsb_server.ingestion.batch import _cleanup_old_herbie_cache
+
+        def _raise(self):  # noqa: ANN001
+            raise OSError("Permission denied")
+
+        monkeypatch.setattr(Path, "iterdir", _raise)
+        _cleanup_old_herbie_cache(tmp_path, date(2024, 3, 15))  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Integration test: MSLP unavailable
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_batch_raises_when_mslp_unavailable(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+) -> None:
+    """run_batch raises RuntimeError when fetch_mslp_for_batch returns None."""
+    from unittest.mock import AsyncMock, patch
+
+    from adsb_server.ingestion.batch import run_batch
+
+    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
+    batch_date = date(2021, 4, 1)
+
+    with patch(
+        "adsb_server.ingestion.batch.fetch_mslp_for_batch",
+        new_callable=AsyncMock,
+        return_value=None,
+    ), pytest.raises(RuntimeError, match="MSLP data unavailable"):
+        await run_batch(conn, tarball_dir, batch_date)
+
+
