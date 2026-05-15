@@ -128,38 +128,6 @@ async def test_run_batch_marks_ingest_batch_succeeded(
 
 
 @pytest.mark.asyncio
-async def test_run_batch_with_bbox_filter(
-    conn: asyncpg.Connection,
-    tmp_path: Path,
-) -> None:
-    """run_batch with bbox filter only processes points inside the box."""
-    from adsb_server.ingestion.batch import run_batch
-
-    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
-    batch_date = date(2021, 3, 1)
-
-    uk_bbox = (-1.0, 51.0, 0.0, 52.0)
-    count = await run_batch(conn, tarball_dir, batch_date, bbox=uk_bbox)
-    assert count == 1
-
-
-@pytest.mark.asyncio
-async def test_run_batch_bbox_excludes_outside_aircraft(
-    conn: asyncpg.Connection,
-    tmp_path: Path,
-) -> None:
-    """run_batch with bbox excludes aircraft whose points are all outside."""
-    from adsb_server.ingestion.batch import run_batch
-
-    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
-    batch_date = date(2021, 4, 1)
-
-    us_bbox = (-100.0, 30.0, -70.0, 50.0)
-    count = await run_batch(conn, tarball_dir, batch_date, bbox=us_bbox)
-    assert count == 0
-
-
-@pytest.mark.asyncio
 async def test_run_batch_idempotent_upsert(
     conn: asyncpg.Connection,
     tmp_path: Path,

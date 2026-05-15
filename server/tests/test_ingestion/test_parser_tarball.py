@@ -1,4 +1,4 @@
-"""Tests for stream_tarball with synthetic tar archives."""
+"""Tests for stream_tarball_raw and parse_trace_bytes with synthetic tar archives."""
 
 from __future__ import annotations
 
@@ -13,7 +13,12 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from adsb_server.ingestion.parser import _is_tar_part, _parse_trace_json, stream_tarball
+from adsb_server.ingestion.parser import (
+    _is_tar_part,
+    _parse_trace_json,
+    parse_trace_bytes,
+    stream_tarball_raw,
+)
 
 
 def _make_trace_bytes(
@@ -53,40 +58,28 @@ def _make_tar_with_trace(
     return buf.getvalue()
 
 
-class TestStreamTarballFile:
-    def test_stream_tarball_file_yields_aircraft(self, tmp_path: Path) -> None:
-        """stream_tarball on a .tar.gz file yields trace data."""
+class TestStreamTarballRawFile:
+    def test_stream_tarball_raw_file_yields_aircraft(self, tmp_path: Path) -> None:
+        """stream_tarball_raw on a .tar.gz file yields raw bytes that parse correctly."""
         tar_bytes = _make_tar_with_trace("aabbcc")
         tar_path = tmp_path / "test.tar.gz"
         tar_path.write_bytes(tar_bytes)
 
-        results = list(stream_tarball(tar_path))
+        results = list(stream_tarball_raw(tar_path))
         assert len(results) == 1
-        header, points = results[0]
+        name, raw_bytes = results[0]
+        assert "aabbcc" in name
+        header, points = parse_trace_bytes(raw_bytes)
         assert header.icao24 == "aabbcc"
         assert len(points) == 2
 
-    def test_stream_tarball_file_nonexistent_raises(self, tmp_path: Path) -> None:
-        """stream_tarball raises FileNotFoundError for non-existent path."""
+    def test_stream_tarball_raw_file_nonexistent_raises(self, tmp_path: Path) -> None:
+        """stream_tarball_raw raises FileNotFoundError for non-existent path."""
         with pytest.raises(FileNotFoundError):
-            list(stream_tarball(tmp_path / "does_not_exist.tar.gz"))
+            list(stream_tarball_raw(tmp_path / "does_not_exist.tar.gz"))
 
-    def test_stream_tarball_skips_bad_json(self, tmp_path: Path) -> None:
-        """stream_tarball skips files that fail to parse."""
-        bad_bytes = gzip.compress(b"not json")
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-            ti = tarfile.TarInfo(name="traces/aa/trace_full_aabbcc.json.gz")
-            ti.size = len(bad_bytes)
-            tf.addfile(ti, io.BytesIO(bad_bytes))
-        tar_path = tmp_path / "bad.tar.gz"
-        tar_path.write_bytes(buf.getvalue())
-
-        results = list(stream_tarball(tar_path))
-        assert results == []
-
-    def test_stream_tarball_skips_non_trace_members(self, tmp_path: Path) -> None:
-        """stream_tarball ignores members not under traces/ or not .json.gz."""
+    def test_stream_tarball_raw_skips_non_trace_members(self, tmp_path: Path) -> None:
+        """stream_tarball_raw ignores members not under traces/ or not .json.gz."""
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tf:
             content = b"some other file"
@@ -96,8 +89,35 @@ class TestStreamTarballFile:
         tar_path = tmp_path / "other.tar.gz"
         tar_path.write_bytes(buf.getvalue())
 
-        results = list(stream_tarball(tar_path))
+        results = list(stream_tarball_raw(tar_path))
         assert results == []
+
+
+class TestParseTraceBytes:
+    def test_parse_gzip_compressed_bytes(self) -> None:
+        """parse_trace_bytes decompresses gzip and parses correctly."""
+        raw = _make_trace_bytes(icao="aabbcc")
+        header, points = parse_trace_bytes(raw)
+        assert header.icao24 == "aabbcc"
+        assert len(points) == 2
+
+    def test_parse_uncompressed_bytes(self) -> None:
+        """parse_trace_bytes handles plain (non-gzip) JSON bytes."""
+        data = {
+            "icao": "aabbcc",
+            "t": "B738",
+            "timestamp": 1609275898.0,
+            "trace": [[0.0, 51.5, -0.1, 35000.0, 450.0, 90.0, 0, None, None]],
+        }
+        raw = json.dumps(data).encode()
+        header, points = parse_trace_bytes(raw)
+        assert header.icao24 == "aabbcc"
+        assert len(points) == 1
+
+    def test_parse_bad_json_raises(self) -> None:
+        """parse_trace_bytes raises on non-JSON content."""
+        with pytest.raises(Exception):
+            parse_trace_bytes(gzip.compress(b"not json"))
 
 
 def _make_two_part_archive(
@@ -108,10 +128,6 @@ def _make_two_part_archive(
     """
     Write an uncompressed tar containing one trace per icao, split into
     archive.tar.aa (first `split_after_member` members) and archive.tar.ab (rest).
-
-    The split is placed at the exact byte boundary between members, which is the
-    worst-case scenario for the chained-stream reader: tar.aa ends with a complete
-    member and tar.ab starts with the next member's header.
     """
     traces = {icao: _make_trace_bytes(icao=icao) for icao in icaos}
 
@@ -123,7 +139,6 @@ def _make_two_part_archive(
             tf.addfile(ti, io.BytesIO(traces[icao]))
     raw_bytes = raw_buf.getvalue()
 
-    # Locate the byte offset of the (split_after_member+1)-th member's header.
     buf = io.BytesIO(raw_bytes)
     with tarfile.open(fileobj=buf, mode="r:") as tf:
         members = list(tf.getmembers())
@@ -133,41 +148,36 @@ def _make_two_part_archive(
     (tmp_path / "archive.tar.ab").write_bytes(raw_bytes[split_at:])
 
 
-class TestStreamTarballDirectory:
-    def test_stream_tarball_dir_yields_aircraft(self, tmp_path: Path) -> None:
-        """stream_tarball on a directory of tar parts yields trace data."""
-        # Create an uncompressed tar split into two parts
+class TestStreamTarballRawDirectory:
+    def test_stream_tarball_raw_dir_yields_aircraft(self, tmp_path: Path) -> None:
+        """stream_tarball_raw on a directory of tar parts yields raw bytes."""
         trace_bytes = _make_trace_bytes(icao="cc1122")
-        hex2 = "cc"
 
-        # Build a raw (uncompressed) tar
         raw_buf = io.BytesIO()
         with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
-            member_name = f"traces/{hex2}/trace_full_cc1122.json.gz"
+            member_name = "traces/cc/trace_full_cc1122.json.gz"
             ti = tarfile.TarInfo(name=member_name)
             ti.size = len(trace_bytes)
             tf.addfile(ti, io.BytesIO(trace_bytes))
         raw_bytes = raw_buf.getvalue()
 
-        # Split at midpoint — tests chaining across the middle of a member
         mid = len(raw_bytes) // 2
-        part_aa = tmp_path / "archive.tar.aa"
-        part_ab = tmp_path / "archive.tar.ab"
-        part_aa.write_bytes(raw_bytes[:mid])
-        part_ab.write_bytes(raw_bytes[mid:])
+        (tmp_path / "archive.tar.aa").write_bytes(raw_bytes[:mid])
+        (tmp_path / "archive.tar.ab").write_bytes(raw_bytes[mid:])
 
-        results = list(stream_tarball(tmp_path))
+        results = list(stream_tarball_raw(tmp_path))
         assert len(results) == 1
-        header, points = results[0]
+        _name, rb = results[0]
+        header, points = parse_trace_bytes(rb)
         assert header.icao24 == "cc1122"
         assert len(points) == 2
 
-    def test_stream_tarball_empty_dir_yields_nothing(self, tmp_path: Path) -> None:
+    def test_stream_tarball_raw_empty_dir_yields_nothing(self, tmp_path: Path) -> None:
         """Empty directory → no results."""
-        results = list(stream_tarball(tmp_path))
+        results = list(stream_tarball_raw(tmp_path))
         assert results == []
 
-    def test_stream_tarball_dir_multiple_aircraft(self, tmp_path: Path) -> None:
+    def test_stream_tarball_raw_dir_multiple_aircraft(self, tmp_path: Path) -> None:
         """Directory with two aircraft in the same tar."""
         trace1 = _make_trace_bytes(icao="aabbcc")
         trace2 = _make_trace_bytes(icao="ddeeff")
@@ -175,42 +185,34 @@ class TestStreamTarballDirectory:
         raw_buf = io.BytesIO()
         with tarfile.open(fileobj=raw_buf, mode="w:") as tf:
             for icao, tb in [("aabbcc", trace1), ("ddeeff", trace2)]:
-                hex2 = icao[:2]
-                member_name = f"traces/{hex2}/trace_full_{icao}.json.gz"
-                ti = tarfile.TarInfo(name=member_name)
+                ti = tarfile.TarInfo(name=f"traces/{icao[:2]}/trace_full_{icao}.json.gz")
                 ti.size = len(tb)
                 tf.addfile(ti, io.BytesIO(tb))
-        raw_bytes = raw_buf.getvalue()
+        (tmp_path / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-        # Don't split: write as single part
-        (tmp_path / "archive.tar.aa").write_bytes(raw_bytes)
-
-        results = list(stream_tarball(tmp_path))
+        results = list(stream_tarball_raw(tmp_path))
         assert len(results) == 2
-        icaos = {h.icao24 for h, _ in results}
+        icaos = {parse_trace_bytes(rb)[0].icao24 for _, rb in results}
         assert icaos == {"aabbcc", "ddeeff"}
 
-    def test_stream_tarball_dir_split_at_member_boundary(self, tmp_path: Path) -> None:
-        """Split exactly between two members.
-
-        tar.aa contains the first member in full; tar.ab starts with the second
-        member's header. This is the failure scenario where a naive reader might
-        stop at the end of tar.aa rather than continue into tar.ab.
-        """
+    def test_stream_tarball_raw_dir_split_at_member_boundary(self, tmp_path: Path) -> None:
+        """Split exactly between two members yields both."""
         _make_two_part_archive(tmp_path, ["aabbcc", "ddeeff"], split_after_member=0)
 
-        results = list(stream_tarball(tmp_path))
+        results = list(stream_tarball_raw(tmp_path))
         assert len(results) == 2
-        assert {h.icao24 for h, _ in results} == {"aabbcc", "ddeeff"}
+        icaos = {parse_trace_bytes(rb)[0].icao24 for _, rb in results}
+        assert icaos == {"aabbcc", "ddeeff"}
 
-    def test_stream_tarball_dir_many_members_across_parts(self, tmp_path: Path) -> None:
+    def test_stream_tarball_raw_dir_many_members_across_parts(self, tmp_path: Path) -> None:
         """All members are yielded when the split falls between members mid-archive."""
         icaos = [f"aa{i:04x}" for i in range(10)]
         _make_two_part_archive(tmp_path, icaos, split_after_member=4)
 
-        results = list(stream_tarball(tmp_path))
+        results = list(stream_tarball_raw(tmp_path))
         assert len(results) == 10
-        assert {h.icao24 for h, _ in results} == set(icaos)
+        parsed_icaos = {parse_trace_bytes(rb)[0].icao24 for _, rb in results}
+        assert parsed_icaos == set(icaos)
 
 
 class TestIsTarPart:

@@ -2,7 +2,7 @@
 name = "adsb-server"
 version = "0.1.0"
 description = "ADS-B historical query platform — server (ingestion + API)"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115",
     "scalar-fastapi>=1.8",
@@ -44,7 +44,7 @@ build-backend = "hatchling.build"
 packages = ["adsb_server"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
@@ -56,7 +56,7 @@ quote-style = "double"
 
 [tool.mypy]
 strict = true
-python_version = "3.12"
+python_version = "3.14"
 exclude = ["tests/"]
 
 [[tool.mypy.overrides]]

@@ -238,34 +238,11 @@ def count_traces(path: Path) -> int:
         return sum(1 for m in tf if _is_trace_member(m.name))
 
 
-def stream_tarball(path: Path) -> Iterator[tuple[TraceHeader, list[RawPoint]]]:
-    """
-    Stream all trace files from a tarball or directory of tarball parts.
-
-    If path is a file: open with tarfile.open(path, "r:*") (auto-detect compression).
-    If path is a directory: find all *.tar.* files sorted by suffix, chain them
-    via _ChainedStream, open with tarfile.open(fileobj=stream, mode="r|").
-
-    Yields (TraceHeader, list[RawPoint]) for each aircraft with non-empty points.
-    Skips trace files that fail to parse.
-    """
-    if path.is_file():
-        with tarfile.open(path, "r:*") as tf:
-            yield from _iter_tarfile(tf)
-    elif path.is_dir():
-        # Find and sort all tar parts by their extension suffix (e.g., .tar.aa < .tar.ab)
-        parts = sorted(
-            [p for p in path.iterdir() if _is_tar_part(p)],
-            key=lambda p: p.suffix,
-        )
-        if not parts:
-            logger.warning("No tar parts found in directory: %s", path)
-            return
-        stream = _ChainedStream(parts)
-        with tarfile.open(fileobj=stream, mode="r|") as tf:  # streaming, uncompressed
-            yield from _iter_tarfile(tf)
-    else:
-        raise FileNotFoundError(f"Path does not exist: {path}")
+def parse_trace_bytes(raw_bytes: bytes) -> tuple[TraceHeader, list[RawPoint]]:
+    """Decompress if gzip-compressed and parse trace JSON into (TraceHeader, list[RawPoint])."""
+    json_bytes = gzip.decompress(raw_bytes) if raw_bytes[:2] == b"\x1f\x8b" else raw_bytes
+    data: dict[str, Any] = orjson.loads(json_bytes)
+    return _parse_trace_json(data)
 
 
 _COMPRESSION_SUFFIXES = frozenset({"gz", "bz2", "xz", "zst", "lz4", "lzma"})
@@ -298,8 +275,8 @@ def _is_trace_member(name: str) -> bool:
     )
 
 
-def _iter_tarfile(tf: tarfile.TarFile) -> Iterator[tuple[TraceHeader, list[RawPoint]]]:
-    """Iterate over members of a TarFile and yield parsed trace data."""
+def _iter_tarfile_raw(tf: tarfile.TarFile) -> Iterator[tuple[str, bytes]]:
+    """Yield (member_name, raw_bytes) for each trace member without parsing."""
     for member in tf:
         name = member.name
         if not _is_trace_member(name):
@@ -308,13 +285,33 @@ def _iter_tarfile(tf: tarfile.TarFile) -> Iterator[tuple[TraceHeader, list[RawPo
             f = tf.extractfile(member)
             if f is None:
                 continue
-            raw_bytes = f.read()
-            if name.endswith(".json.gz") or raw_bytes[:2] == b"\x1f\x8b":
-                raw_bytes = gzip.decompress(raw_bytes)
-            data: dict[str, Any] = orjson.loads(raw_bytes)
-            header, points = _parse_trace_json(data)
-            if points:
-                yield header, points
+            yield name, f.read()
         except Exception:
-            logger.exception("Failed to parse trace file: %s", name)
+            logger.exception("Failed to read trace file: %s", name)
             continue
+
+
+def stream_tarball_raw(path: Path) -> Iterator[tuple[str, bytes]]:
+    """
+    Stream raw trace bytes from a tarball or directory of tarball parts.
+
+    Yields (member_name, raw_bytes) where raw_bytes is the file content as stored
+    in the tarball (typically gzip-compressed JSON). Callers should parse with
+    parse_trace_bytes().
+    """
+    if path.is_file():
+        with tarfile.open(path, "r:*") as tf:
+            yield from _iter_tarfile_raw(tf)
+    elif path.is_dir():
+        parts = sorted(
+            [p for p in path.iterdir() if _is_tar_part(p)],
+            key=lambda p: p.suffix,
+        )
+        if not parts:
+            logger.warning("No tar parts found in directory: %s", path)
+            return
+        stream = _ChainedStream(parts)
+        with tarfile.open(fileobj=stream, mode="r|") as tf:
+            yield from _iter_tarfile_raw(tf)
+    else:
+        raise FileNotFoundError(f"Path does not exist: {path}")

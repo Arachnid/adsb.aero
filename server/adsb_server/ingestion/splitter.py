@@ -175,14 +175,14 @@ def build_scalar_series(
     return trk, gs_, vr_, ias
 
 
-def _finalize_segment(
-    header: TraceHeader,
+def finalize_segment(
+    icao24: str,
     seg_points: list[RawPoint],
     icao_type: str | None,
 ) -> FinalizedFlight | None:
-    """
-    Convert a list of RawPoints into a FinalizedFlight.
-    Returns None if the segment has fewer than 2 points.
+    """Convert a list of RawPoints into a FinalizedFlight.
+
+    Returns None if the segment has fewer than 2 airborne points.
     """
     airborne = [p for p in seg_points if p.alt_baro is not None]
     if len(airborne) < 2:
@@ -190,6 +190,7 @@ def _finalize_segment(
 
     callsign = _most_common_non_null([p.callsign for p in seg_points])
     emitter_category = _most_common_non_null([p.emitter_category for p in seg_points])
+
 
     interp_points = interpolate_missing_values(airborne)
     kept_indices = simplify_flight(interp_points)
@@ -211,7 +212,7 @@ def _finalize_segment(
     end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
 
     return FinalizedFlight(
-        icao24=header.icao24,
+        icao24=icao24,
         callsign=callsign,
         icao_type=icao_type,
         emitter_category=emitter_category,
@@ -296,7 +297,7 @@ def split_flights(
                 points=seg,
             )
         else:
-            result = _finalize_segment(header, seg, icao_type)
+            result = finalize_segment(header.icao24, seg, icao_type)
             if result is not None:
                 finalized.append(result)
 

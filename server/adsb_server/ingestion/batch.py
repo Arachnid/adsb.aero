@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-import asyncio
+import itertools
 import logging
+import multiprocessing
 import os
 import pickle
 import shutil
 import time as _time
 import zlib
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path  # noqa: TC003
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import asyncpg
 
 from adsb_server.config import get_settings
-from adsb_server.geometry.simplify import simplify_flight
 from adsb_server.geometry.wkt import (
     tfloat_stepwise_seq,
     tgeompoint_seq,
@@ -26,20 +27,19 @@ from adsb_server.geometry.wkt import (
     ttext_seq,
 )
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
-from adsb_server.ingestion.parser import count_traces, stream_tarball
-from adsb_server.ingestion.splitter import (
-    build_scalar_series,
-    build_squawk_runs,
-    interpolate_missing_values,
-    split_flights,
-)
+from adsb_server.ingestion.parser import parse_trace_bytes, stream_tarball_raw
+from adsb_server.ingestion.splitter import finalize_segment, split_flights
 from adsb_server.pressure.correct import build_correction_interpolator, compute_correction_series
 from adsb_server.pressure.fetch import fetch_mslp_for_batch
 
 logger = logging.getLogger(__name__)
 
-# Traces dispatched to the process pool per asyncio gather cycle.
-_CHUNK_SIZE = 256
+# Traces accumulated per DB write.
+_FLUSH_THRESHOLD = 256
+# Seconds between progress log lines.
+_LOG_INTERVAL_SECS = 5.0
+# Traces per process-pool chunk.
+_POOL_CHUNK_SIZE = 16
 
 _UPSERT_ICAO_TYPE_STATS_SQL = """
 INSERT INTO icao_type_stats (day, icao_type, model, flight_count)
@@ -65,8 +65,6 @@ ON CONFLICT (day, icao_type) DO UPDATE SET
     model        = EXCLUDED.model,
     flight_count = EXCLUDED.flight_count
 """
-# Threads for parallel altitude correction (scipy releases the GIL).
-_CORRECTION_WORKERS = 16
 
 _UPSERT_FLIGHT_SQL = """
 INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
@@ -108,6 +106,19 @@ _FlightParams = tuple[
     int,
     date,
 ]
+
+
+class _WorkerState(NamedTuple):
+    correction_interp: Any  # scipy RegularGridInterpolator
+    t_min: float
+    t_max: float
+    batch_date: date
+    cutoff_ts: float
+    staging: dict[str, RawFlight]
+
+
+# Set in run_batch before Pool creation; inherited by forked workers.
+_worker_state: _WorkerState | None = None
 
 
 def _cleanup_old_herbie_cache(cache_dir: Path, batch_date: date) -> None:
@@ -170,89 +181,99 @@ def _flight_to_params(
     )
 
 
-def _simplify_in_progress(
-    flight: RawFlight,
-) -> tuple[list[tuple[float, float, float, float]], list[RawPoint]] | None:
+def _log_progress(
+    traces_done: int,
+    flight_count: int,
+    t_start: float,
+    last_log_time: float,
+) -> float:
+    """Log throughput if enough time has passed; return updated last_log_time."""
+    now = _time.monotonic()
+    if now - last_log_time < _LOG_INTERVAL_SECS:
+        return last_log_time
+    elapsed = now - t_start
+    rate = traces_done / (elapsed / 60.0) if elapsed > 0 else 0.0
+    logger.info("%d traces | %.0f traces/min | %d flights", traces_done, rate, flight_count)
+    return now
+
+
+def _process_and_correct(
+    args: tuple[str, bytes | None],
+) -> tuple[list[_FlightParams], RawFlight | None]:
     """
-    Build the simplified path for an in-progress flight.
+    Worker function: parse trace bytes, merge staging points, split into discrete
+    flights, apply altitude correction, return (db_params_list, in_progress).
 
-    Returns (vertices, kept_raw_points) or None if fewer than 2 airborne points.
-    Exposed so that callers can compute altitude corrections from the vertices
-    before building DB params.
+    Runs in a forked worker; state (including staging dict) is inherited from parent.
+    For tarball entries args=(member_name, raw_bytes); for orphan staging entries
+    args=(icao24, None) — the worker determines icao24 from the JSON when raw_bytes
+    is present, or uses the first arg directly for orphans.
     """
-    airborne = [p for p in flight.points if p.alt_baro is not None]
-    if len(airborne) < 2:
-        return None
+    assert _worker_state is not None
+    state = _worker_state
+    name, trace_bytes = args
 
-    interp = interpolate_missing_values(airborne)
-    kept = simplify_flight(interp)
-    if len(kept) < 2:
-        kept = [0, len(interp) - 1]
+    icao24: str | None = None
+    icao_type: str | None = None
+    new_points: list[RawPoint] = []
 
-    vertices: list[tuple[float, float, float, float]] = [
-        (p.lon, p.lat, p.alt_baro or 0.0, p.ts) for p in (interp[i] for i in kept)
-    ]
-    return vertices, [interp[i] for i in kept]
+    if trace_bytes is not None:
+        try:
+            header, new_points = parse_trace_bytes(trace_bytes)
+            icao24 = header.icao24
+            icao_type = header.icao_type
+        except Exception:
+            logger.warning("Failed to parse trace %s", name, exc_info=True)
+    else:
+        icao24 = name  # orphan: name is the icao24
 
+    base_points: list[RawPoint] = []
+    if icao24 is not None:
+        staging_flight = state.staging.get(icao24)
+        if staging_flight is not None:
+            base_points = staging_flight.points
+            if icao_type is None:
+                icao_type = staging_flight.icao_type
 
-def _in_progress_flight_to_params(
-    flight: RawFlight,
-    batch_date: date,
-    alt_correction_ft: str | None = None,
-) -> _FlightParams | None:
-    """
-    Build DB params for an in-progress flight using a simplified path.
+    if icao24 is None or not (base_points or new_points):
+        return [], None
 
-    Applies interpolation and RDP simplification to the airborne subset so the
-    display path stored in flights is always clean.  Raw points are preserved
-    separately in the staging blob for idempotent reconstruction next day.
-    Returns None if fewer than 2 airborne points (cannot form valid geometry).
-    """
-    result = _simplify_in_progress(flight)
-    if result is None:
-        return None
+    all_points = base_points + new_points
+    all_points.sort(key=lambda p: p.ts)
+    deduped: list[RawPoint] = []
+    last_ts: float | None = None
+    for p in all_points:
+        if p.ts != last_ts:
+            deduped.append(p)
+            last_ts = p.ts
 
-    vertices, kept_points = result
-    start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
-    end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
+    trace_header = TraceHeader(icao24=icao24, icao_type=icao_type)
+    finalized, in_progress = split_flights(trace_header, deduped, state.cutoff_ts)
+    if in_progress is not None:
+        ip_finalized = finalize_segment(
+            in_progress.icao24, in_progress.points, in_progress.icao_type
+        )
+        if ip_finalized is not None:
+            finalized.append(ip_finalized)
 
-    path_tracks_series, path_gs_series, path_vr_series, path_ias_series = build_scalar_series(
-        kept_points
-    )
+    params_list: list[_FlightParams] = []
+    for flight in finalized:
+        series = compute_correction_series(
+            flight.vertices, state.correction_interp, state.t_min, state.t_max
+        )
+        wkt: str | None = None
+        if series is not None:
+            corr_ts, corr_vals = series
+            wkt = tfloat_stepwise_seq(corr_vals, corr_ts)
+        params_list.append(_flight_to_params(flight, state.batch_date, wkt))
 
-    return (
-        flight.icao24,
-        flight.callsign,
-        flight.icao_type,
-        flight.emitter_category,
-        start_ts,
-        end_ts,
-        tgeompoint_seq(vertices),
-        tint_from_series(path_tracks_series),
-        ttext_seq(build_squawk_runs(kept_points)),
-        alt_correction_ft,
-        tint_from_series(path_gs_series),
-        tint_from_series(path_vr_series),
-        tint_from_series(path_ias_series),
-        len(flight.points),
-        batch_date,
-    )
-
-
-def _process_trace(
-    header: TraceHeader,
-    all_points: list[RawPoint],
-    cutoff_ts: float,
-) -> tuple[list[FinalizedFlight], RawFlight | None]:
-    """CPU-bound per-trace work executed in a worker process."""
-    return split_flights(header, all_points, cutoff_ts)
+    return params_list, in_progress
 
 
 async def run_batch(
     conn: asyncpg.Connection,
     tarball_path: Path,
     batch_date: date,
-    bbox: tuple[float, float, float, float] | None = None,
     workers: int | None = None,
     herbie_cache_dir: Path | None = None,
     keep_herbie_cache: bool | None = None,
@@ -274,6 +295,8 @@ async def run_batch(
     were not touched during it are deleted at the end.  This handles the case where
     re-processing a day produces a different set of flights than the original run.
     """
+    global _worker_state
+
     await conn.execute(
         """
         INSERT INTO ingest_batches (batch_date, status, started_at, attempts, last_attempt_at)
@@ -317,12 +340,13 @@ async def run_batch(
     cutoff_ts = cutoff_dt.timestamp()
 
     settings = get_settings()
-    effective_cache_dir = herbie_cache_dir if herbie_cache_dir is not None else settings.herbie_cache_dir
-    effective_keep_herbie_cache = keep_herbie_cache if keep_herbie_cache is not None else settings.herbie_keep_cache
+    effective_cache_dir = (
+        herbie_cache_dir if herbie_cache_dir is not None else settings.herbie_cache_dir
+    )
+    effective_keep_herbie_cache = (
+        keep_herbie_cache if keep_herbie_cache is not None else settings.herbie_keep_cache
+    )
 
-    # Fetch global MSLP fields for the batch date.  Runs in a thread so as not
-    # to block the event loop during the Herbie HTTP + GRIB parse work.
-    # mslp is None when data is unavailable; alt_correction_ft is NULL in that case.
     mslp = await fetch_mslp_for_batch(batch_date, effective_cache_dir)
     if mslp is None:
         raise RuntimeError(
@@ -332,173 +356,54 @@ async def run_batch(
     del mslp  # release the raw DataArray; the interpolator holds sorted copies
 
     n_workers = workers if workers is not None and workers > 0 else (os.cpu_count() or 1)
-    loop = asyncio.get_running_loop()
+    logger.info("Starting batch %s with %d workers", batch_date, n_workers)
 
-    total_traces = count_traces(tarball_path)
-    if total_traces:
-        logger.info("Found %d trace files; using %d workers", total_traces, n_workers)
-    else:
-        logger.info("Trace count unknown (split archive); using %d workers", n_workers)
+    # Set worker state before fork so all worker processes inherit it.
+    _worker_state = _WorkerState(correction_interp, t_min, t_max, batch_date, cutoff_ts, staging)
 
     flight_count = 0
-    traces_done = 0
     t_start = _time.monotonic()
-    pending: list[tuple[TraceHeader, list[RawPoint]]] = []
+    last_log_time = t_start
     in_progress_flights: dict[str, RawFlight] = {}
 
-    with (
-        ProcessPoolExecutor(max_workers=n_workers) as pool,
-        ThreadPoolExecutor(max_workers=_CORRECTION_WORKERS) as correction_pool,
-    ):
+    def _iter_trace_args() -> Iterator[tuple[str, bytes | None]]:
+        seen: set[str] = set()
+        for name, raw_bytes in stream_tarball_raw(tarball_path):
+            icao24 = name.rsplit("/", 1)[-1].split(".")[0].removeprefix("trace_full_")
+            seen.add(icao24)
+            yield name, raw_bytes
+        for icao24 in staging:
+            if icao24 not in seen:
+                yield icao24, None
 
-        async def _flush() -> None:
-            nonlocal flight_count, traces_done
-            if not pending:
-                return
-
-            # Phase 1: parse traces in the process pool (CPU-bound).
-            trace_futures = [
-                loop.run_in_executor(pool, _process_trace, h, pts, cutoff_ts) for h, pts in pending
-            ]
-            results: list[Any] = list(await asyncio.gather(*trace_futures, return_exceptions=True))
-
-            # Phase 2: collect results; track in-progress flights for staging.
-            all_finalized: list[FinalizedFlight] = []
-            # (flight, vertices) pairs for in-progress flights with valid paths
-            in_progress_for_correction: list[
-                tuple[RawFlight, list[tuple[float, float, float, float]]]
-            ] = []
-            params_batch: list[_FlightParams] = []
-            for result, (header, _) in zip(results, pending, strict=True):
-                if isinstance(result, BaseException):
-                    logger.error("Failed to process trace %s: %s", header.icao24, result)
-                    continue
-                finalized: list[FinalizedFlight]
-                in_progress: RawFlight | None
-                finalized, in_progress = result
-                all_finalized.extend(finalized)
-                if in_progress is not None:
-                    in_progress_flights[in_progress.icao24] = in_progress
-                    simplified = _simplify_in_progress(in_progress)
-                    if simplified is not None:
-                        vertices_ip, _kept = simplified
-                        in_progress_for_correction.append((in_progress, vertices_ip))
-
-            # Phase 3: compute altitude corrections in parallel threads.
-            # scipy's RegularGridInterpolator releases the GIL, so threads
-            # give true parallelism with no pickling of the large grid.
-            # Finalized and in-progress flights are corrected together in one pass.
-            all_vertices = [f.vertices for f in all_finalized] + [
-                v for _, v in in_progress_for_correction
-            ]
-            corr_jobs = [
-                loop.run_in_executor(
-                    correction_pool,
-                    compute_correction_series,
-                    verts,
-                    correction_interp,
-                    t_min,
-                    t_max,
-                )
-                for verts in all_vertices
-            ]
-            corrections: list[Any] = list(await asyncio.gather(*corr_jobs))
-
-            n_fin = len(all_finalized)
-            for flight, series in zip(all_finalized, corrections[:n_fin], strict=True):
-                correction_wkt: str | None = None
-                if series is not None:
-                    corr_ts, corr_vals = series
-                    correction_wkt = tfloat_stepwise_seq(corr_vals, corr_ts)
-                params_batch.append(_flight_to_params(flight, batch_date, correction_wkt))
-
-            for (ip_flight, _), series in zip(
-                in_progress_for_correction, corrections[n_fin:], strict=True
-            ):
-                ip_correction_wkt: str | None = None
-                if series is not None:
-                    corr_ts, corr_vals = series
-                    ip_correction_wkt = tfloat_stepwise_seq(corr_vals, corr_ts)
-                raw_params = _in_progress_flight_to_params(ip_flight, batch_date, ip_correction_wkt)
-                if raw_params is not None:
-                    params_batch.append(raw_params)
-
-            if params_batch:
+    mp_ctx = multiprocessing.get_context("fork")
+    with mp_ctx.Pool(n_workers) as pool:
+        traces_done = 0
+        for batch in itertools.batched(
+            pool.imap_unordered(
+                _process_and_correct,
+                _iter_trace_args(),
+                chunksize=_POOL_CHUNK_SIZE,
+            ),
+            _FLUSH_THRESHOLD,
+            strict=False,
+        ):
+            db_params: list[_FlightParams] = []
+            for result in batch:
+                params_list, ip_raw = result
+                if ip_raw is not None:
+                    in_progress_flights[ip_raw.icao24] = ip_raw
+                db_params.extend(params_list)
+                traces_done += 1
+                last_log_time = _log_progress(traces_done, flight_count, t_start, last_log_time)
+            if db_params:
                 try:
-                    await conn.executemany(_UPSERT_FLIGHT_SQL, params_batch)
-                    for p in params_batch:
+                    await conn.executemany(_UPSERT_FLIGHT_SQL, db_params)
+                    for p in db_params:
                         upserted_keys.add((p[0], p[4]))  # (icao24, start_ts)
-                    flight_count += len(params_batch)
+                    flight_count += len(db_params)
                 except Exception:
-                    logger.exception("Failed to write batch of %d flights", len(params_batch))
-
-            traces_done += len(pending)
-            elapsed = _time.monotonic() - t_start
-            rate = traces_done / (elapsed / 60.0) if elapsed > 0 else 0.0
-            if total_traces:
-                pct = 100.0 * traces_done / total_traces
-                logger.info(
-                    "%d/%d traces (%.0f%%) | %.0f traces/min | %d flights",
-                    traces_done,
-                    total_traces,
-                    pct,
-                    rate,
-                    flight_count,
-                )
-            else:
-                logger.info(
-                    "%d traces | %.0f traces/min | %d flights",
-                    traces_done,
-                    rate,
-                    flight_count,
-                )
-
-            pending.clear()
-
-        for trace_header, new_points in stream_tarball(tarball_path):
-            icao24 = trace_header.icao24
-
-            if bbox is not None:
-                min_lon, min_lat, max_lon, max_lat = bbox
-                new_points = [
-                    p
-                    for p in new_points
-                    if min_lon <= p.lon <= max_lon and min_lat <= p.lat <= max_lat
-                ]
-                if not new_points:
-                    continue
-
-            staging_entry = staging.pop(icao24, None)
-            base = staging_entry.points if staging_entry is not None else []
-            merged = base + new_points
-            merged.sort(key=lambda p: p.ts)
-            deduped: list[RawPoint] = []
-            last_ts: float | None = None
-            for p in merged:
-                if p.ts != last_ts:
-                    deduped.append(p)
-                    last_ts = p.ts
-            all_points = deduped
-
-            if not all_points:
-                continue
-
-            pending.append((trace_header, all_points))
-            if len(pending) >= _CHUNK_SIZE:
-                await _flush()
-
-        await _flush()
-
-        # Finalize staging entries not seen in this tarball (orphans).
-        # Their last point is older than the gap threshold relative to this
-        # batch's cutoff, so split_flights will always finalize them.
-        for orphan_icao24, orphan_flight in staging.items():
-            orphan_pts = sorted(orphan_flight.points, key=lambda p: p.ts)
-            header = TraceHeader(icao24=orphan_icao24, icao_type=orphan_flight.icao_type)
-            pending.append((header, orphan_pts))
-            if len(pending) >= _CHUNK_SIZE:
-                await _flush()
-        await _flush()
+                    logger.exception("Failed to write batch of %d flights", len(db_params))
 
     # Write current in-progress flights to the staging table.
     if in_progress_flights:
