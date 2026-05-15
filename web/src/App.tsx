@@ -501,6 +501,7 @@ export function App(): React.ReactElement {
           onArmAirspacePicker={armAirspacePicker}
           airspacePickingId={airspacePickingId}
           dateRange={dataRange}
+          globalDateRange={globalDateRange}
         />
       </Sidebar>
       <ToggleButton

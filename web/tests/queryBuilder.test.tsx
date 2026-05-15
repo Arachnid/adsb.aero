@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("react-aria-components");
+vi.mock("../src/lib/api", () => ({
+  getIcaoTypes: vi.fn().mockResolvedValue([
+    { icao_type: "B738", model: "Boeing 737-800", count: 1000 },
+    { icao_type: "A320", model: "Airbus A320", count: 800 },
+  ]),
+}));
 import {
   QueryBuilderFooter,
   QueryBuilderAddMenu,
@@ -33,6 +39,7 @@ function bodyProps(group: FilterGroup, onChange = vi.fn()) {
     onArmAirspacePicker: noop as (id: string) => void,
     airspacePickingId: null,
     dateRange: null,
+    globalDateRange: { from: "2024-01-01", to: "2024-01-07" },
   };
 }
 
@@ -164,13 +171,14 @@ describe("QueryBuilderBody", () => {
       expect(screen.getByText("Aircraft")).toBeDefined();
     });
 
-    it("calls onGroupChange with updated icaoTypes when a chip is toggled", () => {
+    it("calls onGroupChange with updated icaoTypes when a chip is toggled", async () => {
       const onChange = vi.fn();
       const group = makeGroup([{ id: "a1", kind: "aircraft", icaoTypes: [], emitters: [] }]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
       // open the ICAO types dropdown (first "+ choose" button)
       fireEvent.click(screen.getAllByText("+ choose")[0]);
-      // click B738 in the dropdown
+      // wait for async options to load then click B738
+      await waitFor(() => screen.getByText("B738"));
       fireEvent.click(screen.getByText("B738"));
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
       const pred = updated.items[0];

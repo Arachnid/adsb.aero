@@ -48,6 +48,61 @@
         }
       }
     },
+    "/api/v1/icao-types": {
+      "get": {
+        "summary": "ICAO type counts for a date range",
+        "description": "Return all ICAO aircraft type designators observed between `start` and `end` (inclusive), with the total flight count and a representative model name for each. Sorted by count descending. Backed by a pre-aggregated per-day stats table \u2014 fast even over wide date ranges.",
+        "operationId": "get_icao_types_api_v1_icao_types_get",
+        "parameters": [
+          {
+            "name": "start",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IcaoTypeStat"
+                  },
+                  "title": "Response Get Icao Types Api V1 Icao Types Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/query": {
       "post": {
         "summary": "Query flights",
@@ -1255,6 +1310,49 @@
         ],
         "title": "IcaoType",
         "description": "Flights matching one or more ICAO aircraft type designators."
+      },
+      "IcaoTypeStat": {
+        "properties": {
+          "icao_type": {
+            "type": "string",
+            "title": "Icao Type",
+            "description": "ICAO aircraft type designator (e.g. `B738`).",
+            "examples": [
+              "B738"
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Most common model description from the airframes table, or null if unknown.",
+            "examples": [
+              "BOEING 737-800"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Total number of flights of this type in the requested date range.",
+            "examples": [
+              1234
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "icao_type",
+          "model",
+          "count"
+        ],
+        "title": "IcaoTypeStat",
+        "description": "Flight count and model name for one ICAO type designator over a date range."
       },
       "NotPredicate": {
         "properties": {

@@ -156,6 +156,25 @@ def upgrade() -> None:
 
 
     # ------------------------------------------------------------------
+    # icao_type_stats — per-day ICAO type flight counts with model name
+    #
+    # Maintained incrementally: after each batch ingestion, a single
+    # partition-pruned aggregation upserts one row per (day, icao_type).
+    # model is the most common airframes.model string for that type.
+    # ------------------------------------------------------------------
+    op.execute(
+        sa.text("""
+        CREATE TABLE icao_type_stats (
+            day          DATE     NOT NULL,
+            icao_type    VARCHAR  NOT NULL,
+            model        VARCHAR,
+            flight_count INTEGER  NOT NULL,
+            PRIMARY KEY (day, icao_type)
+        )
+        """)
+    )
+
+    # ------------------------------------------------------------------
     # airframes — per-icao24 registration/type/operator reference data
     #
     # Sourced from tar1090-db (Mictronics aircraft database).
@@ -183,6 +202,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(sa.text("DROP TABLE IF EXISTS airframes"))
+    op.execute(sa.text("DROP TABLE IF EXISTS icao_type_stats"))
     op.execute(sa.text("DROP TABLE IF EXISTS ingest_batches"))
     op.execute(sa.text("DROP TABLE IF EXISTS flight_staging"))
     op.execute(sa.text("DROP TABLE IF EXISTS flights"))

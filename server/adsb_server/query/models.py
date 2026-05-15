@@ -224,6 +224,23 @@ class DataRange(BaseModel):
     )
 
 
+class IcaoTypeStat(BaseModel):
+    """Flight count and model name for one ICAO type designator over a date range."""
+
+    icao_type: str = Field(
+        description="ICAO aircraft type designator (e.g. `B738`).",
+        examples=["B738"],
+    )
+    model: str | None = Field(
+        description="Most common model description from the airframes table, or null if unknown.",
+        examples=["BOEING 737-800"],
+    )
+    count: int = Field(
+        description="Total number of flights of this type in the requested date range.",
+        examples=[1234],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Cursor encoding / decoding
 # ---------------------------------------------------------------------------

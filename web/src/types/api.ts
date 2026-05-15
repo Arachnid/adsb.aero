@@ -44,6 +44,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/icao-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ICAO type counts for a date range
+         * @description Return all ICAO aircraft type designators observed between `start` and `end` (inclusive), with the total flight count and a representative model name for each. Sorted by count descending. Backed by a pre-aggregated per-day stats table — fast even over wide date ranges.
+         */
+        get: operations["get_icao_types_api_v1_icao_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/query": {
         parameters: {
             query?: never;
@@ -611,6 +631,30 @@ export interface components {
             icao_type: string[];
         };
         /**
+         * IcaoTypeStat
+         * @description Flight count and model name for one ICAO type designator over a date range.
+         */
+        IcaoTypeStat: {
+            /**
+             * Icao Type
+             * @description ICAO aircraft type designator (e.g. `B738`).
+             * @example B738
+             */
+            icao_type: string;
+            /**
+             * Model
+             * @description Most common model description from the airframes table, or null if unknown.
+             * @example BOEING 737-800
+             */
+            model: string | null;
+            /**
+             * Count
+             * @description Total number of flights of this type in the requested date range.
+             * @example 1234
+             */
+            count: number;
+        };
+        /**
          * NotPredicate
          * @description Negates a child predicate (logical NOT).
          */
@@ -880,6 +924,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DataRange"];
+                };
+            };
+        };
+    };
+    get_icao_types_api_v1_icao_types_get: {
+        parameters: {
+            query: {
+                start: string;
+                end: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IcaoTypeStat"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

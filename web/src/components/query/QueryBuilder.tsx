@@ -18,6 +18,7 @@ import {
 import { parseDate, parseDateTime } from "@internationalized/date";
 import type { CalendarDate, CalendarDateTime } from "@internationalized/date";
 import { Braces, Circle, Pin, Plane, Play, Plus, Polygon, Text, Viewport, X, Zone } from "../Icons";
+import { getIcaoTypes } from "../../lib/api";
 import type { DataRange } from "../../lib/api";
 
 // ===== Types =====
@@ -180,39 +181,6 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
 }
 
 // ===== Reference data =====
-
-const ICAO_TYPES: string[] = [
-  "B738",
-  "A320",
-  "A321",
-  "B737",
-  "A319",
-  "A20N",
-  "B77W",
-  "B789",
-  "A359",
-  "C172",
-  "C152",
-  "PA28",
-  "DA42",
-  "SR22",
-  "P28A",
-  "BE36",
-  "E190",
-  "E195",
-  "AT76",
-  "DH8D",
-  "CRJ9",
-  "EC35",
-  "AS50",
-  "R44",
-  "EC30",
-  "GLF6",
-  "F2TH",
-  "C56X",
-  "C25A",
-  "BE40",
-];
 
 const EMITTER_CATEGORIES: { code: string; label: string }[] = [
   { code: "A1", label: "Light (<15,500 lb)" },
@@ -741,17 +709,38 @@ function AircraftCard({
   pred,
   onChange,
   onRemove,
+  globalDateRange,
 }: {
   pred: AircraftPred;
   onChange: (p: AircraftPred) => void;
   onRemove: () => void;
+  globalDateRange: GlobalDateRange | null;
 }): React.ReactElement {
+  const [icaoTypeOptions, setIcaoTypeOptions] = useState<ChipOption[]>([]);
+
+  useEffect(() => {
+    if (!globalDateRange?.from || !globalDateRange?.to) return;
+    const controller = new AbortController();
+    getIcaoTypes(globalDateRange.from, globalDateRange.to, { signal: controller.signal })
+      .then((stats) => {
+        setIcaoTypeOptions(
+          stats.map((s) => ({ code: s.icao_type, label: s.model ?? s.icao_type })),
+        );
+      })
+      .catch((err: unknown) => {
+        if ((err as Error).name !== "AbortError") setIcaoTypeOptions([]);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [globalDateRange?.from, globalDateRange?.to]);
+
   return (
     <PredCard icon={<Plane />} name="Aircraft" onRemove={onRemove} invalid={!isPredValid(pred)}>
       <ChipMultiSelect
         label="ICAO type"
         value={pred.icaoTypes}
-        options={ICAO_TYPES}
+        options={icaoTypeOptions}
         onChange={(v) => {
           onChange({ ...pred, icaoTypes: v });
         }}
@@ -1463,6 +1452,7 @@ function PredicateRenderer({
   isPickingAirspace,
   name,
   dateRange,
+  globalDateRange,
 }: {
   pred: UIPredicate;
   onChange: (p: UIPredicate) => void;
@@ -1475,6 +1465,7 @@ function PredicateRenderer({
   isPickingAirspace: boolean;
   name: string;
   dateRange: DataRange | null;
+  globalDateRange: GlobalDateRange | null;
 }): React.ReactElement | null {
   switch (pred.kind) {
     case "aircraft":
@@ -1485,6 +1476,7 @@ function PredicateRenderer({
             onChange(p);
           }}
           onRemove={onRemove}
+          globalDateRange={globalDateRange}
         />
       );
     case "starts_within":
@@ -1550,6 +1542,7 @@ interface GroupBlockProps {
   labels: Map<string, string>;
   noAddFilter?: boolean;
   dateRange: DataRange | null;
+  globalDateRange: GlobalDateRange | null;
 }
 
 function GroupBlock({
@@ -1566,6 +1559,7 @@ function GroupBlock({
   labels,
   noAddFilter,
   dateRange,
+  globalDateRange,
 }: GroupBlockProps): React.ReactElement {
   const updateChild = (childId: string, next: QueryItem): void => {
     onChange({ ...group, items: group.items.map((item) => (item.id === childId ? next : item)) });
@@ -1659,6 +1653,7 @@ function GroupBlock({
               regionCount={regionCount}
               labels={labels}
               dateRange={dateRange}
+              globalDateRange={globalDateRange}
             />
           ) : (
             <PredicateRenderer
@@ -1674,6 +1669,7 @@ function GroupBlock({
               isPickingAirspace={airspacePickingId === item.id}
               name={labels.get(item.id) ?? (item.kind === "aircraft" ? "Aircraft" : "Callsign")}
               dateRange={dateRange}
+              globalDateRange={globalDateRange}
             />
           ),
         )}
@@ -1695,6 +1691,7 @@ export interface QueryBuilderBodyProps {
   onArmAirspacePicker: (id: string) => void;
   airspacePickingId: string | null;
   dateRange: DataRange | null;
+  globalDateRange: GlobalDateRange | null;
 }
 
 export function computeLabels(group: FilterGroup): Map<string, string> {
@@ -1751,6 +1748,7 @@ export function QueryBuilderBody({
   onArmAirspacePicker,
   airspacePickingId,
   dateRange,
+  globalDateRange,
 }: QueryBuilderBodyProps): React.ReactElement {
   return (
     <GroupBlock
@@ -1766,6 +1764,7 @@ export function QueryBuilderBody({
       labels={computeLabels(rootGroup)}
       noAddFilter
       dateRange={dateRange}
+      globalDateRange={globalDateRange}
     />
   );
 }

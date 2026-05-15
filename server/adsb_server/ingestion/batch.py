@@ -39,6 +39,31 @@ logger = logging.getLogger(__name__)
 
 # Traces dispatched to the process pool per asyncio gather cycle.
 _CHUNK_SIZE = 256
+
+_UPSERT_ICAO_TYPE_STATS_SQL = """
+INSERT INTO icao_type_stats (day, icao_type, model, flight_count)
+SELECT
+    $1::date,
+    f.icao_type,
+    (
+        SELECT af.model
+        FROM airframes af
+        WHERE af.icao_type = f.icao_type
+          AND af.model IS NOT NULL
+        GROUP BY af.model
+        ORDER BY COUNT(*) DESC
+        LIMIT 1
+    ),
+    COUNT(*)
+FROM flights f
+WHERE f.start_ts >= $1::date::timestamptz
+  AND f.start_ts <  ($1::date + 1)::timestamptz
+  AND f.icao_type IS NOT NULL
+GROUP BY f.icao_type
+ON CONFLICT (day, icao_type) DO UPDATE SET
+    model        = EXCLUDED.model,
+    flight_count = EXCLUDED.flight_count
+"""
 # Threads for parallel altitude correction (scipy releases the GIL).
 _CORRECTION_WORKERS = 16
 
@@ -484,6 +509,9 @@ async def run_batch(
             batch_date,
         )
         logger.info("Deleted %d stale flights for batch_date=%s", len(stale), batch_date)
+
+    await conn.execute(_UPSERT_ICAO_TYPE_STATS_SQL, batch_date)
+    logger.info("Updated icao_type_stats for batch_date=%s", batch_date)
 
     await conn.execute(
         """

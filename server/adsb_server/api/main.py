@@ -23,6 +23,7 @@ from adsb_server.query.models import (
     FlightDetail,
     GeoJSONLineStringZ,
     GeoJSONPointZ,
+    IcaoTypeStat,
     QueryRequest,
     QueryResponse,
     decode_cursor,
@@ -285,6 +286,41 @@ async def get_data_range(request: Request) -> DataRange:
     first: date | None = row["first_date"] if row else None
     last: date | None = row["last_date"] if row else None
     return DataRange(first_date=first, last_date=last)
+
+
+@router.get(
+    "/icao-types",
+    response_model=list[IcaoTypeStat],
+    summary="ICAO type counts for a date range",
+    description=(
+        "Return all ICAO aircraft type designators observed between `start` and `end` (inclusive), "
+        "with the total flight count and a representative model name for each. "
+        "Sorted by count descending. Backed by a pre-aggregated per-day stats table — fast "
+        "even over wide date ranges."
+    ),
+)
+async def get_icao_types(
+    start: date,
+    end: date,
+    request: Request,
+) -> list[IcaoTypeStat]:
+    pool = await get_pool(request)
+    rows = await pool.fetch(
+        """
+        SELECT icao_type,
+               mode() WITHIN GROUP (ORDER BY model) AS model,
+               SUM(flight_count)::int AS count
+        FROM icao_type_stats
+        WHERE day >= $1 AND day <= $2
+        GROUP BY icao_type
+        ORDER BY count DESC
+        """,
+        start,
+        end,
+    )
+    return [
+        IcaoTypeStat(icao_type=r["icao_type"], model=r["model"], count=r["count"]) for r in rows
+    ]
 
 
 @router.post(

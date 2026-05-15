@@ -4,6 +4,7 @@ export type FlightDetail = components["schemas"]["FlightDetail"];
 export type QueryRequest = components["schemas"]["QueryRequest"];
 export type QueryResponse = components["schemas"]["QueryResponse"];
 export type DataRange = components["schemas"]["DataRange"];
+export type IcaoTypeStat = components["schemas"]["IcaoTypeStat"];
 
 export class ApiError extends Error {
   constructor(
@@ -69,4 +70,17 @@ export async function getDataRange(): Promise<DataRange> {
   const res = await fetch("/api/v1/data-range");
   if (!res.ok) await parseError(res);
   return res.json() as Promise<DataRange>;
+}
+
+export async function getIcaoTypes(
+  start: string,
+  end: string,
+  opts: { signal?: AbortSignal } = {},
+): Promise<IcaoTypeStat[]> {
+  const params = new URLSearchParams({ start, end });
+  const res = await fetch(`/api/v1/icao-types?${params.toString()}`, {
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json() as Promise<IcaoTypeStat[]>;
 }
