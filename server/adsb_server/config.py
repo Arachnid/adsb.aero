@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     scheduler_keep_traces: bool = False  # keep downloaded tarballs after ingestion
 
     herbie_cache_dir: Path = Path("/data/cache/herbie")
+    herbie_keep_cache: bool = False  # keep GRIB files after ingestion (useful for debugging)
 
     @property
     def asyncpg_dsn(self) -> str:

@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import pickle
+import shutil
 import time as _time
 import zlib
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -107,6 +108,30 @@ _FlightParams = tuple[
     int,
     date,
 ]
+
+
+def _cleanup_old_herbie_cache(cache_dir: Path, batch_date: date) -> None:
+    """Delete herbie GFS cache directories for dates strictly before batch_date."""
+    if not cache_dir.exists():
+        return
+    try:
+        for entry in cache_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            # Herbie names dirs like "gfs.YYYYMMDD"
+            dot = entry.name.rfind(".")
+            date_part = entry.name[dot + 1 :] if dot != -1 else ""
+            if len(date_part) != 8 or not date_part.isdigit():
+                continue
+            try:
+                entry_date = date(int(date_part[:4]), int(date_part[4:6]), int(date_part[6:]))
+            except ValueError:
+                continue
+            if entry_date < batch_date:
+                shutil.rmtree(entry, ignore_errors=True)
+                logger.info("Deleted old herbie cache: %s", entry.name)
+    except OSError:
+        logger.warning("Failed to scan herbie cache dir %s", cache_dir, exc_info=True)
 
 
 def _serialize_staging(flights: dict[str, RawFlight]) -> bytes:
@@ -230,6 +255,7 @@ async def run_batch(
     bbox: tuple[float, float, float, float] | None = None,
     workers: int | None = None,
     herbie_cache_dir: Path | None = None,
+    keep_herbie_cache: bool | None = None,
 ) -> int:
     """
     Process a single day's tarball and write flights to the database.
@@ -290,12 +316,13 @@ async def run_batch(
     cutoff_dt = datetime.combine(batch_date, time.max, tzinfo=UTC)
     cutoff_ts = cutoff_dt.timestamp()
 
+    settings = get_settings()
+    effective_cache_dir = herbie_cache_dir if herbie_cache_dir is not None else settings.herbie_cache_dir
+    effective_keep_herbie_cache = keep_herbie_cache if keep_herbie_cache is not None else settings.herbie_keep_cache
+
     # Fetch global MSLP fields for the batch date.  Runs in a thread so as not
     # to block the event loop during the Herbie HTTP + GRIB parse work.
     # mslp is None when data is unavailable; alt_correction_ft is NULL in that case.
-    effective_cache_dir = (
-        herbie_cache_dir if herbie_cache_dir is not None else get_settings().herbie_cache_dir
-    )
     mslp = await fetch_mslp_for_batch(batch_date, effective_cache_dir)
     if mslp is None:
         raise RuntimeError(
@@ -522,6 +549,9 @@ async def run_batch(
         batch_date,
         flight_count,
     )
+
+    if not effective_keep_herbie_cache:
+        _cleanup_old_herbie_cache(effective_cache_dir, batch_date)
 
     logger.info("Batch %s complete: %d flights finalized", batch_date, flight_count)
     return flight_count

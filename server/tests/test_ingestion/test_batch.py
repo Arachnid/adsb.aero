@@ -651,3 +651,78 @@ async def test_staging_serialization_roundtrip() -> None:
     assert rf.points[0].squawk == "7700"
     assert rf.points[1].alt_baro is None
     assert rf.points[1].squawk is None
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_herbie_cache(tmp_path: Path) -> None:
+    """
+    _cleanup_old_herbie_cache deletes GFS directories older than batch_date
+    and leaves the current day's directory intact.
+    """
+    from adsb_server.ingestion.batch import _cleanup_old_herbie_cache
+
+    batch_date = date(2024, 3, 15)
+
+    old1 = tmp_path / "gfs.20240313"
+    old2 = tmp_path / "gfs.20240314"
+    current = tmp_path / "gfs.20240315"
+    future = tmp_path / "gfs.20240316"
+    unrelated = tmp_path / "something_else"
+
+    for d in (old1, old2, current, future, unrelated):
+        d.mkdir()
+        (d / "data.grib2").write_bytes(b"x")
+
+    _cleanup_old_herbie_cache(tmp_path, batch_date)
+
+    assert not old1.exists(), "gfs.20240313 should be deleted"
+    assert not old2.exists(), "gfs.20240314 should be deleted"
+    assert current.exists(), "gfs.20240315 (current day) should be kept"
+    assert future.exists(), "gfs.20240316 (future) should be kept"
+    assert unrelated.exists(), "non-GFS directory should be kept"
+
+
+@pytest.mark.asyncio
+async def test_run_batch_cleans_old_herbie_cache(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+) -> None:
+    """After a successful run_batch, old herbie cache directories are deleted."""
+    from adsb_server.ingestion.batch import run_batch
+
+    herbie_dir = tmp_path / "herbie"
+    herbie_dir.mkdir()
+    old_cache = herbie_dir / "gfs.20210101"
+    old_cache.mkdir()
+    (old_cache / "data.grib2").write_bytes(b"x")
+
+    batch_date = date(2021, 3, 1)
+    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
+
+    await run_batch(conn, tarball_dir, batch_date,
+                    herbie_cache_dir=herbie_dir, keep_herbie_cache=False)
+
+    assert not old_cache.exists(), "old herbie cache dir should be deleted after successful batch"
+
+
+@pytest.mark.asyncio
+async def test_run_batch_keeps_herbie_cache_when_flag_set(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+) -> None:
+    """When keep_herbie_cache=True, old herbie cache directories are preserved."""
+    from adsb_server.ingestion.batch import run_batch
+
+    herbie_dir = tmp_path / "herbie"
+    herbie_dir.mkdir()
+    old_cache = herbie_dir / "gfs.20210101"
+    old_cache.mkdir()
+    (old_cache / "data.grib2").write_bytes(b"x")
+
+    batch_date = date(2021, 3, 1)
+    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
+
+    await run_batch(conn, tarball_dir, batch_date,
+                    herbie_cache_dir=herbie_dir, keep_herbie_cache=True)
+
+    assert old_cache.exists(), "old herbie cache dir should be kept when flag is set"
