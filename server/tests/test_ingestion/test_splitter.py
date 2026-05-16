@@ -339,15 +339,33 @@ class TestGapBasedSplitting:
 
     def test_air_gap_over_1h_creates_sub_sequence(self) -> None:
         """Plausible air gap >1 h stays one flight with two sub-sequences (not two flights)."""
+        # Aircraft moves ~42 km during the gap (> 10 m/s implied speed) → not parked.
         points = [
-            _make_point(ts=1000.0, alt_baro=35000.0),
-            _make_point(ts=1060.0, alt_baro=35000.0),
-            _make_point(ts=4700.0, alt_baro=35000.0),  # 3640 s gap — plausible, < 12 h
-            _make_point(ts=4760.0, alt_baro=35000.0),
+            _make_point(ts=1000.0, lat=51.5, lon=-0.1, alt_baro=35000.0),
+            _make_point(ts=1060.0, lat=51.5, lon=-0.1, alt_baro=35000.0),
+            _make_point(ts=4700.0, lat=51.5, lon=0.5, alt_baro=35000.0),  # ~42 km, 3640 s gap
+            _make_point(ts=4760.0, lat=51.5, lon=0.5, alt_baro=35000.0),
         ]
         finalized, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 1
         assert len(finalized[0].vertex_sequences) == 2
+
+    def test_stationary_air_gap_splits(self) -> None:
+        """Aircraft at same location after a long gap splits, even with alt_baro set.
+
+        Models sea-level airfields (e.g. Lee-on-the-Solent, elevation ~5 ft AMSL)
+        where the transponder reports a non-None baro altitude while on the ground.
+        A 2.5-hour gap at essentially the same position must produce two flights.
+        """
+        points = [
+            _make_point(ts=1000.0, lat=50.814, lon=-1.201, alt_baro=150.0),
+            _make_point(ts=1060.0, lat=50.814, lon=-1.201, alt_baro=150.0),
+            # 9528 s gap, same location — implied speed ≈ 0 m/s → split
+            _make_point(ts=10588.0, lat=50.814, lon=-1.201, alt_baro=125.0),
+            _make_point(ts=10648.0, lat=50.815, lon=-1.200, alt_baro=200.0),
+        ]
+        finalized, _ = split_flights(_make_header(), points, 99999.0)
+        assert len(finalized) == 2
 
     def test_air_gap_geographically_implausible_splits(self) -> None:
         """Air gap where positions are impossibly far apart → two separate flights."""
@@ -362,12 +380,13 @@ class TestGapBasedSplitting:
         assert len(finalized) == 2
 
     def test_air_gap_at_sub_seq_threshold_no_flight_split(self) -> None:
-        """Air gap of 3600 s (< 12 h max stitch) stays one flight, becomes sub-sequence."""
+        """Air gap of 3600 s with movement (< 12 h max stitch) stays one flight."""
+        # Aircraft moves ~42 km during the gap so slow-speed check does not split.
         points = [
-            _make_point(ts=1000.0, alt_baro=35000.0),
-            _make_point(ts=1060.0, alt_baro=35000.0),
-            _make_point(ts=4660.0, alt_baro=35000.0),  # 3600 s gap
-            _make_point(ts=4720.0, alt_baro=35000.0),
+            _make_point(ts=1000.0, lat=51.5, lon=-0.1, alt_baro=35000.0),
+            _make_point(ts=1060.0, lat=51.5, lon=-0.1, alt_baro=35000.0),
+            _make_point(ts=4660.0, lat=51.5, lon=0.5, alt_baro=35000.0),  # ~42 km, 3600 s gap
+            _make_point(ts=4720.0, lat=51.5, lon=0.5, alt_baro=35000.0),
         ]
         finalized, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 1
@@ -376,22 +395,25 @@ class TestGapBasedSplitting:
 
     def test_24h_duration_cap_splits(self) -> None:
         """A segment spanning >24 h is force-split regardless of gap size."""
-        # Paired points (30 s apart) with hourly groups so each sub-sequence has 2 pts.
-        # The duration cap fires when ts - flight_start_ts > 86400 (at ts=24*3600+30=86430).
+        # Points advance 0.6° longitude per hour (~42 km) so the slow-speed check
+        # does not trigger; only the 24-h duration cap splits the segment.
         pts = []
         for i in range(27):
-            pts.append(_make_point(ts=float(i * 3600), alt_baro=35000.0))
-            pts.append(_make_point(ts=float(i * 3600 + 30), alt_baro=35000.0))
+            lon = -0.1 + i * 0.6
+            pts.append(_make_point(ts=float(i * 3600), lon=lon, alt_baro=35000.0))
+            pts.append(_make_point(ts=float(i * 3600 + 30), lon=lon, alt_baro=35000.0))
         finalized, _ = split_flights(_make_header(), pts, 999999.0)
         assert len(finalized) >= 2, "25-hour span should produce at least two segments"
 
     def test_24h_duration_cap_boundary_no_split(self) -> None:
         """A segment just under 24 h is NOT split by the duration cap alone."""
-        # Paired points: last ts = 23*3600+30 = 82830 s < 86400 s → no cap fires.
+        # Points advance 0.6° longitude per hour (~42 km) so the slow-speed check
+        # does not trigger.  Last ts = 23*3600+30 = 82830 s < 86400 s → no cap fires.
         pts = []
         for i in range(24):
-            pts.append(_make_point(ts=float(i * 3600), alt_baro=35000.0))
-            pts.append(_make_point(ts=float(i * 3600 + 30), alt_baro=35000.0))
+            lon = -0.1 + i * 0.6
+            pts.append(_make_point(ts=float(i * 3600), lon=lon, alt_baro=35000.0))
+            pts.append(_make_point(ts=float(i * 3600 + 30), lon=lon, alt_baro=35000.0))
         finalized, _ = split_flights(_make_header(), pts, 999999.0)
         assert len(finalized) == 1, "23-hour span should be a single segment"
 

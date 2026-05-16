@@ -48,6 +48,12 @@ _IN_PROGRESS_WINDOW_AIR = 3600.0
 # 350 m/s ≈ 1260 km/h — faster than any airliner, so false positives are rare.
 _MAX_STITCH_SPEED_MPS = 350.0
 
+# Minimum implied average speed for an aircraft to be considered continuously
+# airborne across a gap.  Below this the aircraft was almost certainly stationary
+# (parked at an airfield whose baro elevation is non-zero, so alt_baro is not
+# None even on the ground).  10 m/s ≈ 19 kt — safely below any cruise speed.
+_MIN_STITCH_SPEED_MPS = 10.0
+
 
 def interpolate_missing_values(points: list[RawPoint]) -> list[RawPoint]:
     """
@@ -190,14 +196,23 @@ def build_scalar_series(
     return trk, gs_, vr_, ias
 
 
-def _geographically_plausible(prev: RawPoint, curr: RawPoint, gap: float) -> bool:
-    """Return True if the two positions are reachable within gap seconds at max aircraft speed."""
+def _haversine_m(prev: RawPoint, curr: RawPoint) -> float:
+    """Haversine distance in metres between two RawPoints."""
     lat1, lon1 = math.radians(prev.lat), math.radians(prev.lon)
     lat2, lon2 = math.radians(curr.lat), math.radians(curr.lon)
     dlat, dlon = lat2 - lat1, lon2 - lon1
     a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    dist_m = 6_371_000.0 * 2.0 * math.asin(math.sqrt(max(0.0, min(1.0, a))))
-    return dist_m <= _MAX_STITCH_SPEED_MPS * gap
+    return 6_371_000.0 * 2.0 * math.asin(math.sqrt(max(0.0, min(1.0, a))))
+
+
+def _geographically_plausible(prev: RawPoint, curr: RawPoint, gap: float) -> bool:
+    """Return True if the two positions are reachable within gap seconds at max aircraft speed."""
+    return _haversine_m(prev, curr) <= _MAX_STITCH_SPEED_MPS * gap
+
+
+def _geographically_active(prev: RawPoint, curr: RawPoint, gap: float) -> bool:
+    """Return True if the implied average speed across the gap suggests continuous flight."""
+    return _haversine_m(prev, curr) >= _MIN_STITCH_SPEED_MPS * gap
 
 
 def _should_flight_split(prev: RawPoint, curr: RawPoint, flight_start_ts: float) -> bool:
@@ -220,7 +235,13 @@ def _should_flight_split(prev: RawPoint, curr: RawPoint, flight_start_ts: float)
 
     # Large air-to-air gap: stitch if plausible, otherwise split.
     if prev.alt_baro is not None and curr.alt_baro is not None and gap > _SUB_SEQ_GAP_S:
-        return gap > _MAX_STITCH_GAP_S or not _geographically_plausible(prev, curr, gap)
+        if gap > _MAX_STITCH_GAP_S or not _geographically_plausible(prev, curr, gap):
+            return True
+        # Stationary across a long gap → aircraft was parked (catches sea-level
+        # airfields where baro altitude is non-None even on the ground).
+        if gap > _GROUND_GAP_THRESHOLD and not _geographically_active(prev, curr, gap):
+            return True
+        return False
 
     # For all other transitions (including ground/air changes), trust readsb's new_leg.
     return curr.new_leg
