@@ -25,6 +25,7 @@ services:
     environment:
       SCHEDULER_LOOKBACK_DAYS: "7"
       SCHEDULER_KEEP_TRACES: "true"
+      HERBIE_KEEP_CACHE: "true"
     volumes:
       - dev_scheduler_cache:/data/cache
 

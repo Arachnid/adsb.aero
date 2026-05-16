@@ -367,6 +367,31 @@ class TestGapBasedSplitting:
         finalized, _ = split_flights(_make_header(), points, 99999.0)
         assert len(finalized) == 2
 
+    def test_stationary_air_gap_with_small_drift_splits(self) -> None:
+        """Aircraft moves <1 km across a 2.6-hour gap — slow-speed check must fire.
+
+        Derived from ICAO 4caf18 (EI-IRG helicopter) on 2026-05-15.
+        The helicopter landed at Lee-on-the-Solent (alt ~5 ft AMSL) at 17:22 UTC
+        and departed at 20:01 UTC.  Raw trace has no intermediate points during
+        the 9528 s gap; both boundary points have alt_baro set (150 ft, 125 ft).
+        Implied average speed: 513 m / 9528 s ≈ 0.054 m/s — well below 10 m/s.
+
+        The old code's air-to-air block returned False directly when the gap was
+        geographically plausible, never reaching the new_leg check.  The slow-speed
+        check was added to catch exactly this pattern.
+        """
+        points = [
+            # Several pre-gap points at the Lee-on-the-Solent apron
+            _make_point(ts=62538.0, lat=50.8143, lon=-1.2023, alt_baro=175.0),
+            _make_point(ts=62554.0, lat=50.8143, lon=-1.2041, alt_baro=150.0),
+            # 9528 s gap; aircraft moved only ~513 m (taxied/rolled slightly)
+            _make_point(ts=72082.0, lat=50.8123, lon=-1.2107, alt_baro=125.0),
+            _make_point(ts=72083.0, lat=50.8123, lon=-1.2111, alt_baro=125.0),
+            _make_point(ts=72085.0, lat=50.8121, lon=-1.2118, alt_baro=150.0),
+        ]
+        finalized, _ = split_flights(_make_header(), points, 99999.0)
+        assert len(finalized) == 2
+
     def test_air_gap_geographically_implausible_splits(self) -> None:
         """Air gap where positions are impossibly far apart → two separate flights."""
         # Points jump from London to New York in 61 s — physically impossible.
