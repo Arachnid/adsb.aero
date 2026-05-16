@@ -41,11 +41,11 @@ async def test_no_filter_returns_all(api_client: AsyncClient) -> None:
     flight_ids = {f["flight_id"] for f in data["flights"]}
     assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
     assert "ddeeff:2025-04-01T06:00:00Z" in flight_ids
-    # Every result should include the full trace
+    # Every result should include the full trace (MultiLineString: list of sub-sequences)
     for f in data["flights"]:
-        assert f["path"]["type"] == "LineString"
+        assert f["path"]["type"] == "MultiLineString"
         assert len(f["timestamps"]) == len(f["path"]["coordinates"])
-        assert len(f["path_tracks"]) == len(f["path"]["coordinates"])
+        assert len(f["path_tracks"]) > 0
 
 
 async def test_starts_within_time_filter(api_client: AsyncClient) -> None:

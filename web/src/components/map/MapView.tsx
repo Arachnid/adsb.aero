@@ -655,34 +655,47 @@ export function MapView({
     }
 
     const segments: Seg[] = flights.flatMap((f) => {
-      const coords = f.path?.coordinates;
-      if (!coords || coords.length < 2) return [];
-      const runs = f.squawk_runs ?? [];
-      return coords.slice(0, -1).map((c, i): Seg => {
-        // slice(0,-1) guarantees i+1 < coords.length
-        const next = coords[i + 1] ?? c;
-        const ts = f.timestamps?.[i] ?? 0;
-        const tsNext = f.timestamps?.[i + 1] ?? ts;
-        return {
-          from: [c[0], c[1]],
-          to: [next[0], next[1]],
-          altMid: (c[2] + next[2]) / 2,
-          altFt: c[2],
-          altFtTo: next[2],
-          cat: f.emitter_category ?? null,
-          squawk: squawkAt(runs, ts),
-          flightId: f.flight_id,
-          pointIdx: i,
-          vs: stepValueAt(f.path_vr, ts),
-          gs: stepValueAt(f.path_gs, ts),
-          ias: stepValueAt(f.path_ias, ts),
-          track: stepValueAt(f.path_tracks, ts),
-          callsign: f.callsign ?? null,
-          icao24: f.icao24,
-          icaoType: f.icao_type ?? null,
-          tsFrom: ts,
-          tsTo: tsNext,
-        };
+      const allSubSeqs = f.path?.coordinates;
+      if (!allSubSeqs?.length) return [];
+      let flatOffset = 0;
+      return allSubSeqs.flatMap((subSeq, subIdx) => {
+        const segsForSub = (() => {
+          if (subSeq.length < 2) return [];
+          const subTs = f.timestamps?.[subIdx] ?? [];
+          const subRuns = (f.squawk_runs?.[subIdx] ?? []) as [number, string][];
+          const subVr = f.path_vr?.[subIdx] ?? null;
+          const subGs = f.path_gs?.[subIdx] ?? null;
+          const subIas = f.path_ias?.[subIdx] ?? null;
+          const subTracks = f.path_tracks?.[subIdx] ?? null;
+          return subSeq.slice(0, -1).map((c, j): Seg => {
+            // slice(0,-1) guarantees j+1 < subSeq.length
+            const next = subSeq[j + 1] ?? c;
+            const ts = subTs[j] ?? 0;
+            const tsNext = subTs[j + 1] ?? ts;
+            return {
+              from: [c[0], c[1]],
+              to: [next[0], next[1]],
+              altMid: (c[2] + next[2]) / 2,
+              altFt: c[2],
+              altFtTo: next[2],
+              cat: f.emitter_category ?? null,
+              squawk: squawkAt(subRuns, ts),
+              flightId: f.flight_id,
+              pointIdx: flatOffset + j,
+              vs: stepValueAt(subVr, ts),
+              gs: stepValueAt(subGs, ts),
+              ias: stepValueAt(subIas, ts),
+              track: stepValueAt(subTracks, ts),
+              callsign: f.callsign ?? null,
+              icao24: f.icao24,
+              icaoType: f.icao_type ?? null,
+              tsFrom: ts,
+              tsTo: tsNext,
+            };
+          });
+        })();
+        flatOffset += subSeq.length;
+        return segsForSub;
       });
     });
 
@@ -756,7 +769,7 @@ export function MapView({
     } else if (hoveredPoint && flights) {
       // Sparkline hover: snap to the nearest recorded vertex.
       const hf = flights.find((f) => f.flight_id === hoveredPoint.flightId);
-      const coord = hf?.path?.coordinates[hoveredPoint.pointIdx];
+      const coord = hf?.path?.coordinates.flat()[hoveredPoint.pointIdx];
       if (coord) dot.push([coord[0], coord[1]]);
     }
 

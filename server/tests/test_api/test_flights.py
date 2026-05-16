@@ -29,34 +29,36 @@ async def test_get_flight_happy_path(api_client: AsyncClient) -> None:
     assert data["year"] == 2010
     assert data["operator"] == "Test Airways"
 
-    # Path shape
+    # Path shape (MultiLineString: list of sub-sequences)
     path = data["path"]
-    assert path["type"] == "LineString"
-    assert len(path["coordinates"]) == 3
+    assert path["type"] == "MultiLineString"
+    assert sum(len(s) for s in path["coordinates"]) == 3
     # Each coordinate should have 3 elements (lon, lat, alt — M stripped)
-    for coord in path["coordinates"]:
-        assert len(coord) == 3
+    for seq in path["coordinates"]:
+        for coord in seq:
+            assert len(coord) == 3
 
-    # Timestamps
+    # Timestamps (list[list[float]]: per-sequence structure)
     timestamps = data["timestamps"]
-    assert len(timestamps) == 3
-    assert timestamps[0] == pytest.approx(1743501600.0)
+    assert sum(len(s) for s in timestamps) == 3
+    assert timestamps[0][0] == pytest.approx(1743501600.0)
 
-    # path_tracks: [[ts, degrees], ...] timeseries (independent of path vertices)
+    # path_tracks: per-sub-sequence [[[ts, degrees], ...], ...] timeseries
     pt = data["path_tracks"]
     assert pt is not None
-    assert len(pt) == 3
-    assert pt[0] == [pytest.approx(1743501600.0), 90]
-    assert pt[1] == [pytest.approx(1743505200.0), 315]
-    assert pt[2] == [pytest.approx(1743508800.0), 315]
+    assert len(pt) == 1  # one sub-sequence (no coverage gaps in test data)
+    assert len(pt[0]) == 3
+    assert pt[0][0] == [pytest.approx(1743501600.0), 90]
+    assert pt[0][1] == [pytest.approx(1743505200.0), 315]
+    assert pt[0][2] == [pytest.approx(1743508800.0), 315]
 
     # New series: null in test data (not inserted)
     assert data["path_gs"] is None
     assert data["path_vr"] is None
     assert data["path_ias"] is None
 
-    # Squawk runs: two instants with the same code define the temporal extent
-    assert data["squawk_runs"] == [[1743501600.0, "1234"], [1743508800.0, "1234"]]
+    # Squawk runs: per-sub-sequence [[[ts, code], ...], ...]
+    assert data["squawk_runs"] == [[[1743501600.0, "1234"], [1743508800.0, "1234"]]]
 
     assert data["raw_point_count"] == 30
     assert data["ingest_batch_date"] == "2025-04-01"

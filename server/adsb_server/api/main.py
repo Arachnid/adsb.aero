@@ -21,7 +21,7 @@ from adsb_server.query.compiler import CompiledPredicate, compile_predicate
 from adsb_server.query.models import (
     DataRange,
     FlightDetail,
-    GeoJSONLineStringZ,
+    GeoJSONMultiLineStringZ,
     GeoJSONPointZ,
     IcaoTypeStat,
     QueryRequest,
@@ -151,69 +151,89 @@ _INSTANT_RE = re.compile(
     r"POINT\s+Z\s*\(\s*([^\s]+)\s+([^\s]+)\s+([^\s]+)\s*\)@([^,\]\)]+)",
     re.IGNORECASE,
 )
+_SEQ_BLOCK_RE = re.compile(r"\[([^\[\]]+)\]")
 _TINT_SERIES_RE = re.compile(r"(-?\d+)@(\d{4}-\d{2}-\d{2}[^,\[\]\{\}]*)")
 _TTEXT_INSTANT_RE = re.compile(r"([^@,\[\]]+)@([^,\[\]]+)")
 _TFLOAT_INSTANT_RE = re.compile(r"(-?[\d.]+(?:[eE][+-]?\d+)?)@(\d{4}-\d{2}-\d{2}[^,\[\]\{\}]*)")
 
 
-def _parse_path(path_text: str) -> tuple[GeoJSONLineStringZ, list[float]]:
-    """Parse MobilityDB tgeompoint text into a GeoJSON LineString and unix timestamps.
+def _parse_path(path_text: str) -> tuple[GeoJSONMultiLineStringZ, list[list[float]]]:
+    """Parse a MobilityDB tgeompoint seqset into a GeoJSON MultiLineString.
 
-    Format: '[POINT Z (lon lat alt)@YYYY-MM-DD HH:MM:SS+00, ...]'
-    Coordinates rounded to 6 decimal places.
+    Each `[...]` block in the seqset becomes one sub-sequence element.
+    Returns (MultiLineString, per-sequence timestamp lists). Coordinates rounded to 6 dp.
     """
-    coords_3d: list[tuple[float, float, float]] = []
-    timestamps: list[float] = []
-    for m in _INSTANT_RE.finditer(path_text):
-        lon = round(float(m.group(1)), 6)
-        lat = round(float(m.group(2)), 6)
-        alt = round(float(m.group(3)), 6)
-        ts_str = m.group(4).strip()
-        if ts_str.endswith("+00"):
-            ts_str = ts_str + ":00"
-        timestamps.append(datetime.fromisoformat(ts_str).timestamp())
-        coords_3d.append((lon, lat, alt))
-    return GeoJSONLineStringZ(type="LineString", coordinates=coords_3d), timestamps
+    all_coords: list[list[tuple[float, float, float]]] = []
+    all_timestamps: list[list[float]] = []
+    for block in _SEQ_BLOCK_RE.finditer(path_text):
+        seq_coords: list[tuple[float, float, float]] = []
+        seq_ts: list[float] = []
+        for m in _INSTANT_RE.finditer(block.group(1)):
+            lon = round(float(m.group(1)), 6)
+            lat = round(float(m.group(2)), 6)
+            alt = round(float(m.group(3)), 6)
+            ts_str = m.group(4).strip()
+            if ts_str.endswith("+00"):
+                ts_str = ts_str + ":00"
+            seq_ts.append(datetime.fromisoformat(ts_str).timestamp())
+            seq_coords.append((lon, lat, alt))
+        if seq_coords:
+            all_coords.append(seq_coords)
+            all_timestamps.append(seq_ts)
+    return GeoJSONMultiLineStringZ(type="MultiLineString", coordinates=all_coords), all_timestamps
 
 
-def _parse_tint_series(text: str | None) -> list[list[float]] | None:
-    """Parse a MobilityDB stepwise tint text into [[epoch_s, value], ...] pairs."""
+def _parse_tint_series(text: str | None) -> list[list[list[float]]] | None:
+    """Parse a MobilityDB stepwise tint seqset into per-sub-sequence [[epoch_s, value], ...] lists."""
     if not text:
         return None
-    result: list[list[float]] = []
-    for m in _TINT_SERIES_RE.finditer(text):
-        val = int(m.group(1))
-        ts_str = m.group(2).strip()
-        if ts_str.endswith("+00"):
-            ts_str += ":00"
-        result.append([datetime.fromisoformat(ts_str).timestamp(), val])
+    result: list[list[list[float]]] = []
+    for block in _SEQ_BLOCK_RE.finditer(text):
+        seq: list[list[float]] = []
+        for m in _TINT_SERIES_RE.finditer(block.group(1)):
+            val = int(m.group(1))
+            ts_str = m.group(2).strip()
+            if ts_str.endswith("+00"):
+                ts_str += ":00"
+            seq.append([datetime.fromisoformat(ts_str).timestamp(), val])
+        if seq:
+            result.append(seq)
     return result if result else None
 
 
-def _parse_squawk_seq(text: str | None) -> list[tuple[float, str]]:
-    if not text:
-        return []
-    runs: list[tuple[float, str]] = []
-    for m in _TTEXT_INSTANT_RE.finditer(text):
-        code = m.group(1).strip().strip('"')
-        ts_str = m.group(2).strip()
-        if ts_str.endswith("+00"):
-            ts_str += ":00"
-        runs.append((datetime.fromisoformat(ts_str).timestamp(), code))
-    return runs
-
-
-def _parse_alt_correction(text: str | None) -> list[list[float]] | None:
-    """Parse a MobilityDB stepwise tfloat text into [[epoch_s, correction_ft], ...] pairs."""
+def _parse_squawk_seq(text: str | None) -> list[list[tuple[float, str]]] | None:
+    """Parse a MobilityDB ttext seqset into per-sub-sequence [(epoch_s, code), ...] lists."""
     if not text:
         return None
-    result: list[list[float]] = []
-    for m in _TFLOAT_INSTANT_RE.finditer(text):
-        val = float(m.group(1))
-        ts_str = m.group(2).strip()
-        if ts_str.endswith("+00"):
-            ts_str += ":00"
-        result.append([datetime.fromisoformat(ts_str).timestamp(), val])
+    result: list[list[tuple[float, str]]] = []
+    for block in _SEQ_BLOCK_RE.finditer(text):
+        seq: list[tuple[float, str]] = []
+        for m in _TTEXT_INSTANT_RE.finditer(block.group(1)):
+            code = m.group(1).strip().strip('"')
+            ts_str = m.group(2).strip()
+            if ts_str.endswith("+00"):
+                ts_str += ":00"
+            seq.append((datetime.fromisoformat(ts_str).timestamp(), code))
+        if seq:
+            result.append(seq)
+    return result if result else None
+
+
+def _parse_alt_correction(text: str | None) -> list[list[list[float]]] | None:
+    """Parse a MobilityDB stepwise tfloat seqset into per-sub-sequence [[epoch_s, val], ...] lists."""
+    if not text:
+        return None
+    result: list[list[list[float]]] = []
+    for block in _SEQ_BLOCK_RE.finditer(text):
+        seq: list[list[float]] = []
+        for m in _TFLOAT_INSTANT_RE.finditer(block.group(1)):
+            val = float(m.group(1))
+            ts_str = m.group(2).strip()
+            if ts_str.endswith("+00"):
+                ts_str += ":00"
+            seq.append([datetime.fromisoformat(ts_str).timestamp(), val])
+        if seq:
+            result.append(seq)
     return result if result else None
 
 

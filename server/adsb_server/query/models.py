@@ -32,6 +32,20 @@ class GeoJSONLineStringZ(BaseModel):
     )
 
 
+class GeoJSONMultiLineStringZ(BaseModel):
+    """GeoJSON MultiLineString with altitude on every vertex, as returned in flight path fields.
+
+    Each element of `coordinates` is one contiguous sub-sequence of ADS-B coverage.
+    Gaps between sub-sequences (e.g. oceanic blackout) are explicit: no interpolation
+    is performed across them.
+    """
+
+    type: Literal["MultiLineString"]
+    coordinates: list[list[tuple[float, float, float]]] = Field(
+        description="List of sub-sequences; each is a list of `[longitude, latitude, altitude_ft]` vertices."  # noqa: E501
+    )
+
+
 # ---------------------------------------------------------------------------
 # Response models
 # ---------------------------------------------------------------------------
@@ -104,86 +118,101 @@ class FlightDetail(FlightSummary):
         description="Number of vertices in the simplified path geometry. "
         "Always present, even when `include_path` is false."
     )
-    path: GeoJSONLineStringZ | None = Field(
+    path: GeoJSONMultiLineStringZ | None = Field(
         default=None,
-        description="Simplified flight path as a GeoJSON LineString. "
+        description="Simplified flight path as a GeoJSON MultiLineString. "
+        "Each element of `coordinates` is one contiguous sub-sequence of ADS-B coverage. "
         "Coordinates are `[longitude, latitude, altitude_ft]`. "
         "Altitude is pressure altitude in feet (QNH correction not applied). "
         "Ground-roll points are excluded. "
         "Simplified using two-pass TD-TR: spatial pass with ε=50 m (cross-track error), "
         "then altitude pass with ε=100 ft on the surviving vertices. "
         "Squawk change points are always preserved and divide simplification intervals. "
+        "Coverage gaps >60 s produce separate sub-sequences with no interpolation across them. "
         "Omitted when the request sets `include_path` to false.",
         examples=[
             {
-                "type": "LineString",
+                "type": "MultiLineString",
                 "coordinates": [
-                    [-0.1275, 51.5072, 35000.0],
-                    [-1.2, 52.5, 36000.0],
-                    [-2.2667, 53.4667, 35000.0],
+                    [
+                        [-0.1275, 51.5072, 35000.0],
+                        [-1.2, 52.5, 36000.0],
+                    ],
+                    [
+                        [-30.0, 55.0, 37000.0],
+                        [-52.0, 47.0, 37000.0],
+                    ],
                 ],
             }
         ],
     )
-    timestamps: list[float] | None = Field(
+    timestamps: list[list[float]] | None = Field(
         default=None,
-        description="Unix epoch seconds (UTC) for each vertex in `path.coordinates`. "
-        "Same length as `coordinates`. Omitted when `include_path` is false.",
-        examples=[[1743501600.0, 1743505200.0, 1743508800.0]],
+        description="Unix epoch seconds (UTC) for each vertex in `path.coordinates`, "
+        "structured as a list of sub-sequences matching `path.coordinates`. "
+        "`timestamps[i][j]` is the timestamp for `path.coordinates[i][j]`. "
+        "Omitted when `include_path` is false.",
+        examples=[[[1743501600.0, 1743505200.0], [1743530000.0, 1743540000.0]]],
     )
-    path_tracks: list[list[float]] | None = Field(
+    path_tracks: list[list[list[float]]] | None = Field(
         default=None,
-        description="Ground track (heading) timeseries as `[[unix_epoch_s, degrees_0_359], ...]`. "
+        description="Ground track (heading) timeseries, structured as a list of sub-sequences "
+        "matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, degrees_0_359], ...]`. "
         "Rounded to the nearest integer degree. "
         "Derived from the path-simplified points, then further reduced by TD-TR with ε=5°. "
-        "Step-interpolated: forward-fill each entry to the next. "
+        "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
         "Timestamps are independent of `timestamps` (different simplification pass). "
         "Omitted when `include_path` is false.",
-        examples=[[[1743501600.0, 90], [1743505200.0, 315]]],
+        examples=[[[[1743501600.0, 90], [1743505200.0, 315]]]],
     )
-    path_gs: list[list[float]] | None = Field(
+    path_gs: list[list[list[float]]] | None = Field(
         default=None,
-        description="Ground speed timeseries as `[[unix_epoch_s, knots], ...]`. "
+        description="Ground speed timeseries, structured as a list of sub-sequences "
+        "matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. "
         "Rounded to the nearest integer knot. "
         "Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. "
-        "Step-interpolated: forward-fill each entry to the next. "
+        "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
         "Null when no ground speed data was available for this flight.",
-        examples=[[[1743501600.0, 450], [1743505200.0, 460]]],
+        examples=[[[[1743501600.0, 450], [1743505200.0, 460]]]],
     )
-    path_vr: list[list[float]] | None = Field(
+    path_vr: list[list[list[float]]] | None = Field(
         default=None,
-        description="Vertical rate timeseries as `[[unix_epoch_s, fpm], ...]`. "
+        description="Vertical rate timeseries, structured as a list of sub-sequences "
+        "matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, fpm], ...]`. "
         "Rounded to the nearest integer fpm. Positive = climbing, negative = descending. "
         "Derived from the path-simplified points, then further reduced by TD-TR with ε=100 fpm. "
-        "Step-interpolated: forward-fill each entry to the next. "
+        "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
         "Null when no vertical rate data was available for this flight.",
-        examples=[[[1743501600.0, 0], [1743505200.0, -512]]],
+        examples=[[[[1743501600.0, 0], [1743505200.0, -512]]]],
     )
-    path_ias: list[list[float]] | None = Field(
+    path_ias: list[list[list[float]]] | None = Field(
         default=None,
-        description="Indicated airspeed timeseries as `[[unix_epoch_s, knots], ...]`. "
+        description="Indicated airspeed timeseries, structured as a list of sub-sequences "
+        "matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. "
         "Rounded to the nearest integer knot. "
         "Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. "
         "Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). "
-        "Step-interpolated: forward-fill each entry to the next. "
+        "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
         "Null when no IAS data was available for this flight.",
-        examples=[[[1743501600.0, 275]]],
+        examples=[[[[1743501600.0, 275]]]],
     )
-    squawk_runs: list[tuple[float, str]] | None = Field(
+    squawk_runs: list[list[tuple[float, str]]] | None = Field(
         default=None,
-        description="Run-length encoding of transponder squawk codes. "
-        "Each entry is `[unix_timestamp, squawk_code]` and marks the start of a new code. "
-        "Forward-fill from each entry to the next to determine the code in effect at any point. "
+        description="Run-length encoding of transponder squawk codes, structured as a list of "
+        "sub-sequences matching `path.coordinates`. "
+        "Each sub-sequence is `[[unix_timestamp, squawk_code], ...]` marking code changes. "
+        "Forward-fill from each entry to the next within a sub-sequence. "
         "Omitted when `include_path` is false.",
-        examples=[[[1743501600.0, "1234"]]],
+        examples=[[[[1743501600.0, "1234"], [1743508800.0, "1234"]]]],
     )
-    alt_correction_ft: list[list[float]] | None = Field(
+    alt_correction_ft: list[list[list[float]]] | None = Field(
         default=None,
-        description="QNH altitude correction timeseries as `[[unix_epoch_s, correction_ft], ...]`. "
-        "Step-interpolated: forward-fill each entry to the next to get the correction at any time. "
-        "Add to the pressure altitude from `path.coordinates[*][2]` to obtain feet MSL. "
+        description="QNH altitude correction timeseries, structured as a list of sub-sequences "
+        "matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, correction_ft], ...]`. "
+        "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
+        "Add to the pressure altitude from `path.coordinates[i][j][2]` to obtain feet MSL. "
         "Null when no correction data was available at ingestion time.",
-        examples=[[[1743501600.0, 14.5], [1743505200.0, 14.5]]],
+        examples=[[[[1743501600.0, 14.5], [1743505200.0, 14.5]]]],
     )
     raw_point_count: int = Field(
         description="Number of raw ADS-B messages ingested for this leg, "

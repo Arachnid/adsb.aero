@@ -327,124 +327,154 @@ export interface components {
              */
             point_count: number;
             /**
-             * @description Simplified flight path as a GeoJSON LineString. Coordinates are `[longitude, latitude, altitude_ft]`. Altitude is pressure altitude in feet (QNH correction not applied). Ground-roll points are excluded. Simplified using two-pass TD-TR: spatial pass with ε=50 m (cross-track error), then altitude pass with ε=100 ft on the surviving vertices. Squawk change points are always preserved and divide simplification intervals. Omitted when the request sets `include_path` to false.
+             * @description Simplified flight path as a GeoJSON MultiLineString. Each element of `coordinates` is one contiguous sub-sequence of ADS-B coverage. Coordinates are `[longitude, latitude, altitude_ft]`. Altitude is pressure altitude in feet (QNH correction not applied). Ground-roll points are excluded. Simplified using two-pass TD-TR: spatial pass with ε=50 m (cross-track error), then altitude pass with ε=100 ft on the surviving vertices. Squawk change points are always preserved and divide simplification intervals. Coverage gaps >60 s produce separate sub-sequences with no interpolation across them. Omitted when the request sets `include_path` to false.
              * @example {
              *       "coordinates": [
              *         [
-             *           -0.1275,
-             *           51.5072,
-             *           35000
+             *           [
+             *             -0.1275,
+             *             51.5072,
+             *             35000
+             *           ],
+             *           [
+             *             -1.2,
+             *             52.5,
+             *             36000
+             *           ]
              *         ],
              *         [
-             *           -1.2,
-             *           52.5,
-             *           36000
-             *         ],
-             *         [
-             *           -2.2667,
-             *           53.4667,
-             *           35000
+             *           [
+             *             -30,
+             *             55,
+             *             37000
+             *           ],
+             *           [
+             *             -52,
+             *             47,
+             *             37000
+             *           ]
              *         ]
              *       ],
-             *       "type": "LineString"
+             *       "type": "MultiLineString"
              *     }
              */
-            path?: components["schemas"]["GeoJSONLineStringZ"] | null;
+            path?: components["schemas"]["GeoJSONMultiLineStringZ"] | null;
             /**
              * Timestamps
-             * @description Unix epoch seconds (UTC) for each vertex in `path.coordinates`. Same length as `coordinates`. Omitted when `include_path` is false.
+             * @description Unix epoch seconds (UTC) for each vertex in `path.coordinates`, structured as a list of sub-sequences matching `path.coordinates`. `timestamps[i][j]` is the timestamp for `path.coordinates[i][j]`. Omitted when `include_path` is false.
              * @example [
-             *       1743501600,
-             *       1743505200,
-             *       1743508800
+             *       [
+             *         1743501600,
+             *         1743505200
+             *       ],
+             *       [
+             *         1743530000,
+             *         1743540000
+             *       ]
              *     ]
              */
-            timestamps?: number[] | null;
+            timestamps?: number[][] | null;
             /**
              * Path Tracks
-             * @description Ground track (heading) timeseries as `[[unix_epoch_s, degrees_0_359], ...]`. Rounded to the nearest integer degree. Derived from the path-simplified points, then further reduced by TD-TR with ε=5°. Step-interpolated: forward-fill each entry to the next. Timestamps are independent of `timestamps` (different simplification pass). Omitted when `include_path` is false.
+             * @description Ground track (heading) timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, degrees_0_359], ...]`. Rounded to the nearest integer degree. Derived from the path-simplified points, then further reduced by TD-TR with ε=5°. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Timestamps are independent of `timestamps` (different simplification pass). Omitted when `include_path` is false.
              * @example [
              *       [
-             *         1743501600,
-             *         90
-             *       ],
-             *       [
-             *         1743505200,
-             *         315
+             *         [
+             *           1743501600,
+             *           90
+             *         ],
+             *         [
+             *           1743505200,
+             *           315
+             *         ]
              *       ]
              *     ]
              */
-            path_tracks?: number[][] | null;
+            path_tracks?: number[][][] | null;
             /**
              * Path Gs
-             * @description Ground speed timeseries as `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Step-interpolated: forward-fill each entry to the next. Null when no ground speed data was available for this flight.
+             * @description Ground speed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no ground speed data was available for this flight.
              * @example [
              *       [
-             *         1743501600,
-             *         450
-             *       ],
-             *       [
-             *         1743505200,
-             *         460
+             *         [
+             *           1743501600,
+             *           450
+             *         ],
+             *         [
+             *           1743505200,
+             *           460
+             *         ]
              *       ]
              *     ]
              */
-            path_gs?: number[][] | null;
+            path_gs?: number[][][] | null;
             /**
              * Path Vr
-             * @description Vertical rate timeseries as `[[unix_epoch_s, fpm], ...]`. Rounded to the nearest integer fpm. Positive = climbing, negative = descending. Derived from the path-simplified points, then further reduced by TD-TR with ε=100 fpm. Step-interpolated: forward-fill each entry to the next. Null when no vertical rate data was available for this flight.
+             * @description Vertical rate timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, fpm], ...]`. Rounded to the nearest integer fpm. Positive = climbing, negative = descending. Derived from the path-simplified points, then further reduced by TD-TR with ε=100 fpm. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no vertical rate data was available for this flight.
              * @example [
              *       [
-             *         1743501600,
-             *         0
-             *       ],
-             *       [
-             *         1743505200,
-             *         -512
+             *         [
+             *           1743501600,
+             *           0
+             *         ],
+             *         [
+             *           1743505200,
+             *           -512
+             *         ]
              *       ]
              *     ]
              */
-            path_vr?: number[][] | null;
+            path_vr?: number[][][] | null;
             /**
              * Path Ias
-             * @description Indicated airspeed timeseries as `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). Step-interpolated: forward-fill each entry to the next. Null when no IAS data was available for this flight.
+             * @description Indicated airspeed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no IAS data was available for this flight.
              * @example [
              *       [
-             *         1743501600,
-             *         275
+             *         [
+             *           1743501600,
+             *           275
+             *         ]
              *       ]
              *     ]
              */
-            path_ias?: number[][] | null;
+            path_ias?: number[][][] | null;
             /**
              * Squawk Runs
-             * @description Run-length encoding of transponder squawk codes. Each entry is `[unix_timestamp, squawk_code]` and marks the start of a new code. Forward-fill from each entry to the next to determine the code in effect at any point. Omitted when `include_path` is false.
+             * @description Run-length encoding of transponder squawk codes, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_timestamp, squawk_code], ...]` marking code changes. Forward-fill from each entry to the next within a sub-sequence. Omitted when `include_path` is false.
              * @example [
              *       [
-             *         1743501600,
-             *         "1234"
+             *         [
+             *           1743501600,
+             *           "1234"
+             *         ],
+             *         [
+             *           1743508800,
+             *           "1234"
+             *         ]
              *       ]
              *     ]
              */
             squawk_runs?: [
                 number,
                 string
-            ][] | null;
+            ][][] | null;
             /**
              * Alt Correction Ft
-             * @description QNH altitude correction timeseries as `[[unix_epoch_s, correction_ft], ...]`. Step-interpolated: forward-fill each entry to the next to get the correction at any time. Add to the pressure altitude from `path.coordinates[*][2]` to obtain feet MSL. Null when no correction data was available at ingestion time.
+             * @description QNH altitude correction timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, correction_ft], ...]`. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Add to the pressure altitude from `path.coordinates[i][j][2]` to obtain feet MSL. Null when no correction data was available at ingestion time.
              * @example [
              *       [
-             *         1743501600,
-             *         14.5
-             *       ],
-             *       [
-             *         1743505200,
-             *         14.5
+             *         [
+             *           1743501600,
+             *           14.5
+             *         ],
+             *         [
+             *           1743505200,
+             *           14.5
+             *         ]
              *       ]
              *     ]
              */
-            alt_correction_ft?: number[][] | null;
+            alt_correction_ft?: number[][][] | null;
             /**
              * Raw Point Count
              * @description Number of raw ADS-B messages ingested for this leg, including ground-roll points not present in the simplified path geometry.
@@ -491,26 +521,6 @@ export interface components {
             coordinates: number[][];
         };
         /**
-         * GeoJSONLineStringZ
-         * @description GeoJSON LineString with a mandatory altitude on every vertex, as returned in path fields.
-         */
-        GeoJSONLineStringZ: {
-            /**
-             * Type
-             * @constant
-             */
-            type: "LineString";
-            /**
-             * Coordinates
-             * @description Sequence of `[longitude, latitude, altitude_ft]` vertices.
-             */
-            coordinates: [
-                number,
-                number,
-                number
-            ][];
-        };
-        /**
          * GeoJSONMultiLineString
          * @description GeoJSON MultiLineString geometry.
          */
@@ -525,6 +535,30 @@ export interface components {
              * @description Array of LineString coordinate arrays.
              */
             coordinates: number[][][];
+        };
+        /**
+         * GeoJSONMultiLineStringZ
+         * @description GeoJSON MultiLineString with altitude on every vertex, as returned in flight path fields.
+         *
+         *     Each element of `coordinates` is one contiguous sub-sequence of ADS-B coverage.
+         *     Gaps between sub-sequences (e.g. oceanic blackout) are explicit: no interpolation
+         *     is performed across them.
+         */
+        GeoJSONMultiLineStringZ: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "MultiLineString";
+            /**
+             * Coordinates
+             * @description List of sub-sequences; each is a list of `[longitude, latitude, altitude_ft]` vertices.
+             */
+            coordinates: [
+                number,
+                number,
+                number
+            ][][];
         };
         /**
          * GeoJSONMultiPoint

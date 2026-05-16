@@ -47,40 +47,61 @@ function buildList(flights: FlightDetail[]): ListItem[] {
 
 function SparklineChart({
   coords,
+  timestamps,
   hoveredIdx,
   onHoverIdx,
 }: {
-  coords: [number, number, number][];
+  coords: [number, number, number][][];
+  timestamps: number[][] | null | undefined;
   hoveredIdx: number | null;
   onHoverIdx: (idx: number | null) => void;
 }): React.ReactElement | null {
-  if (coords.length < 2) return null;
+  const flatAlts = coords.flatMap((seq) => seq.map((c) => c[2]));
+  const flatTs = timestamps?.flat() ?? null;
+  const n = flatAlts.length;
+  if (n < 2) return null;
 
   const W = 200,
     H = 28,
     PAD = 2;
-  const n = coords.length;
-  const alts = coords.map((c) => c[2]);
-  const minAlt = Math.min(...alts);
-  const maxAlt = Math.max(...alts);
+  const minAlt = Math.min(...flatAlts);
+  const maxAlt = Math.max(...flatAlts);
   const range = maxAlt - minAlt || 1;
 
-  const toX = (i: number): number => PAD + (i / (n - 1)) * (W - PAD * 2);
+  // X is time-proportional when timestamps are available, index-based otherwise.
+  const t0 = flatTs?.[0] ?? 0;
+  const tSpan = flatTs != null ? (flatTs[n - 1] ?? 0) - t0 : n - 1;
+  const toX = (flatIdx: number): number => {
+    if (flatTs != null) {
+      return PAD + (((flatTs[flatIdx] ?? 0) - t0) / (tSpan || 1)) * (W - PAD * 2);
+    }
+    return PAD + (flatIdx / (n - 1)) * (W - PAD * 2);
+  };
   const toY = (alt: number): number => PAD + (1 - (alt - minAlt) / range) * (H - PAD * 2);
   const n2s = (x: number): string => x.toFixed(3);
 
-  const firstAlt = alts[0] ?? 0;
-  const polyPoints = alts.map((alt, i) => `${n2s(toX(i))},${n2s(toY(alt))}`).join(" ");
-  const fillD =
-    `M ${n2s(toX(0))},${n2s(toY(firstAlt))} ` +
-    alts
-      .slice(1)
-      .map((alt, i) => `L ${n2s(toX(i + 1))},${n2s(toY(alt))}`)
-      .join(" ") +
-    ` L ${n2s(toX(n - 1))},${String(H)} L ${n2s(toX(0))},${String(H)} Z`;
+  // Build per-sub-sequence fills and polylines; no line crosses a coverage gap.
+  let flatOffset = 0;
+  const fills: React.ReactElement[] = [];
+  const lines: React.ReactElement[] = [];
+  for (const subSeq of coords) {
+    if (subSeq.length >= 2) {
+      const lastJ = subSeq.length - 1;
+      const fillD =
+        `M ${n2s(toX(flatOffset))},${n2s(toY(subSeq[0]?.[2] ?? 0))} ` +
+        subSeq.slice(1).map((c, j) => `L ${n2s(toX(flatOffset + j + 1))},${n2s(toY(c[2]))}`).join(" ") +
+        ` L ${n2s(toX(flatOffset + lastJ))},${String(H)} L ${n2s(toX(flatOffset))},${String(H)} Z`;
+      const polyPoints = subSeq
+        .map((c, j) => `${n2s(toX(flatOffset + j))},${n2s(toY(c[2]))}`)
+        .join(" ");
+      fills.push(<path key={flatOffset} d={fillD} fill="rgba(110,168,255,0.15)" stroke="none" />);
+      lines.push(<polyline key={flatOffset} points={polyPoints} fill="none" stroke="rgba(110,168,255,0.8)" strokeWidth="1.5" />);
+    }
+    flatOffset += subSeq.length;
+  }
 
   const activeIdx = hoveredIdx !== null && hoveredIdx >= 0 && hoveredIdx < n ? hoveredIdx : null;
-  const activeAlt = activeIdx !== null ? (alts[activeIdx] ?? 0) : 0;
+  const activeAlt = activeIdx !== null ? (flatAlts[activeIdx] ?? 0) : 0;
   const activeHx = activeIdx !== null ? toX(activeIdx) : 0;
   const activeHy = activeIdx !== null ? toY(activeAlt) : 0;
   const tooltipLeft = activeIdx !== null ? `${((toX(activeIdx) / W) * 100).toFixed(2)}%` : "0%";
@@ -116,21 +137,21 @@ function SparklineChart({
         style={{ width: "100%", height: 20, display: "block" }}
         onMouseMove={(e): void => {
           const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const idx = Math.min(n - 1, Math.max(0, Math.round((x / rect.width) * (n - 1))));
-          onHoverIdx(idx);
+          const svgX = (e.clientX - rect.left) / rect.width * W;
+          // Find the flat point index whose x position is closest to the cursor.
+          let best = 0, bestDist = Infinity;
+          for (let i = 0; i < n; i++) {
+            const d = Math.abs(toX(i) - svgX);
+            if (d < bestDist) { bestDist = d; best = i; }
+          }
+          onHoverIdx(best);
         }}
         onMouseLeave={(): void => {
           onHoverIdx(null);
         }}
       >
-        <path d={fillD} fill="rgba(110,168,255,0.15)" stroke="none" />
-        <polyline
-          points={polyPoints}
-          fill="none"
-          stroke="rgba(110,168,255,0.8)"
-          strokeWidth="1.5"
-        />
+        {fills}
+        {lines}
         {activeIdx !== null && (
           <g>
             <line
@@ -346,7 +367,7 @@ function FlightRow({
         {fmtTime(flight.start_ts)} → {fmtEndTime(flight.end_ts, flight.start_ts.slice(0, 10))}
       </div>
       {coords && (
-        <SparklineChart coords={coords} hoveredIdx={hoveredPointIdx} onHoverIdx={onHoverPointIdx} />
+        <SparklineChart coords={coords} timestamps={flight.timestamps} hoveredIdx={hoveredPointIdx} onHoverIdx={onHoverPointIdx} />
       )}
       {selected && (
         <div
