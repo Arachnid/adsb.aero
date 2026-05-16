@@ -26,7 +26,7 @@ def _parse_alt_baro(raw: Any) -> float | None:
         return None
     try:
         return float(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -110,12 +110,12 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
         try:
             lat = float(lat_raw)
             lon = float(lon_raw)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
 
         try:
             ts = base_ts + float(offset_raw)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
 
         alt_baro = _parse_alt_baro(entry[3] if len(entry) > 3 else None)
@@ -126,7 +126,7 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
         if gs_raw is not None:
             try:
                 gs = float(gs_raw)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 gs = None
 
         # track at index 5
@@ -135,14 +135,14 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
         if track_raw is not None:
             try:
                 track = float(track_raw)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 track = None
 
         # flags at index 6
         flags_raw = entry[6] if len(entry) > 6 else None
         try:
             flags = int(flags_raw or 0)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             flags = 0
         new_leg = bool(flags & 2)
 
@@ -152,7 +152,7 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
         if vr_raw is not None:
             try:
                 vr = float(vr_raw)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 vr = None
 
         # aircraft_obj at index 8
@@ -165,7 +165,7 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
         if ias_raw is not None:
             try:
                 ias = float(ias_raw)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 ias = None
 
         points.append(

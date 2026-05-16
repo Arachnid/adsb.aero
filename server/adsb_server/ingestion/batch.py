@@ -270,10 +270,12 @@ def _process_and_correct(
             offset = 0
             for seq in flight.vertex_sequences:
                 n = len(seq)
-                per_seq.append((
-                    list(corr_vals[offset : offset + n]),
-                    list(corr_ts[offset : offset + n]),
-                ))
+                per_seq.append(
+                    (
+                        list(corr_vals[offset : offset + n]),
+                        list(corr_ts[offset : offset + n]),
+                    )
+                )
                 offset += n
             wkt = tfloat_stepwise_seqset(per_seq)
         params_list.append(_flight_to_params(flight, state.batch_date, wkt))

@@ -126,7 +126,7 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
 async def api_client(
     pool: asyncpg.Pool,
     api_test_data: None,
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     """Session-scoped AsyncClient wired to the app with the test pool."""
     app.state.pool = pool
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

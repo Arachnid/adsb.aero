@@ -27,7 +27,7 @@ from adsb_server.ingestion.scheduler import (
 # ---------------------------------------------------------------------------
 
 
-async def _async_chunks(*chunks: bytes) -> AsyncGenerator[bytes, None]:
+async def _async_chunks(*chunks: bytes) -> AsyncGenerator[bytes]:
     for chunk in chunks:
         yield chunk
 

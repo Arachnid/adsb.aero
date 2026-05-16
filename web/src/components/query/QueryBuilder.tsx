@@ -719,7 +719,7 @@ function AircraftCard({
   const [icaoTypeOptions, setIcaoTypeOptions] = useState<ChipOption[]>([]);
 
   useEffect(() => {
-    if (!globalDateRange?.from || !globalDateRange?.to) return;
+    if (!globalDateRange?.from || !globalDateRange.to) return;
     const controller = new AbortController();
     getIcaoTypes(globalDateRange.from, globalDateRange.to, { signal: controller.signal })
       .then((stats) => {
@@ -730,7 +730,7 @@ function AircraftCard({
       .catch((err: unknown) => {
         if ((err as Error).name !== "AbortError") setIcaoTypeOptions([]);
       });
-    return () => {
+    return (): void => {
       controller.abort();
     };
   }, [globalDateRange?.from, globalDateRange?.to]);

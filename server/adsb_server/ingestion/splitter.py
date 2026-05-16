@@ -239,9 +239,7 @@ def _should_flight_split(prev: RawPoint, curr: RawPoint, flight_start_ts: float)
             return True
         # Stationary across a long gap → aircraft was parked (catches sea-level
         # airfields where baro altitude is non-None even on the ground).
-        if gap > _GROUND_GAP_THRESHOLD and not _geographically_active(prev, curr, gap):
-            return True
-        return False
+        return bool(gap > _GROUND_GAP_THRESHOLD and not _geographically_active(prev, curr, gap))
 
     # For all other transitions (including ground/air changes), trust readsb's new_leg.
     return curr.new_leg

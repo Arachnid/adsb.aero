@@ -3,8 +3,12 @@ Integration tests for the database schema and connection pool.
 Requires Docker (testcontainers spins up adsb-postgres:test with pg_partman).
 """
 
-import asyncpg
+from typing import TYPE_CHECKING
+
 import pytest
+
+if TYPE_CHECKING:
+    import asyncpg
 
 # ---------------------------------------------------------------------------
 # Schema verification

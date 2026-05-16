@@ -9,12 +9,15 @@ wraps the test in a transaction that is rolled back on teardown.
 import os
 import subprocess
 import sys
-from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import asyncpg
 import pytest
 from testcontainers.postgres import PostgresContainer
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 ADSB_POSTGRES_IMAGE = "adsb-postgres:test"
 INFRA_DIR = Path(__file__).parent.parent.parent / "infra"
@@ -71,7 +74,7 @@ def migrated_db(db_settings: dict[str, str]) -> dict[str, str]:
 
 
 @pytest.fixture(scope="session")
-async def pool(migrated_db: dict[str, str]) -> AsyncGenerator[asyncpg.Pool, None]:
+async def pool(migrated_db: dict[str, str]) -> AsyncGenerator[asyncpg.Pool]:
     dsn = (
         f"postgresql://{migrated_db['POSTGRES_USER']}:{migrated_db['POSTGRES_PASSWORD']}"
         f"@{migrated_db['POSTGRES_HOST']}:{migrated_db['POSTGRES_PORT']}"
@@ -84,7 +87,7 @@ async def pool(migrated_db: dict[str, str]) -> AsyncGenerator[asyncpg.Pool, None
 
 
 @pytest.fixture
-async def conn(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Connection, None]:  # type: ignore[type-arg]
+async def conn(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Connection]:  # type: ignore[type-arg]
     """Per-test connection wrapped in a rolled-back transaction."""
     async with pool.acquire() as connection:
         tr = connection.transaction()

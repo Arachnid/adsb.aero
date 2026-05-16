@@ -52,7 +52,7 @@ FLIGHT_ID_EXPR = (
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     if settings.log_queries:
         # Uvicorn only configures its own loggers; root stays at WARNING.
@@ -184,7 +184,7 @@ def _parse_path(path_text: str) -> tuple[GeoJSONMultiLineStringZ, list[list[floa
 
 
 def _parse_tint_series(text: str | None) -> list[list[list[float]]] | None:
-    """Parse a MobilityDB stepwise tint seqset into per-sub-sequence [[epoch_s, value], ...] lists."""
+    """Parse a MobilityDB tint seqset into per-sub-sequence [[epoch_s, value], ...] lists."""
     if not text:
         return None
     result: list[list[list[float]]] = []
@@ -220,7 +220,7 @@ def _parse_squawk_seq(text: str | None) -> list[list[tuple[float, str]]] | None:
 
 
 def _parse_alt_correction(text: str | None) -> list[list[list[float]]] | None:
-    """Parse a MobilityDB stepwise tfloat seqset into per-sub-sequence [[epoch_s, val], ...] lists."""
+    """Parse a MobilityDB tfloat seqset into per-sub-sequence [[epoch_s, val], ...] lists."""
     if not text:
         return None
     result: list[list[list[float]]] = []

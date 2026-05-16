@@ -659,10 +659,10 @@ export function MapView({
       if (!allSubSeqs?.length) return [];
       let flatOffset = 0;
       return allSubSeqs.flatMap((subSeq, subIdx) => {
-        const segsForSub = (() => {
+        const segsForSub = ((): Seg[] => {
           if (subSeq.length < 2) return [];
           const subTs = f.timestamps?.[subIdx] ?? [];
-          const subRuns = (f.squawk_runs?.[subIdx] ?? []) as [number, string][];
+          const subRuns = f.squawk_runs?.[subIdx] ?? [];
           const subVr = f.path_vr?.[subIdx] ?? null;
           const subGs = f.path_gs?.[subIdx] ?? null;
           const subIas = f.path_ias?.[subIdx] ?? null;

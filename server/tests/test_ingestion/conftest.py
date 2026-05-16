@@ -30,7 +30,7 @@ def _make_test_mslp() -> xr.DataArray:
 
 
 @pytest.fixture(autouse=True)
-def mock_fetch_mslp() -> Generator[None, None, None]:
+def mock_fetch_mslp() -> Generator[None]:
     """Patch fetch_mslp_for_batch so batch tests don't hit the network or /data."""
     with patch(
         "adsb_server.ingestion.batch.fetch_mslp_for_batch",

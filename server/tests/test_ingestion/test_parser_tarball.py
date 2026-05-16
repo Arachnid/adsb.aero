@@ -116,7 +116,7 @@ class TestParseTraceBytes:
 
     def test_parse_bad_json_raises(self) -> None:
         """parse_trace_bytes raises on non-JSON content."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             parse_trace_bytes(gzip.compress(b"not json"))
 
 
