@@ -287,8 +287,8 @@ async def test_run_batch_serialization_roundtrip(
         " FROM flights WHERE icao24 = 'ff1122'"
     )
     assert row is not None
-    # tint text starts with '[' (sequence notation)
-    assert row["pt"].startswith("[")
+    # tint text is a seqset: starts with '{['
+    assert row["pt"].startswith("{[")
     runs = _parse_squawk_seq(row["squawk_seq_text"])
     assert isinstance(runs, list)
 

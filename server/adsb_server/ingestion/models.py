@@ -55,12 +55,13 @@ class FinalizedFlight:
     emitter_category: str | None
     start_ts: datetime  # UTC
     end_ts: datetime  # UTC
-    vertices: list[tuple[float, float, float, float]]  # (lon, lat, alt_ft, ts)
-    squawk_runs: list[tuple[float, str]]  # [(unix_ts, squawk_code), ...] run-length encoding
+    # One entry per sub-sequence (coverage gap > 60 s creates a new sub-sequence).
+    # Stored as a tgeompoint_seqset — no interpolation across gaps.
+    vertex_sequences: list[list[tuple[float, float, float, float]]]  # (lon, lat, alt_ft, ts)
+    squawk_runs: list[list[tuple[float, str]]]  # per sub-sequence run-length encoding
     raw_point_count: int  # number of points before simplification
-    # Scalar time-series derived from points surviving path simplification,
-    # then further reduced by their own TD-TR pass. Empty list → NULL column.
-    path_tracks_series: list[tuple[float, float]]  # [(ts, degrees), ...]  NOT NULL in DB
-    path_gs_series: list[tuple[float, float]]  # [(ts, knots), ...]
-    path_vr_series: list[tuple[float, float]]  # [(ts, fpm), ...]
-    path_ias_series: list[tuple[float, float]]  # [(ts, knots), ...]
+    # Scalar time-series, one list per sub-sequence. Empty outer list → NULL column.
+    path_tracks_series: list[list[tuple[float, float]]]  # [(ts, degrees), ...]
+    path_gs_series: list[list[tuple[float, float]]]  # [(ts, knots), ...]
+    path_vr_series: list[list[tuple[float, float]]]  # [(ts, fpm), ...]
+    path_ias_series: list[list[tuple[float, float]]]  # [(ts, knots), ...]

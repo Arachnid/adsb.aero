@@ -101,8 +101,8 @@ class TestInProgress:
         cutoff = 10000.0
         points = [
             _make_point(ts=2000.0),
-            _make_point(ts=2100.0),
-            _make_point(ts=2200.0),  # 2200 < 10000 - 3600 = 6400 → finalized
+            _make_point(ts=2030.0),
+            _make_point(ts=2060.0),  # 2060 < 10000 - 3600 = 6400 → finalized
         ]
         header = _make_header()
         finalized, in_progress = split_flights(header, points, cutoff)
@@ -112,14 +112,14 @@ class TestInProgress:
     def test_in_progress_only_last_segment(self) -> None:
         """Multiple segments: only the last can be in-progress."""
         cutoff = 3000.0
-        # cutoff - 600 = 2400
+        # new_leg gaps must be ≤ 60 s so _should_flight_split reaches the new_leg check.
         points = [
             _make_point(ts=100.0),
-            _make_point(ts=200.0),
-            _make_point(ts=1200.0, new_leg=True),
-            _make_point(ts=1300.0),
-            _make_point(ts=2400.0, new_leg=True),  # last_ts == cutoff - 600 → in-progress
-            _make_point(ts=2500.0),
+            _make_point(ts=130.0),
+            _make_point(ts=150.0, new_leg=True),  # gap 20 s ≤ 60 s → new_leg fires
+            _make_point(ts=180.0),
+            _make_point(ts=200.0, new_leg=True),  # gap 20 s ≤ 60 s → new_leg fires
+            _make_point(ts=230.0),
         ]
         header = _make_header()
         finalized, in_progress = split_flights(header, points, cutoff)
@@ -129,7 +129,7 @@ class TestInProgress:
 
 class TestSquawkRuns:
     def test_squawk_runs_built_correctly(self) -> None:
-        """Points with squawk changes → correct squawk_runs."""
+        """Points with squawk changes → correct squawk_runs (first sub-sequence)."""
         cutoff = 10000.0
         points = [
             _make_point(ts=1000.0, squawk="2000"),
@@ -141,7 +141,8 @@ class TestSquawkRuns:
         header = _make_header()
         finalized, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
-        runs = finalized[0].squawk_runs
+        # squawk_runs is now per-sub-sequence; all points are in one sub-sequence
+        runs = finalized[0].squawk_runs[0]
         # Should have 3 runs: 2000, 7700, 2200
         assert len(runs) == 3
         assert runs[0] == (1000.0, "2000")
@@ -149,7 +150,7 @@ class TestSquawkRuns:
         assert runs[2] == (1240.0, "2200")
 
     def test_no_squawk_no_runs(self) -> None:
-        """Points with no squawk → empty squawk_runs."""
+        """Points with no squawk → empty squawk_runs for all sub-sequences."""
         cutoff = 10000.0
         points = [
             _make_point(ts=1000.0, squawk=None),
@@ -159,7 +160,7 @@ class TestSquawkRuns:
         header = _make_header()
         finalized, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
-        assert finalized[0].squawk_runs == []
+        assert all(runs == [] for runs in finalized[0].squawk_runs)
 
     def test_squawk_runs_single_value(self) -> None:
         """Constant squawk → start entry plus closing instant at flight end."""
@@ -172,7 +173,7 @@ class TestSquawkRuns:
         header = _make_header()
         finalized, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
-        runs = finalized[0].squawk_runs
+        runs = finalized[0].squawk_runs[0]
         assert runs[0] == (1000.0, "1234")
         assert runs[-1][1] == "1234"  # closing instant: same code
         assert runs[-1][0] > 1000.0  # closing instant: after the start
@@ -225,7 +226,7 @@ class TestFinalizedFlightShape:
         assert f.end_ts.timestamp() == 1120.0
 
     def test_finalized_flight_vertices_shape(self) -> None:
-        """Vertices are (lon, lat, alt_ft, ts) tuples."""
+        """Vertices are (lon, lat, alt_ft, ts) tuples in the first sub-sequence."""
         cutoff = 10000.0
         points = [
             _make_point(ts=1000.0, lat=51.0, lon=-0.1, alt_baro=10000.0),
@@ -234,7 +235,7 @@ class TestFinalizedFlightShape:
         header = _make_header()
         finalized, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
-        v = finalized[0].vertices
+        v = finalized[0].vertex_sequences[0]
         assert len(v) >= 2
         # First vertex: (lon, lat, alt_ft, ts)
         assert v[0][0] == -0.1  # lon
@@ -284,7 +285,7 @@ class TestGroundPointHandling:
         assert len(finalized) == 2
         assert finalized[1].start_ts.timestamp() == 1180.0
         for flight in finalized:
-            assert all(v[2] > 0 for v in flight.vertices)
+            assert all(v[2] > 0 for seq in flight.vertex_sequences for v in seq)
 
     def test_segment_leading_ground_excluded_from_geometry(self) -> None:
         """Segment whose first point is ground: geometry starts at first airborne point."""
@@ -298,7 +299,7 @@ class TestGroundPointHandling:
         assert len(finalized) == 1
         f = finalized[0]
         assert f.start_ts.timestamp() == 1060.0
-        assert all(v[2] > 0 for v in f.vertices)
+        assert all(v[2] > 0 for seq in f.vertex_sequences for v in seq)
 
 
 # ---------------------------------------------------------------------------
@@ -336,23 +337,36 @@ class TestGapBasedSplitting:
 
     # --- air gap ---
 
-    def test_air_gap_over_1h_splits(self) -> None:
-        """Two airborne points >1 h apart → new leg, yielding two flights."""
+    def test_air_gap_over_1h_creates_sub_sequence(self) -> None:
+        """Plausible air gap >1 h stays one flight with two sub-sequences (not two flights)."""
         points = [
             _make_point(ts=1000.0, alt_baro=35000.0),
             _make_point(ts=1060.0, alt_baro=35000.0),
-            _make_point(ts=4700.0, alt_baro=35000.0),  # 3640 s > 1 h
+            _make_point(ts=4700.0, alt_baro=35000.0),  # 3640 s gap — plausible, < 12 h
             _make_point(ts=4760.0, alt_baro=35000.0),
+        ]
+        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        assert len(finalized) == 1
+        assert len(finalized[0].vertex_sequences) == 2
+
+    def test_air_gap_geographically_implausible_splits(self) -> None:
+        """Air gap where positions are impossibly far apart → two separate flights."""
+        # Points jump from London to New York in 61 s — physically impossible.
+        points = [
+            _make_point(ts=1000.0, lat=51.5, lon=-0.1, alt_baro=35000.0),
+            _make_point(ts=1060.0, lat=51.5, lon=-0.1, alt_baro=35000.0),
+            _make_point(ts=1121.0, lat=40.7, lon=-74.0, alt_baro=35000.0),  # ~5570 km in 61 s
+            _make_point(ts=1180.0, lat=40.7, lon=-74.0, alt_baro=35000.0),
         ]
         finalized, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 2
 
-    def test_air_gap_at_threshold_no_split(self) -> None:
-        """Air gap of exactly 3600 s does NOT split (threshold is strict >)."""
+    def test_air_gap_at_sub_seq_threshold_no_flight_split(self) -> None:
+        """Air gap of 3600 s (< 12 h max stitch) stays one flight, becomes sub-sequence."""
         points = [
             _make_point(ts=1000.0, alt_baro=35000.0),
             _make_point(ts=1060.0, alt_baro=35000.0),
-            _make_point(ts=4660.0, alt_baro=35000.0),  # 3600 s gap exactly
+            _make_point(ts=4660.0, alt_baro=35000.0),  # 3600 s gap
             _make_point(ts=4720.0, alt_baro=35000.0),
         ]
         finalized, _ = split_flights(_make_header(), points, 10000.0)
@@ -362,18 +376,22 @@ class TestGapBasedSplitting:
 
     def test_24h_duration_cap_splits(self) -> None:
         """A segment spanning >24 h is force-split regardless of gap size."""
-        # 27 hourly points: split fires at point 25 (25*3600 > 86400),
-        # leaving pts[25] and pts[26] as a second 2-point segment that can finalize.
-        step = 3600.0  # 1-point-per-hour, gap well under air threshold
-        pts = [_make_point(ts=float(i * step), alt_baro=35000.0) for i in range(27)]
+        # Paired points (30 s apart) with hourly groups so each sub-sequence has 2 pts.
+        # The duration cap fires when ts - flight_start_ts > 86400 (at ts=24*3600+30=86430).
+        pts = []
+        for i in range(27):
+            pts.append(_make_point(ts=float(i * 3600), alt_baro=35000.0))
+            pts.append(_make_point(ts=float(i * 3600 + 30), alt_baro=35000.0))
         finalized, _ = split_flights(_make_header(), pts, 999999.0)
         assert len(finalized) >= 2, "25-hour span should produce at least two segments"
 
     def test_24h_duration_cap_boundary_no_split(self) -> None:
         """A segment just under 24 h is NOT split by the duration cap alone."""
-        step = 3600.0
-        pts = [_make_point(ts=float(i * step), alt_baro=35000.0) for i in range(24)]
-        # last point is at 23 * 3600 = 82800 s < 86400 s
+        # Paired points: last ts = 23*3600+30 = 82830 s < 86400 s → no cap fires.
+        pts = []
+        for i in range(24):
+            pts.append(_make_point(ts=float(i * 3600), alt_baro=35000.0))
+            pts.append(_make_point(ts=float(i * 3600 + 30), alt_baro=35000.0))
         finalized, _ = split_flights(_make_header(), pts, 999999.0)
         assert len(finalized) == 1, "23-hour span should be a single segment"
 
@@ -393,10 +411,11 @@ class TestGapBasedSplitting:
     def test_in_progress_window_airborne_over_1h_finalizes(self) -> None:
         """Airborne last segment more than 1 h before cutoff is finalized."""
         cutoff = 10000.0
-        # Last point 5400 s (90 min) before cutoff — outside the 1-h window.
+        # Last point at ts=4030, cutoff-3600=6400; 4030 < 6400 → finalized.
+        # Points are 30 s apart (< 60 s) so they form one valid sub-sequence.
         points = [
             _make_point(ts=4000.0, alt_baro=35000.0),
-            _make_point(ts=4600.0, alt_baro=35000.0),
+            _make_point(ts=4030.0, alt_baro=35000.0),
         ]
         finalized, in_progress = split_flights(_make_header(), points, cutoff)
         assert in_progress is None

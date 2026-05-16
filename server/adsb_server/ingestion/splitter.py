@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import math
 from collections import Counter
 from datetime import UTC, datetime
 
@@ -24,14 +25,28 @@ from adsb_server.ingestion.models import (
 
 logger = logging.getLogger(__name__)
 
-# Gap thresholds for fallback splitting when readsb doesn't set new_leg.
-# Ground-to-ground gap > 10 min and air-to-air gap > 1 h start a new segment.
+# Ground-to-ground gap above this → new flight (plane parked).
 _GROUND_GAP_THRESHOLD = 600.0
-_AIR_GAP_THRESHOLD = 3600.0
 
-# Hard cap: any segment longer than this is force-split to bound memory and
-# catch ground stations that transmit continuously without leg boundaries.
+# Hard cap: any flight segment longer than this is force-split.
 _MAX_SEGMENT_DURATION = 86400.0
+
+# Air-to-air gaps above this threshold produce a new seqset sub-sequence
+# instead of being linearly interpolated.  60 s is just above the 99th
+# percentile of normal ADS-B update intervals in raw trace data.
+_SUB_SEQ_GAP_S = 60.0
+
+# Air-to-air gaps above this always start a new flight record regardless of
+# callsign or geography (catches same-ICAO24 reuse across very long breaks).
+_MAX_STITCH_GAP_S = 43200.0  # 12 hours
+
+# In-progress retention window for airborne last segments.
+_IN_PROGRESS_WINDOW_AIR = 3600.0
+
+# Geographic plausibility: max speed in m/s used to check whether two
+# position reports separated by a coverage gap could be the same aircraft.
+# 350 m/s ≈ 1260 km/h — faster than any airliner, so false positives are rare.
+_MAX_STITCH_SPEED_MPS = 350.0
 
 
 def interpolate_missing_values(points: list[RawPoint]) -> list[RawPoint]:
@@ -175,14 +190,67 @@ def build_scalar_series(
     return trk, gs_, vr_, ias
 
 
+def _geographically_plausible(prev: RawPoint, curr: RawPoint, gap: float) -> bool:
+    """Return True if the two positions are reachable within gap seconds at max aircraft speed."""
+    lat1, lon1 = math.radians(prev.lat), math.radians(prev.lon)
+    lat2, lon2 = math.radians(curr.lat), math.radians(curr.lon)
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    dist_m = 6_371_000.0 * 2.0 * math.asin(math.sqrt(max(0.0, min(1.0, a))))
+    return dist_m <= _MAX_STITCH_SPEED_MPS * gap
+
+
+def _should_flight_split(prev: RawPoint, curr: RawPoint, flight_start_ts: float) -> bool:
+    """Return True if curr begins a new discrete flight rather than continuing the current one.
+
+    Two levels of splitting exist:
+    - Flight split (this function): creates a new FinalizedFlight row.
+    - Sub-sequence split (handled in finalize_segment): adds a new seqset bracket
+      for a coverage gap within the same flight.
+    """
+    gap = curr.ts - prev.ts
+
+    # Duration safety cap — also catches infinite-loop ground stations.
+    if curr.ts - flight_start_ts > _MAX_SEGMENT_DURATION:
+        return True
+
+    # Ground-to-ground gap > 10 min → plane parked, new flight.
+    if prev.alt_baro is None and curr.alt_baro is None and gap > _GROUND_GAP_THRESHOLD:
+        return True
+
+    # Large air-to-air gap: stitch if plausible, otherwise split.
+    if prev.alt_baro is not None and curr.alt_baro is not None and gap > _SUB_SEQ_GAP_S:
+        return gap > _MAX_STITCH_GAP_S or not _geographically_plausible(prev, curr, gap)
+
+    # For all other transitions (including ground/air changes), trust readsb's new_leg.
+    return curr.new_leg
+
+
+def _split_into_sub_sequences(points: list[RawPoint]) -> list[list[RawPoint]]:
+    """Partition a flat list of airborne points into sub-sequences at coverage gaps.
+
+    Any gap > _SUB_SEQ_GAP_S between consecutive points starts a new sub-sequence.
+    This produces the brackets of the tgeompoint_seqset — no interpolation across gaps.
+    """
+    seqs: list[list[RawPoint]] = [[points[0]]]
+    for curr in points[1:]:
+        if curr.ts - seqs[-1][-1].ts > _SUB_SEQ_GAP_S:
+            seqs.append([curr])
+        else:
+            seqs[-1].append(curr)
+    return seqs
+
+
 def finalize_segment(
     icao24: str,
     seg_points: list[RawPoint],
     icao_type: str | None,
 ) -> FinalizedFlight | None:
-    """Convert a list of RawPoints into a FinalizedFlight.
+    """Convert a list of RawPoints into a FinalizedFlight with a seqset path.
 
-    Returns None if the segment has fewer than 2 airborne points.
+    The path is a tgeompoint_seqset: coverage gaps > _SUB_SEQ_GAP_S produce separate
+    sub-sequences with no interpolation across the gap.  Returns None if there are
+    fewer than 2 airborne points across all sub-sequences.
     """
     airborne = [p for p in seg_points if p.alt_baro is not None]
     if len(airborne) < 2:
@@ -191,25 +259,45 @@ def finalize_segment(
     callsign = _most_common_non_null([p.callsign for p in seg_points])
     emitter_category = _most_common_non_null([p.emitter_category for p in seg_points])
 
+    sub_seqs = _split_into_sub_sequences(airborne)
 
-    interp_points = interpolate_missing_values(airborne)
-    kept_indices = simplify_flight(interp_points)
+    vertex_sequences: list[list[tuple[float, float, float, float]]] = []
+    squawk_runs: list[list[tuple[float, str]]] = []
+    path_tracks_series: list[list[tuple[float, float]]] = []
+    path_gs_series: list[list[tuple[float, float]]] = []
+    path_vr_series: list[list[tuple[float, float]]] = []
+    path_ias_series: list[list[tuple[float, float]]] = []
 
-    if len(kept_indices) < 2:
-        kept_indices = [0, len(interp_points) - 1]
+    for sub_pts in sub_seqs:
+        if len(sub_pts) < 2:
+            continue
 
-    vertices: list[tuple[float, float, float, float]] = []
-    for i in kept_indices:
-        p = interp_points[i]
-        alt_ft = p.alt_baro if p.alt_baro is not None else 0.0
-        vertices.append((p.lon, p.lat, alt_ft, p.ts))
+        interp_points = interpolate_missing_values(sub_pts)
+        kept_indices = simplify_flight(interp_points)
+        if len(kept_indices) < 2:
+            kept_indices = [0, len(interp_points) - 1]
 
-    sub = [interp_points[i] for i in kept_indices]
-    squawk_runs = build_squawk_runs(sub)
-    path_tracks_series, path_gs_series, path_vr_series, path_ias_series = build_scalar_series(sub)
+        verts: list[tuple[float, float, float, float]] = [
+            (p.lon, p.lat, p.alt_baro if p.alt_baro is not None else 0.0, p.ts)
+            for p in (interp_points[i] for i in kept_indices)
+        ]
+        if len(verts) < 2:
+            continue
 
-    start_ts = datetime.fromtimestamp(vertices[0][3], tz=UTC)
-    end_ts = datetime.fromtimestamp(vertices[-1][3], tz=UTC)
+        vertex_sequences.append(verts)
+        sub = [interp_points[i] for i in kept_indices]
+        squawk_runs.append(build_squawk_runs(sub))
+        trk, gs_, vr_, ias = build_scalar_series(sub)
+        path_tracks_series.append(trk)
+        path_gs_series.append(gs_)
+        path_vr_series.append(vr_)
+        path_ias_series.append(ias)
+
+    if not vertex_sequences:
+        return None
+
+    start_ts = datetime.fromtimestamp(vertex_sequences[0][0][3], tz=UTC)
+    end_ts = datetime.fromtimestamp(vertex_sequences[-1][-1][3], tz=UTC)
 
     return FinalizedFlight(
         icao24=icao24,
@@ -218,7 +306,7 @@ def finalize_segment(
         emitter_category=emitter_category,
         start_ts=start_ts,
         end_ts=end_ts,
-        vertices=vertices,
+        vertex_sequences=vertex_sequences,
         squawk_runs=squawk_runs,
         raw_point_count=len(seg_points),
         path_tracks_series=path_tracks_series,
@@ -228,53 +316,45 @@ def finalize_segment(
     )
 
 
-def _should_gap_split(prev: RawPoint, curr: RawPoint, seg_start_ts: float) -> bool:
-    """Return True if gap criteria require starting a new segment at curr."""
-    gap = curr.ts - prev.ts
-    if prev.alt_baro is None and curr.alt_baro is None and gap > _GROUND_GAP_THRESHOLD:
-        return True
-    if prev.alt_baro is not None and curr.alt_baro is not None and gap > _AIR_GAP_THRESHOLD:
-        return True
-    return curr.ts - seg_start_ts > _MAX_SEGMENT_DURATION
-
-
 def _in_progress_window(seg: list[RawPoint]) -> float:
     """In-progress retention window based on the last point's altitude state."""
-    return _GROUND_GAP_THRESHOLD if seg[-1].alt_baro is None else _AIR_GAP_THRESHOLD
+    return _GROUND_GAP_THRESHOLD if seg[-1].alt_baro is None else _IN_PROGRESS_WINDOW_AIR
 
 
 def split_flights(
     header: TraceHeader,
     points: list[RawPoint],  # sorted by ts, non-empty
-    cutoff_ts: float,  # unix epoch — flights ending >= 10 min before this are finalized
+    cutoff_ts: float,  # unix epoch — flights ending before this are finalized
 ) -> tuple[list[FinalizedFlight], RawFlight | None]:
-    """
-    Split a sorted sequence of RawPoints into discrete flights.
+    """Split a sorted sequence of RawPoints into discrete flights.
 
-    Splitting relies entirely on the new_leg flag (flags & 2) set by readsb in the
-    source trace data. readsb already detects time gaps, spatial jumps, and other
-    leg boundaries, so we trust its judgement rather than re-implementing heuristics.
+    Two-level split:
+    - Flight boundaries (_should_flight_split): produce separate FinalizedFlight rows.
+    - Sub-sequence boundaries (inside finalize_segment): produce seqset brackets for
+      coverage gaps within the same flight — no interpolation across those gaps.
+
+    Air-to-air gaps of 60 s-12 h that are geographically plausible are kept in the
+    same flight and become sub-sequence boundaries, enabling transatlantic and other
+    over-water routes to appear as single queryable records.
 
     Returns:
         (list_of_finalized_flights, optional_in_progress_raw_flight)
     """
     segments: list[list[RawPoint]] = []
     current_seg: list[RawPoint] = [points[0]]
+    flight_start_ts = points[0].ts
 
     for curr in points[1:]:
-        if curr.new_leg or _should_gap_split(current_seg[-1], curr, current_seg[0].ts):
+        if _should_flight_split(current_seg[-1], curr, flight_start_ts):
             segments.append(current_seg)
             current_seg = [curr]
+            flight_start_ts = curr.ts
         else:
             current_seg.append(curr)
 
     segments.append(current_seg)
 
-    # Determine icao_type for each segment using per-point data from header
-    # (RawPoint doesn't carry icao_type; it's on the header)
-    # We use header.icao_type for all segments
     icao_type = header.icao_type
-
     finalized: list[FinalizedFlight] = []
     in_progress: RawFlight | None = None
 
@@ -286,7 +366,6 @@ def split_flights(
         is_last_segment = seg_idx == len(segments) - 1
 
         if is_last_segment and last_ts >= cutoff_ts - _in_progress_window(seg):
-            # This segment is in-progress
             callsign = _most_common_non_null([p.callsign for p in seg])
             emitter_category = _most_common_non_null([p.emitter_category for p in seg])
             in_progress = RawFlight(

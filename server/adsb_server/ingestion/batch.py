@@ -21,10 +21,10 @@ if TYPE_CHECKING:
 
 from adsb_server.config import get_settings
 from adsb_server.geometry.wkt import (
-    tfloat_stepwise_seq,
-    tgeompoint_seq,
-    tint_from_series,
-    ttext_seq,
+    tfloat_stepwise_seqset,
+    tgeompoint_seqset,
+    tint_seqset,
+    ttext_seqset,
 )
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import parse_trace_bytes, stream_tarball_raw
@@ -169,13 +169,13 @@ def _flight_to_params(
         flight.emitter_category,
         flight.start_ts,
         flight.end_ts,
-        tgeompoint_seq(flight.vertices),
-        tint_from_series(flight.path_tracks_series),
-        ttext_seq(flight.squawk_runs),
+        tgeompoint_seqset(flight.vertex_sequences),
+        tint_seqset(flight.path_tracks_series),
+        ttext_seqset(flight.squawk_runs),
         alt_correction_ft,
-        tint_from_series(flight.path_gs_series),
-        tint_from_series(flight.path_vr_series),
-        tint_from_series(flight.path_ias_series),
+        tint_seqset(flight.path_gs_series),
+        tint_seqset(flight.path_vr_series),
+        tint_seqset(flight.path_ias_series),
         flight.raw_point_count,
         batch_date,
     )
@@ -258,13 +258,24 @@ def _process_and_correct(
 
     params_list: list[_FlightParams] = []
     for flight in finalized:
+        flat_verts = [v for seq in flight.vertex_sequences for v in seq]
         series = compute_correction_series(
-            flight.vertices, state.correction_interp, state.t_min, state.t_max
+            flat_verts, state.correction_interp, state.t_min, state.t_max
         )
         wkt: str | None = None
         if series is not None:
             corr_ts, corr_vals = series
-            wkt = tfloat_stepwise_seq(corr_vals, corr_ts)
+            # Split the flat correction arrays back into per-sub-sequence pairs.
+            per_seq: list[tuple[list[float], list[float]]] = []
+            offset = 0
+            for seq in flight.vertex_sequences:
+                n = len(seq)
+                per_seq.append((
+                    list(corr_vals[offset : offset + n]),
+                    list(corr_ts[offset : offset + n]),
+                ))
+                offset += n
+            wkt = tfloat_stepwise_seqset(per_seq)
         params_list.append(_flight_to_params(flight, state.batch_date, wkt))
 
     return params_list, in_progress

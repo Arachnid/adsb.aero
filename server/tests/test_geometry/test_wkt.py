@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from adsb_server.geometry.wkt import tgeompoint_seq, tint_from_series, tint_seq, ttext_seq
+from adsb_server.geometry.wkt import (
+    tgeompoint_seq,
+    tgeompoint_seqset,
+    tint_from_series,
+    tint_seq,
+    tint_seqset,
+    ttext_seq,
+    ttext_seqset,
+)
 
 
 def test_tgeompoint_seq_format() -> None:
@@ -150,7 +158,7 @@ def test_tint_from_series_timestamp_format() -> None:
     assert "+00" in result
 
 
-from adsb_server.geometry.wkt import tfloat_stepwise_seq  # noqa: E402
+from adsb_server.geometry.wkt import tfloat_stepwise_seq, tfloat_stepwise_seqset  # noqa: E402
 
 
 def test_tfloat_stepwise_seq_empty_returns_none() -> None:
@@ -186,3 +194,118 @@ def test_tfloat_stepwise_seq_preserves_order() -> None:
     result = tfloat_stepwise_seq([1.0, 2.0, 3.0], [100.0, 200.0, 300.0])
     assert result is not None
     assert result.index("1.0000@") < result.index("2.0000@") < result.index("3.0000@")
+
+
+# ---------------------------------------------------------------------------
+# Seqset variants
+# ---------------------------------------------------------------------------
+
+
+def test_tgeompoint_seqset_single_sequence() -> None:
+    verts = [(-0.1, 51.5, 35000.0, 0.0), (-0.2, 51.6, 36000.0, 60.0)]
+    result = tgeompoint_seqset([verts])
+    assert result.startswith("SRID=4326;{[")
+    assert result.endswith("]}")
+    assert "POINT Z" in result
+    assert result.count("POINT Z") == 2
+
+
+def test_tgeompoint_seqset_two_sequences() -> None:
+    seq1 = [(-0.1, 51.5, 35000.0, 0.0), (-0.2, 51.6, 36000.0, 60.0)]
+    seq2 = [(-10.0, 53.0, 37000.0, 7200.0), (-20.0, 55.0, 38000.0, 7260.0)]
+    result = tgeompoint_seqset([seq1, seq2])
+    assert result.startswith("SRID=4326;{")
+    assert result.count("[") == 2
+    assert result.count("]") == 2
+    assert result.count("POINT Z") == 4
+
+
+def test_tgeompoint_seqset_timestamp_format() -> None:
+    result = tgeompoint_seqset([[(0.0, 0.0, 0.0, 0.0), (1.0, 1.0, 0.0, 1.0)]])
+    assert "1970-01-01T00:00:00" in result
+    assert "+00" in result
+
+
+def test_ttext_seqset_empty_all_seqs_returns_none() -> None:
+    assert ttext_seqset([[], []]) is None
+
+
+def test_ttext_seqset_single_non_empty_seq() -> None:
+    result = ttext_seqset([[(0.0, "7700"), (60.0, "7700")]])
+    assert result is not None
+    assert result.startswith("{[")
+    assert result.endswith("]}")
+    assert '"7700"@' in result
+
+
+def test_ttext_seqset_skips_empty_sequences() -> None:
+    result = ttext_seqset([[], [(100.0, "2000"), (200.0, "2000")]])
+    assert result is not None
+    assert result.count("[") == 1
+
+
+def test_ttext_seqset_two_non_empty_sequences() -> None:
+    seq1 = [(0.0, "7700"), (60.0, "7700")]
+    seq2 = [(7200.0, "2000"), (7260.0, "2000")]
+    result = ttext_seqset([seq1, seq2])
+    assert result is not None
+    assert result.count("[") == 2
+    assert '"7700"@' in result
+    assert '"2000"@' in result
+
+
+def test_tint_seqset_empty_all_seqs_returns_none() -> None:
+    assert tint_seqset([[], []]) is None
+
+
+def test_tint_seqset_single_sequence() -> None:
+    result = tint_seqset([[(0.0, 90.0), (60.0, 91.0)]])
+    assert result is not None
+    assert result.startswith("{[")
+    assert result.endswith("]}")
+    assert "90@" in result
+    assert "91@" in result
+
+
+def test_tint_seqset_two_sequences() -> None:
+    result = tint_seqset([[(0.0, 45.0)], [(7200.0, 180.0)]])
+    assert result is not None
+    assert result.count("[") == 2
+    assert "45@" in result
+    assert "180@" in result
+
+
+def test_tint_seqset_rounds_values() -> None:
+    result = tint_seqset([[(0.0, 45.6), (60.0, 44.4)]])
+    assert result is not None
+    assert "46@" in result
+    assert "44@" in result
+
+
+def test_tfloat_stepwise_seqset_empty_returns_none() -> None:
+    assert tfloat_stepwise_seqset([([], []), ([], [])]) is None
+
+
+def test_tfloat_stepwise_seqset_single_sequence() -> None:
+    result = tfloat_stepwise_seqset([([12.5, -3.0], [0.0, 60.0])])
+    assert result is not None
+    assert result.startswith("Interp=Step;{[")
+    assert result.endswith("]}")
+    assert "12.5000@" in result
+    assert "-3.0000@" in result
+
+
+def test_tfloat_stepwise_seqset_two_sequences() -> None:
+    result = tfloat_stepwise_seqset([([1.0], [0.0]), ([2.0], [7200.0])])
+    assert result is not None
+    assert result.startswith("Interp=Step;{")
+    assert result.count("[") == 2
+    assert "1.0000@" in result
+    assert "2.0000@" in result
+
+
+def test_tfloat_stepwise_seqset_skips_empty_sequences() -> None:
+    result = tfloat_stepwise_seqset([([], []), ([5.0], [100.0])])
+    assert result is not None
+    assert result.count("[") == 1
+    assert "5.0000@" in result
