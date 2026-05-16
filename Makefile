@@ -1,4 +1,4 @@
-.PHONY: dev dev-down prod prod-down logs build-web
+.PHONY: dev dev-down prod prod-down logs build-web migrate import-airframes
 
 # ── Dev stack ────────────────────────────────────────────────────────────────
 # Brings up postgres, redis, api (--reload), vite dev server, and nginx.
@@ -19,6 +19,14 @@ prod:
 
 prod-down:
 	cd infra && docker compose -f docker-compose.yml down
+
+# ── Database setup ────────────────────────────────────────────────────────────
+# Run once after `make dev` on a fresh database (postgres uses trust auth for localhost).
+migrate:
+	cd server && .venv/bin/alembic upgrade head
+
+import-airframes:
+	cd server && .venv/bin/python -m adsb_server.reference_data.airframes
 
 # ── Code generation ───────────────────────────────────────────────────────────
 # Export the OpenAPI spec from the server and regenerate web TypeScript types.

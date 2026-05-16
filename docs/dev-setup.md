@@ -6,7 +6,7 @@ The full stack runs in Docker Compose. In dev, nginx proxies HMR-aware to a Vite
 
 - Docker (with Compose v2 — `docker compose` not `docker-compose`)
 - Node 22+ and pnpm (`npm i -g pnpm` or via corepack)
-- Python 3.12 and a virtualenv for running server tests locally
+- Python 3.14 and a virtualenv for running server tests locally
 
 ## First-time setup
 
@@ -21,6 +21,17 @@ ln -sf ../.env infra/.env
 # 3. Set up the Python virtualenv (for local test runs only — not needed for Docker)
 python -m venv server/.venv
 server/.venv/bin/pip install -e "server/[dev]"
+
+# 4. Start the dev stack
+make dev
+
+# 5. Apply the database schema (once per fresh database)
+#    Postgres uses trust auth for localhost — no password env var needed.
+make migrate
+
+# 6. Seed airframe reference data (registration, model, operator, etc.)
+#    Takes ~2 min; re-run any time to pull the latest tar1090-db snapshot.
+make import-airframes
 ```
 
 ## Starting the dev stack
