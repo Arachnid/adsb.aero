@@ -34,6 +34,8 @@ repos:
         additional_dependencies:
           - "pydantic>=2.9"
           - "fastapi>=0.115"
+          - "pydantic-settings>=2.0"
+          - "scalar-fastapi>=1.0"
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8

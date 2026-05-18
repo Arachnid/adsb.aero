@@ -32,6 +32,11 @@ import {
 } from "../Icons";
 import { getIcaoTypes } from "../../lib/api";
 import type { DataRange } from "../../lib/api";
+import {
+  MAX_GEOMETRY_AREA_KM2,
+  circleAreaKm2,
+  polygonAreaKm2,
+} from "../../lib/geometryUtils";
 
 // ===== Types =====
 
@@ -441,8 +446,11 @@ export function isPredValid(pred: UIPredicate): boolean {
       if (pred.shape === "viewport") return true;
       if (pred.shape === "circle") {
         if (pred.lat === null) return false;
+        if (circleAreaKm2(pred.radiusNm) > MAX_GEOMETRY_AREA_KM2) return false;
       } else if (pred.polygon === null || pred.polygon.length < 3) {
         // polygon and airspace both require a polygon to be set
+        return false;
+      } else if (polygonAreaKm2(pred.polygon) > MAX_GEOMETRY_AREA_KM2) {
         return false;
       }
       if (
@@ -1132,6 +1140,15 @@ function RegionCard({
   name: string;
   dateRange: DataRange | null;
 }): React.ReactElement {
+  const geometryTooLarge =
+    (pred.shape === "circle" &&
+      pred.lat !== null &&
+      circleAreaKm2(pred.radiusNm) > MAX_GEOMETRY_AREA_KM2) ||
+    (pred.shape !== "circle" &&
+      pred.polygon !== null &&
+      pred.polygon.length >= 3 &&
+      polygonAreaKm2(pred.polygon) > MAX_GEOMETRY_AREA_KM2);
+
   const hasAltData = pred.altMin !== null || pred.altMax !== null;
   const hasTimeData = pred.timeFrom !== "" || pred.timeTo !== "";
   const hasSquawkData = pred.squawkCodes.length > 0;
@@ -1338,6 +1355,11 @@ function RegionCard({
           </div>
         </>
       ) : null}
+      {geometryTooLarge && (
+        <div className="pred-error">
+          Area too large — reduce the search region.
+        </div>
+      )}
       {pred.shape !== "airspace" && (
         <div className="optional-group" style={{ marginTop: 4 }}>
           <label className="optional-group-label">

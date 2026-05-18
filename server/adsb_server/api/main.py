@@ -17,7 +17,11 @@ from scalar_fastapi import get_scalar_api_reference
 
 from adsb_server.config import get_settings
 from adsb_server.db.pool import create_pool
-from adsb_server.query.compiler import CompiledPredicate, compile_predicate
+from adsb_server.query.compiler import (
+    CompiledPredicate,
+    GeometryTooLargeError,
+    compile_predicate,
+)
 from adsb_server.query.models import (
     DataRange,
     FlightDetail,
@@ -377,12 +381,13 @@ async def query_flights(
                             "and": [
                                 {"icao_type": ["B738", "B737", "B737M"]},
                                 {
-                                    "ends_within": {
+                                    "endpoint_within": {
+                                        "mode": "end",
                                         "geometry": {
                                             "type": "Circle",
                                             "coordinates": [-0.4543, 51.4775],
                                             "radius": 8000,
-                                        }
+                                        },
                                     }
                                 },
                             ]
@@ -432,14 +437,15 @@ async def query_flights(
                     "summary": "Departures from Charles de Gaulle in a time window",
                     "value": {
                         "match": {
-                            "starts_within": {
+                            "endpoint_within": {
+                                "mode": "start",
                                 "geometry": {
                                     "type": "Circle",
                                     "coordinates": [2.5479, 49.0097],
                                     "radius": 10000,
                                 },
-                                "time_from": "2026-03-30T06:00:00Z",
-                                "time_to": "2026-03-30T12:00:00Z",
+                                "start_time_from": "2026-03-30T06:00:00Z",
+                                "start_time_to": "2026-03-30T12:00:00Z",
                             }
                         },
                         "limit": 50,
@@ -481,7 +487,10 @@ async def query_flights(
 
     compiled: CompiledPredicate | None = None
     if body.match is not None:
-        compiled = compile_predicate(body.match, params)
+        try:
+            compiled = compile_predicate(body.match, params)
+        except GeometryTooLargeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         where_parts.append(f"({compiled})")
 
     # Keyset cursor: excludes results already returned on prior pages.

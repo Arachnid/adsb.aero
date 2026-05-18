@@ -133,6 +133,11 @@ textarea {
 .pred--invalid:hover {
   border-color: var(--danger);
 }
+.pred-error {
+  margin: 4px 10px 0;
+  font-size: 11px;
+  color: var(--danger);
+}
 .pred-head {
   display: flex;
   align-items: center;

@@ -65,7 +65,14 @@ def _p(params: list[Any], val: Any) -> str:
     return f"${len(params)}"
 
 
-def _h3_cells_for_geometry(geom: AnyGeometry) -> list[str] | None:
+MAX_QUERY_H3_CELLS = 250
+
+
+class GeometryTooLargeError(Exception):
+    """Raised when a query geometry covers more H3 cells than the index can handle efficiently."""
+
+
+def geometry_h3_cells(geom: AnyGeometry) -> list[str] | None:
     """Compute H3 res-4 pre-filter cells for a geometry, or None if unsupported.
 
     Returns None for Point and MultiPoint (intersecting a trajectory with a point
@@ -232,8 +239,13 @@ def _compile_spatial_path(
     clipped_path_expr: str | None = None
 
     if v.geometry is not None:
-        h3_cells = _h3_cells_for_geometry(v.geometry)
+        h3_cells = geometry_h3_cells(v.geometry)
         if h3_cells is not None:
+            if len(h3_cells) > MAX_QUERY_H3_CELLS:
+                raise GeometryTooLargeError(
+                    f"Query geometry covers {len(h3_cells)} H3 cells "
+                    f"(limit {MAX_QUERY_H3_CELLS}). Reduce the search area."
+                )
             h3_p = _p(params, h3_cells)
             parts.append(f"path_h3 && {h3_p}::h3index[]")
 

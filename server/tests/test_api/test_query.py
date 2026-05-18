@@ -11,9 +11,11 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.asyncio
 
-UK_BBOX = {
+# Polygon covering the London→Manchester corridor (115 H3 cells, well under MAX_QUERY_H3_CELLS).
+# Contains Flight A (London→Manchester); excludes Flight B (Paris→Rome).
+UK_CORRIDOR = {
     "type": "Polygon",
-    "coordinates": [[[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]],
+    "coordinates": [[[-3, 50.5], [0.5, 50.5], [0.5, 54], [-3, 54], [-3, 50.5]]],
 }
 
 MANCHESTER_CIRCLE = {
@@ -71,7 +73,7 @@ async def test_endpoint_within_start_time_filter(api_client: AsyncClient) -> Non
 async def test_trajectory_intersects_uk(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={"trajectory_intersects": {"geometry": UK_BBOX}}),
+        json=qbody(match={"trajectory_intersects": {"geometry": UK_CORRIDOR}}),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -122,7 +124,7 @@ async def test_and_composition(api_client: AsyncClient) -> None:
         json=qbody(
             match={
                 "and": [
-                    {"trajectory_intersects": {"geometry": UK_BBOX}},
+                    {"trajectory_intersects": {"geometry": UK_CORRIDOR}},
                     {"icao_type": ["B738"]},
                 ]
             }
@@ -171,7 +173,7 @@ async def test_trajectory_within_uk(api_client: AsyncClient) -> None:
     # Flight B (Paris→Rome) does not.
     uk_containing = {
         "type": "Polygon",
-        "coordinates": [[[-5, 50], [2, 50], [2, 55], [-5, 55], [-5, 50]]],
+        "coordinates": [[[-3, 50.5], [0.5, 50.5], [0.5, 54], [-3, 54], [-3, 50.5]]],
     }
     resp = await api_client.post(
         "/api/v1/query",
@@ -188,7 +190,7 @@ async def test_not_trajectory_intersects_as_disjoint(api_client: AsyncClient) ->
     # Equivalent to the removed trajectory_disjoint: NOT intersects(UK) → Flight B only.
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={"not": {"trajectory_intersects": {"geometry": UK_BBOX}}}),
+        json=qbody(match={"not": {"trajectory_intersects": {"geometry": UK_CORRIDOR}}}),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -268,7 +270,7 @@ async def test_trajectory_intersects_altitude_band_fl(api_client: AsyncClient) -
         json=qbody(
             match={
                 "trajectory_intersects": {
-                    "geometry": UK_BBOX,
+                    "geometry": UK_CORRIDOR,
                     "altitude_min": 340,
                     "altitude_min_ref": "fl",
                 }
@@ -289,7 +291,7 @@ async def test_trajectory_intersects_altitude_band_ft(api_client: AsyncClient) -
         json=qbody(
             match={
                 "trajectory_intersects": {
-                    "geometry": UK_BBOX,
+                    "geometry": UK_CORRIDOR,
                     "altitude_min": 34000,
                 }
             }
@@ -310,7 +312,7 @@ async def test_trajectory_intersects_altitude_band_ft_excludes_below(
         json=qbody(
             match={
                 "trajectory_intersects": {
-                    "geometry": UK_BBOX,
+                    "geometry": UK_CORRIDOR,
                     "altitude_max": 30000,
                 }
             }
@@ -330,7 +332,7 @@ async def test_trajectory_intersects_altitude_mixed_refs(api_client: AsyncClient
         json=qbody(
             match={
                 "trajectory_intersects": {
-                    "geometry": UK_BBOX,
+                    "geometry": UK_CORRIDOR,
                     "altitude_min": 1500,
                     "altitude_min_ref": "ft",
                     "altitude_max": 400,
