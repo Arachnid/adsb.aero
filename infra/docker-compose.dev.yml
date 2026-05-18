@@ -51,6 +51,8 @@ services:
       SCHEDULER_LOOKBACK_DAYS: "80"
       SCHEDULER_KEEP_TRACES: "true"
       HERBIE_KEEP_CACHE: "true"
+    secrets:
+      - sentry_dsn
     volumes:
       - dev_scheduler_cache:/data/cache
     networks:
@@ -68,6 +70,8 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DB: ${POSTGRES_DB:-adsb}
       POSTGRES_USER: ${POSTGRES_USER:-adsb}
+    secrets:
+      - sentry_dsn
     networks:
       - db
     depends_on:

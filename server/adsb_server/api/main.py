@@ -58,6 +58,7 @@ FLIGHT_ID_EXPR = (
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
+    settings.init_sentry()
     if settings.log_queries:
         # Uvicorn only configures its own loggers; root stays at WARNING.
         # Attach uvicorn's handler to adsb_server so INFO messages are visible.

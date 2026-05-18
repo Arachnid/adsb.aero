@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 
 import asyncpg
 import httpx
+import sentry_sdk
 
 from adsb_server.config import get_settings
 
@@ -133,8 +134,9 @@ async def _main() -> int:
         count: int = await conn.fetchval("SELECT COUNT(*) FROM airframes")
         print(f"Done. {count:,} rows in airframes table.", file=sys.stderr)
         return 0
-    except Exception:
+    except Exception as exc:
         logger.exception("Import failed")
+        sentry_sdk.capture_exception(exc)
         return 1
     finally:
         await conn.close()
@@ -146,7 +148,10 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
-    sys.exit(asyncio.run(_main()))
+    settings = get_settings()
+    settings.init_sentry()
+    with sentry_sdk.start_transaction(op="task", name="import-airframes"):
+        sys.exit(asyncio.run(_main()))
 
 
 if __name__ == "__main__":

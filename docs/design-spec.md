@@ -325,9 +325,9 @@ adsb-aero/
 
 ## Operational concerns
 
-- **Monitoring**: Prometheus scrapes Postgres, the FastAPI app, the ingestion scheduler, and node_exporter. Grafana dashboards for system health, ingest progress, and query latency. Alertmanager → email/SMS for critical alerts.
-- **Logs**: stdout from each container, scraped by Loki, queryable via Grafana.
-- **Errors**: Sentry SDK in both API and ingestion code. Free tier sufficient.
+- **Monitoring**: Prometheus + Grafana planned for metrics and dashboards. Not yet deployed.
+- **Logs**: stdout from each container. Loki planned for log aggregation. Not yet deployed.
+- **Errors**: Sentry SDK in every backend entry point (API server and all scheduled tasks — add to any new background task or cron job). Free tier sufficient. DSN stored as a Docker secret (`infra/secrets/sentry_dsn`); read via `settings.effective_sentry_dsn`.
 - **Secrets**: `.env` files (gitignored) for now. Migrate to `sops` if collaborators are added.
 - **CI/CD**: GitHub Actions builds Docker images, pushes to GitHub Container Registry. Deployment to OVH is `git pull && docker compose -f infra/docker-compose.yml pull && docker compose -f infra/docker-compose.yml up -d` (always run from the project root so Docker Compose picks up `.env`) either manually or via a webhook. No Kubernetes.
 - **Backups and DR**: handled at infrastructure level via OVHcloud. Out of scope for this spec.

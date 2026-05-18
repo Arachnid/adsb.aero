@@ -11,6 +11,7 @@ import logging
 import sys
 
 import asyncpg
+import sentry_sdk
 
 from adsb_server.config import get_settings
 from adsb_server.ingestion.scheduler import check_and_run_new_batches
@@ -36,7 +37,10 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
-    asyncio.run(_main())
+    settings = get_settings()
+    settings.init_sentry()
+    with sentry_sdk.start_transaction(op="task", name="import-traces"):
+        asyncio.run(_main())
 
 
 if __name__ == "__main__":

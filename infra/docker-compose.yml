@@ -22,45 +22,6 @@ services:
       timeout: 5s
       retries: 5
 
-  prometheus:
-    image: prom/prometheus:latest
-    restart: unless-stopped
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    ports:
-      - "127.0.0.1:9090:9090"
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=30d"
-
-  grafana:
-    image: grafana/grafana:latest
-    restart: unless-stopped
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
-      GF_USERS_ALLOW_SIGN_UP: "false"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    ports:
-      - "127.0.0.1:3001:3000"
-    secrets:
-      - grafana_password
-    depends_on:
-      - prometheus
-
-  loki:
-    image: grafana/loki:latest
-    restart: unless-stopped
-    volumes:
-      - loki_data:/loki
-      - ./loki/loki.yml:/etc/loki/local-config.yaml:ro
-    ports:
-      - "127.0.0.1:3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-
   api:
     build:
       context: ../server
@@ -72,12 +33,22 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-adsb}
       POSTGRES_USER: ${POSTGRES_USER:-adsb}
       LOG_QUERIES: ${LOG_QUERIES:-false}
+    secrets:
+      - sentry_dsn
+    volumes:
+      - scheduler_cache:/data/cache
     networks:
       - default
       - db
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   nginx:
     image: nginx:1.27-alpine
@@ -103,18 +74,18 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./ofelia/config.ini:/etc/ofelia/config.ini:ro
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   postgres_data:
-  prometheus_data:
-  grafana_data:
-  loki_data:
   scheduler_cache:
   openaip_cache:
 
 secrets:
-  grafana_password:
-    file: ./secrets/grafana_password
+  sentry_dsn:
+    file: ./secrets/sentry_dsn
   openaip_api_key:
     file: ./secrets/openaip_api_key
 
