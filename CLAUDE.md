@@ -14,7 +14,7 @@ ADS-B historical query platform at adsb.aero. Map-based UI for querying flight t
 ## Working in this repo
 
 - Conventional Commits for messages
-- Pre-commit must pass before any commit (`ruff`, `mypy --strict`, `eslint`, `prettier`, `sqlfluff`, tests with coverage)
+- Pre-commit hook blocks commits unless all checks pass: `ruff`, `mypy --strict`, `eslint`, `prettier`, `sqlfluff`, server pytest (with coverage), web tsc, web vitest (with coverage). Hook is in `.git/hooks/pre-commit`; install once after cloning with `server/.venv/bin/pre-commit install` (requires `core.hooksPath` to be unset — see below).
 - New code includes its tests in the same change. Coverage drops on changed files block the commit.
 - Type hints on every Python function. TypeScript strict mode, no `any` without a comment justifying it.
 

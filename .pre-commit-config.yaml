@@ -57,6 +57,20 @@ repos:
 
   - repo: local
     hooks:
+      - id: server-tests
+        name: Server tests (coverage)
+        entry: bash -c 'cd server && .venv/bin/pytest'
+        language: system
+        pass_filenames: false
+        files: ^server/
+
+      - id: web-typecheck
+        name: Web TypeScript type check
+        entry: bash -c 'cd web && pnpm tsc --noEmit'
+        language: system
+        pass_filenames: false
+        files: ^web/
+
       - id: web-tests
         name: Web tests (coverage)
         entry: bash -c 'cd web && pnpm test --coverage --run'
