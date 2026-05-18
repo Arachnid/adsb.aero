@@ -37,13 +37,15 @@ services:
     image: grafana/grafana:latest
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
       - "127.0.0.1:3001:3000"
+    secrets:
+      - grafana_password
     depends_on:
       - prometheus
 
@@ -78,14 +80,17 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
-    environment:
-      OPENAIP_API_KEY: ${OPENAIP_API_KEY:-}
+    entrypoint: ["/etc/nginx/entrypoint.sh"]
+    command: ["/docker-entrypoint.sh", "nginx", "-g", "daemon off;"]
     volumes:
       - ./nginx/prod.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/entrypoint.sh:/etc/nginx/entrypoint.sh:ro
       - ../web/dist:/srv/web:ro
       - openaip_cache:/var/cache/nginx/openaip
     ports:
       - "127.0.0.1:80:80"
+    secrets:
+      - openaip_api_key
     depends_on:
       - api
 
@@ -118,6 +123,12 @@ volumes:
   loki_data:
   scheduler_cache:
   openaip_cache:
+
+secrets:
+  grafana_password:
+    file: ./secrets/grafana_password
+  openaip_api_key:
+    file: ./secrets/openaip_api_key
 
 networks:
   db:

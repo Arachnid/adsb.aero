@@ -11,25 +11,28 @@ The full stack runs in Docker Compose. In dev, nginx proxies HMR-aware to a Vite
 ## First-time setup
 
 ```bash
-# 1. Copy the env template and fill in API keys (no database password needed)
+# 1. Copy the env template (non-secret config only)
 cp .env.example .env
-$EDITOR .env
 
 # 2. Create the infra .env symlink (once per clone)
 ln -sf ../.env infra/.env
 
-# 3. Set up the Python virtualenv (for local test runs only — not needed for Docker)
+# 3. Create secrets files (see "Secrets" section below)
+mkdir -p infra/secrets
+echo "your-openaip-api-key"  > infra/secrets/openaip_api_key
+echo "your-grafana-password" > infra/secrets/grafana_password
+
+# 4. Set up the Python virtualenv (for local test runs only — not needed for Docker)
 python -m venv server/.venv
 server/.venv/bin/pip install -e "server/[dev]"
 
-# 4. Start the dev stack
+# 5. Start the dev stack
 make dev
 
-# 5. Apply the database schema (once per fresh database)
-#    Postgres uses trust auth for localhost — no password env var needed.
+# 6. Apply the database schema (once per fresh database)
 make migrate
 
-# 6. Seed airframe reference data (registration, model, operator, etc.)
+# 7. Seed airframe reference data (registration, model, operator, etc.)
 #    Takes ~2 min; re-run any time to pull the latest tar1090-db snapshot.
 make import-airframes
 ```
@@ -47,13 +50,23 @@ This brings up:
 | Service    | What it does                                              |
 | ---------- | --------------------------------------------------------- |
 | `postgres` | PostgreSQL 17 + PostGIS                                   |
-| `redis`    | Redis 7 (Dramatiq broker)                                 |
 | `api`      | FastAPI with `--reload` (restarts on Python source saves) |
 | `vite`     | Vite dev server with HMR                                  |
 | `nginx`    | Entry point at `:80` — proxies `/api/` → api, `/` → vite |
 | `scheduler`| Ingestion scheduler (background, not needed for UI work)  |
 
 Open `http://localhost` in the browser. HMR is active — saving a `.tsx` file updates the page without a full reload.
+
+## Secrets
+
+Sensitive values are kept in `infra/secrets/` as plain text files (gitignored). Docker Compose mounts them into containers at `/run/secrets/<name>`.
+
+| File                          | Used by   | What it is                  |
+| ----------------------------- | --------- | --------------------------- |
+| `infra/secrets/openaip_api_key`  | `nginx`   | OpenAIP API key for tile and airspace proxy |
+| `infra/secrets/grafana_password` | `grafana` | Grafana admin password      |
+
+Create these files before starting the stack. The OpenAIP key is available from [account.openaip.net](https://account.openaip.net).
 
 ## Importing airframe reference data
 

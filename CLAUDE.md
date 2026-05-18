@@ -67,6 +67,6 @@ Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to
 
 ## Things not to do
 
-- Don't add new microservices. Server, web, and the Postgres+Redis pair is the topology.
+- Don't add new microservices. Server, web, and Postgres is the topology.
 - Don't bypass the query DSL with bespoke endpoints for specific query shapes.
 - Don't introduce ORM-level abstractions over PostGIS — the SQL is the interface.

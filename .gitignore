@@ -43,3 +43,4 @@ cache/
 # Secrets
 *.pem
 *.key
+infra/secrets/
