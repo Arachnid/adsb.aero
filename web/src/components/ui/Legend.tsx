@@ -25,12 +25,17 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
       }}
     >
       <LegendTitle>
-        {colorMode === "alt" ? "Altitude (ft)" :
-         colorMode === "cat" ? "Category" :
-         colorMode === "sqk" ? "Squawk" :
-         colorMode === "vs"  ? "Vert. speed (fpm)" :
-         colorMode === "gs"  ? "Ground speed (kt)" :
-                               "Indicated AS (kt)"}
+        {colorMode === "alt"
+          ? "Altitude (ft)"
+          : colorMode === "cat"
+            ? "Category"
+            : colorMode === "sqk"
+              ? "Squawk"
+              : colorMode === "vs"
+                ? "Vert. speed (fpm)"
+                : colorMode === "gs"
+                  ? "Ground speed (kt)"
+                  : "Indicated AS (kt)"}
       </LegendTitle>
 
       {colorMode === "alt" && (
@@ -83,7 +88,7 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
           <LegendRow swatch="#82d796">B4 Ultralight</LegendRow>
           <LegendRow swatch="#dc4baf">B6 UAV</LegendRow>
           <LegendRow swatch="#bec3d2">B7 Space</LegendRow>
-          <LegendRow swatch="#b97332">C  Surface</LegendRow>
+          <LegendRow swatch="#b97332">C Surface</LegendRow>
           <LegendRow swatch="#a0a0a0">Other</LegendRow>
         </>
       )}
@@ -154,14 +159,29 @@ function LegendTitle({
 }
 
 function GradientBar({ gradient }: { gradient: string }): React.ReactElement {
-  return (
-    <div style={{ height: 8, borderRadius: 2, background: gradient, marginBottom: 4 }} />
-  );
+  return <div style={{ height: 8, borderRadius: 2, background: gradient, marginBottom: 4 }} />;
 }
 
-function GradientLabels({ left, center, right }: { left: string; center: string; right: string }): React.ReactElement {
+function GradientLabels({
+  left,
+  center,
+  right,
+}: {
+  left: string;
+  center: string;
+  right: string;
+}): React.ReactElement {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, color: "var(--fg-3)", marginBottom: 4 }}>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 9.5,
+        color: "var(--fg-3)",
+        marginBottom: 4,
+      }}
+    >
       <span>{left}</span>
       <span>{center}</span>
       <span>{right}</span>

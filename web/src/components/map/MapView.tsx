@@ -10,7 +10,15 @@ import { useEffect, useRef, useState } from "react";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { LineLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { FlightDetail } from "../../lib/api";
-import { altToColor, catToColor, squawkToColor, vsToColor, gsToColor, iasToColor, type RGBA } from "../../lib/colors";
+import {
+  altToColor,
+  catToColor,
+  squawkToColor,
+  vsToColor,
+  gsToColor,
+  iasToColor,
+  type RGBA,
+} from "../../lib/colors";
 
 import workerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 setWorkerUrl(workerUrl);
@@ -45,7 +53,8 @@ export function stepValueAt(series: number[][] | null | undefined, ts: number): 
   if (!series || series.length === 0) return null;
   let val: number | null = null;
   for (const entry of series) {
-    const entryTs = entry[0]; const entryVal = entry[1];
+    const entryTs = entry[0];
+    const entryVal = entry[1];
     if (entryTs === undefined || entryVal === undefined) continue;
     if (entryTs <= ts) val = entryVal;
     else break;
@@ -63,11 +72,31 @@ export function projectOntoSegment(
   const dy = to[1] - from[1];
   const lenSq = dx * dx + dy * dy;
   if (lenSq === 0) return 0;
-  return Math.max(0, Math.min(1, ((cursor[0] - from[0]) * dx + (cursor[1] - from[1]) * dy) / lenSq));
+  return Math.max(
+    0,
+    Math.min(1, ((cursor[0] - from[0]) * dx + (cursor[1] - from[1]) * dy) / lenSq),
+  );
 }
 
 export function trackToCompass(deg: number): string {
-  const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"] as const;
+  const dirs = [
+    "N",
+    "NNE",
+    "NE",
+    "ENE",
+    "E",
+    "ESE",
+    "SE",
+    "SSE",
+    "S",
+    "SSW",
+    "SW",
+    "WSW",
+    "W",
+    "WNW",
+    "NW",
+    "NNW",
+  ] as const;
   return dirs[Math.round(deg / 22.5) % 16] ?? "N";
 }
 
@@ -202,8 +231,7 @@ function topEdgeInfo(pts: Coord[]): { center: Coord; rotation: number } {
   // rather than averaging, so that a flat edge and a slightly angled neighbour
   // of similar length don't combine into a jaunty result.
   // When all edges are short (e.g. a circle), average them by length instead.
-  const polyWidth =
-    (topMaxLng - topMinLng) * Math.cos((maxLat * Math.PI) / 180);
+  const polyWidth = (topMaxLng - topMinLng) * Math.cos((maxLat * Math.PI) / 180);
   const longThreshold = polyWidth * 0.15;
   const longEdges = topEdges.filter((e) => e.len > longThreshold);
 
@@ -469,10 +497,7 @@ export function MapView({
     const map = mapRef.current;
     if (!map || !map.getSource("filter-geoms")) return;
     setSource(map.getSource("filter-geoms"), buildFillFC(geometries));
-    setSource(
-      map.getSource("filter-labels"),
-      buildLabelFC(geometries),
-    );
+    setSource(map.getSource("filter-labels"), buildLabelFC(geometries));
   }, [geometries]);
 
   useEffect(() => {
@@ -491,7 +516,8 @@ export function MapView({
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas();
     if (canvas) {
-      canvas.style.cursor = pickingActive || drawingActive || airspacePickingActive ? "crosshair" : "";
+      canvas.style.cursor =
+        pickingActive || drawingActive || airspacePickingActive ? "crosshair" : "";
     }
   }, [pickingActive, drawingActive, airspacePickingActive]);
 
@@ -611,8 +637,11 @@ export function MapView({
           ];
           onHoverPointRef.current({ flightId: seg.flightId, pointIdx: seg.pointIdx });
           setMapTooltipRef.current({
-            x: info.x, y: info.y, dotPos,
-            altFt, ts,
+            x: info.x,
+            y: info.y,
+            dotPos,
+            altFt,
+            ts,
             callsign: seg.callsign,
             icao24: seg.icao24,
             icaoType: seg.icaoType,
@@ -703,12 +732,17 @@ export function MapView({
 
     const getColor = (s: Seg): RGBA => {
       const base =
-        colorMode === "alt" ? altToColor(s.altMid) :
-        colorMode === "cat" ? catToColor(s.cat) :
-        colorMode === "sqk" ? squawkToColor(s.squawk) :
-        colorMode === "vs"  ? vsToColor(s.vs) :
-        colorMode === "gs"  ? gsToColor(s.gs) :
-        iasToColor(s.ias);
+        colorMode === "alt"
+          ? altToColor(s.altMid)
+          : colorMode === "cat"
+            ? catToColor(s.cat)
+            : colorMode === "sqk"
+              ? squawkToColor(s.squawk)
+              : colorMode === "vs"
+                ? vsToColor(s.vs)
+                : colorMode === "gs"
+                  ? gsToColor(s.gs)
+                  : iasToColor(s.ias);
       if (hasSel && s.flightId !== selectedFlightId) {
         return [base[0], base[1], base[2], Math.round(base[3] * 0.2)];
       }
@@ -856,7 +890,8 @@ export function MapView({
                 <tr>
                   <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>VS</td>
                   <td style={{ fontFamily: "JetBrains Mono, monospace" }}>
-                    {mapTooltip.vs > 0 ? "+" : ""}{mapTooltip.vs.toLocaleString()} fpm{" "}
+                    {mapTooltip.vs > 0 ? "+" : ""}
+                    {mapTooltip.vs.toLocaleString()} fpm{" "}
                     {mapTooltip.vs > 50 ? "↑" : mapTooltip.vs < -50 ? "↓" : ""}
                   </td>
                 </tr>
@@ -889,9 +924,7 @@ export function MapView({
               {mapTooltip.squawk !== null && (
                 <tr>
                   <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>Sqk</td>
-                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>
-                    {mapTooltip.squawk}
-                  </td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>{mapTooltip.squawk}</td>
                 </tr>
               )}
               {mapTooltip.ts > 0 && (

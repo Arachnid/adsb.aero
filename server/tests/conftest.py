@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import asyncpg
 import pytest
+import pytest_asyncio
 from testcontainers.postgres import PostgresContainer
 
 if TYPE_CHECKING:
@@ -73,7 +74,7 @@ def migrated_db(db_settings: dict[str, str]) -> dict[str, str]:
     return db_settings
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def pool(migrated_db: dict[str, str]) -> AsyncGenerator[asyncpg.Pool]:
     dsn = (
         f"postgresql://{migrated_db['POSTGRES_USER']}:{migrated_db['POSTGRES_PASSWORD']}"
@@ -86,7 +87,7 @@ async def pool(migrated_db: dict[str, str]) -> AsyncGenerator[asyncpg.Pool]:
     await pg_pool.close()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def conn(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Connection]:  # type: ignore[type-arg]
     """Per-test connection wrapped in a rolled-back transaction."""
     async with pool.acquire() as connection:

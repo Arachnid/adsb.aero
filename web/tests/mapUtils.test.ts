@@ -22,11 +22,23 @@ describe("stepValueAt", () => {
   });
 
   it("returns null when timestamp is before all entries", () => {
-    expect(stepValueAt([[1000, 100], [2000, 200]], 500)).toBeNull();
+    expect(
+      stepValueAt(
+        [
+          [1000, 100],
+          [2000, 200],
+        ],
+        500,
+      ),
+    ).toBeNull();
   });
 
   it("returns the last value at or before the timestamp", () => {
-    const series = [[1000, 100], [2000, 200], [3000, 300]];
+    const series = [
+      [1000, 100],
+      [2000, 200],
+      [3000, 300],
+    ];
     expect(stepValueAt(series, 1000)).toBe(100);
     expect(stepValueAt(series, 1500)).toBe(100);
     expect(stepValueAt(series, 2000)).toBe(200);
@@ -35,12 +47,19 @@ describe("stepValueAt", () => {
   });
 
   it("returns the last value when timestamp is after all entries", () => {
-    const series = [[1000, 42], [2000, 99]];
+    const series = [
+      [1000, 42],
+      [2000, 99],
+    ];
     expect(stepValueAt(series, 9999)).toBe(99);
   });
 
   it("stops early when it finds an entry past the timestamp (break path)", () => {
-    const series = [[1000, 10], [2000, 20], [3000, 30]];
+    const series = [
+      [1000, 10],
+      [2000, 20],
+      [3000, 30],
+    ];
     expect(stepValueAt(series, 1500)).toBe(10);
   });
 });
@@ -122,14 +141,21 @@ describe("squawkAt", () => {
   });
 
   it("returns the last code at or before the timestamp", () => {
-    const runs: [number, string][] = [[1000, "1200"], [2000, "7700"], [3000, "0000"]];
+    const runs: [number, string][] = [
+      [1000, "1200"],
+      [2000, "7700"],
+      [3000, "0000"],
+    ];
     expect(squawkAt(runs, 1500)).toBe("1200");
     expect(squawkAt(runs, 2000)).toBe("7700");
     expect(squawkAt(runs, 9999)).toBe("0000");
   });
 
   it("stops searching after finding a future run (break path)", () => {
-    const runs: [number, string][] = [[1000, "1200"], [3000, "7700"]];
+    const runs: [number, string][] = [
+      [1000, "1200"],
+      [3000, "7700"],
+    ];
     expect(squawkAt(runs, 2000)).toBe("1200");
   });
 });

@@ -86,13 +86,31 @@ export function Topbar({
 
       <SegLabel>Basemap</SegLabel>
       <Seg>
-        <SegBtn active={basemap === "dark"} onClick={() => { onBasemap("dark"); }} title="Dark">
+        <SegBtn
+          active={basemap === "dark"}
+          onClick={() => {
+            onBasemap("dark");
+          }}
+          title="Dark"
+        >
           <Moon />
         </SegBtn>
-        <SegBtn active={basemap === "light"} onClick={() => { onBasemap("light"); }} title="Light">
+        <SegBtn
+          active={basemap === "light"}
+          onClick={() => {
+            onBasemap("light");
+          }}
+          title="Light"
+        >
           <Sun />
         </SegBtn>
-        <SegBtn active={basemap === "sat"} onClick={() => { onBasemap("sat"); }} title="Satellite">
+        <SegBtn
+          active={basemap === "sat"}
+          onClick={() => {
+            onBasemap("sat");
+          }}
+          title="Satellite"
+        >
           <Satellite />
         </SegBtn>
       </Seg>
@@ -101,22 +119,52 @@ export function Topbar({
 
       <SegLabel>Color by</SegLabel>
       <Seg>
-        <SegBtn active={colorMode === "alt"} onClick={() => { onColorMode("alt"); }}>
+        <SegBtn
+          active={colorMode === "alt"}
+          onClick={() => {
+            onColorMode("alt");
+          }}
+        >
           Altitude
         </SegBtn>
-        <SegBtn active={colorMode === "cat"} onClick={() => { onColorMode("cat"); }}>
+        <SegBtn
+          active={colorMode === "cat"}
+          onClick={() => {
+            onColorMode("cat");
+          }}
+        >
           Category
         </SegBtn>
-        <SegBtn active={colorMode === "vs"} onClick={() => { onColorMode("vs"); }}>
+        <SegBtn
+          active={colorMode === "vs"}
+          onClick={() => {
+            onColorMode("vs");
+          }}
+        >
           VS
         </SegBtn>
-        <SegBtn active={colorMode === "gs"} onClick={() => { onColorMode("gs"); }}>
+        <SegBtn
+          active={colorMode === "gs"}
+          onClick={() => {
+            onColorMode("gs");
+          }}
+        >
           GS
         </SegBtn>
-        <SegBtn active={colorMode === "ias"} onClick={() => { onColorMode("ias"); }}>
+        <SegBtn
+          active={colorMode === "ias"}
+          onClick={() => {
+            onColorMode("ias");
+          }}
+        >
           IAS
         </SegBtn>
-        <SegBtn active={colorMode === "sqk"} onClick={() => { onColorMode("sqk"); }}>
+        <SegBtn
+          active={colorMode === "sqk"}
+          onClick={() => {
+            onColorMode("sqk");
+          }}
+        >
           Squawk
         </SegBtn>
       </Seg>

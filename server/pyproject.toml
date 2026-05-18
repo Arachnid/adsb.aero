@@ -61,7 +61,7 @@ python_version = "3.14"
 exclude = ["tests/"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg.*", "dramatiq.*", "pyproj.*", "shapely.*", "testcontainers.*", "alembic.*", "herbie.*", "cfgrib.*", "h3.*"]
+module = ["asyncpg", "asyncpg.*", "dramatiq.*", "pyproj.*", "shapely.*", "testcontainers.*", "alembic.*", "herbie.*", "cfgrib.*", "h3", "h3.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

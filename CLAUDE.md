@@ -22,7 +22,7 @@ ADS-B historical query platform at adsb.aero. Map-based UI for querying flight t
 
 ## Test-running
 
-- Server: `pytest` from an activated venv, or `server/.venv/bin/pytest` (integration tests use testcontainers; Docker must be running)
+- Server: `cd server && .venv/bin/pytest` — **must run from `server/`** so `pyproject.toml` is picked up (asyncio mode, testpaths, coverage config all live there). Running `server/.venv/bin/pytest` from the repo root silently uses wrong defaults. Integration tests use testcontainers; Docker must be running.
 - Web: `pnpm test` (vitest)
 - E2E: `pnpm e2e` (Playwright; requires the dev stack up via `docker compose up`)
 - Coverage: `pytest --cov` and `pnpm test --coverage`

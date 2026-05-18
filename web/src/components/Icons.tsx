@@ -57,9 +57,7 @@ export const Braces = icon(
   "M8 3H7a2 2 0 00-2 2v5a2 2 0 01-2 2 2 2 0 012 2v5a2 2 0 002 2h1M16 3h1a2 2 0 012 2v5a2 2 0 002 2 2 2 0 00-2 2v5a2 2 0 01-2 2h-1",
 );
 export const Viewport = icon("M6 2H2v4M22 6V2h-4M6 22H2v-4M22 18v4h-4");
-export const Zone = icon(
-  "M12 2a8 8 0 100 16A8 8 0 0012 2zM2 12h3M19 12h3M12 2v3M12 19v3",
-);
+export const Zone = icon("M12 2a8 8 0 100 16A8 8 0 0012 2zM2 12h3M19 12h3M12 2v3M12 19v3");
 export const Satellite = ({ size = 16, className }: IconProps): React.ReactElement => (
   <svg
     width={size}

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
-import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 if TYPE_CHECKING:
@@ -81,7 +81,7 @@ FLIGHT_A_YEAR = 2010
 FLIGHT_A_OPERATOR = "Test Airways"
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def api_test_data(pool: asyncpg.Pool) -> None:
     """Insert test flights into the DB once per session (no rollback)."""
     await pool.execute(
@@ -129,7 +129,7 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
     )
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def api_client(
     pool: asyncpg.Pool,
     api_test_data: None,

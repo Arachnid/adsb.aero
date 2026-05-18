@@ -12,7 +12,12 @@ function anyGroup(...items: FilterGroup["items"]): FilterGroup {
 }
 
 const BOUNDS: MapBounds = [-2, 50, 2, 52];
-const POLYGON: [number, number][] = [[-2, 50], [2, 50], [2, 52], [-2, 52]];
+const POLYGON: [number, number][] = [
+  [-2, 50],
+  [2, 50],
+  [2, 52],
+  [-2, 52],
+];
 
 // Fields required by IntersectsPred / AlwaysWithinPred that have no bearing on most tests.
 const REGION_DEFAULTS = {
@@ -84,9 +89,15 @@ describe("aircraft", () => {
 describe("starts_within", () => {
   it("circle geometry", () => {
     const g = group({
-      id: "1", kind: "starts_within", shape: "circle",
-      lat: 51.5, lng: -0.1, radiusNm: 10,
-      polygon: null, timeFrom: "", timeTo: "",
+      id: "1",
+      kind: "starts_within",
+      shape: "circle",
+      lat: 51.5,
+      lng: -0.1,
+      radiusNm: 10,
+      polygon: null,
+      timeFrom: "",
+      timeTo: "",
     });
     expect(compileGroup(g, null)).toEqual({
       starts_within: {
@@ -97,9 +108,15 @@ describe("starts_within", () => {
 
   it("polygon geometry (ring closed)", () => {
     const g = group({
-      id: "1", kind: "starts_within", shape: "polygon",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: POLYGON, timeFrom: "", timeTo: "",
+      id: "1",
+      kind: "starts_within",
+      shape: "polygon",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: POLYGON,
+      timeFrom: "",
+      timeTo: "",
     });
     const result = compileGroup(g, null) as { starts_within: { geometry: unknown } };
     const geom = result.starts_within.geometry as { type: string; coordinates: unknown[][] };
@@ -111,15 +128,29 @@ describe("starts_within", () => {
 
   it("viewport geometry from bounds", () => {
     const g = group({
-      id: "1", kind: "starts_within", shape: "viewport",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, timeFrom: "", timeTo: "",
+      id: "1",
+      kind: "starts_within",
+      shape: "viewport",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      timeFrom: "",
+      timeTo: "",
     });
     expect(compileGroup(g, BOUNDS)).toEqual({
       starts_within: {
         geometry: {
           type: "Polygon",
-          coordinates: [[[-2, 50], [2, 50], [2, 52], [-2, 52], [-2, 50]]],
+          coordinates: [
+            [
+              [-2, 50],
+              [2, 50],
+              [2, 52],
+              [-2, 52],
+              [-2, 50],
+            ],
+          ],
         },
       },
     });
@@ -127,18 +158,30 @@ describe("starts_within", () => {
 
   it("viewport with no bounds returns null", () => {
     const g = group({
-      id: "1", kind: "starts_within", shape: "viewport",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, timeFrom: "", timeTo: "",
+      id: "1",
+      kind: "starts_within",
+      shape: "viewport",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      timeFrom: "",
+      timeTo: "",
     });
     expect(compileGroup(g, null)).toBeNull();
   });
 
   it("includes time fields", () => {
     const g = group({
-      id: "1", kind: "starts_within", shape: "circle",
-      lat: 51.5, lng: -0.1, radiusNm: 10,
-      polygon: null, timeFrom: "2025-01-01T12:00", timeTo: "2025-01-02T00:00",
+      id: "1",
+      kind: "starts_within",
+      shape: "circle",
+      lat: 51.5,
+      lng: -0.1,
+      radiusNm: 10,
+      polygon: null,
+      timeFrom: "2025-01-01T12:00",
+      timeTo: "2025-01-02T00:00",
     });
     const result = compileGroup(g, null) as { starts_within: Record<string, unknown> };
     expect(result.starts_within.time_from).toBe("2025-01-01T12:00:00Z");
@@ -147,9 +190,15 @@ describe("starts_within", () => {
 
   it("none shape with time only", () => {
     const g = group({
-      id: "1", kind: "starts_within", shape: "none",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, timeFrom: "2025-06-01T00:00", timeTo: "",
+      id: "1",
+      kind: "starts_within",
+      shape: "none",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      timeFrom: "2025-06-01T00:00",
+      timeTo: "",
     });
     expect(compileGroup(g, null)).toEqual({
       starts_within: { time_from: "2025-06-01T00:00:00Z" },
@@ -158,9 +207,15 @@ describe("starts_within", () => {
 
   it("none shape without time or geometry returns null", () => {
     const g = group({
-      id: "1", kind: "starts_within", shape: "none",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, timeFrom: "", timeTo: "",
+      id: "1",
+      kind: "starts_within",
+      shape: "none",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      timeFrom: "",
+      timeTo: "",
     });
     expect(compileGroup(g, null)).toBeNull();
   });
@@ -171,9 +226,15 @@ describe("starts_within", () => {
 describe("ends_within", () => {
   it("circle geometry", () => {
     const g = group({
-      id: "1", kind: "ends_within", shape: "circle",
-      lat: 53.0, lng: -1.0, radiusNm: 5,
-      polygon: null, timeFrom: "", timeTo: "",
+      id: "1",
+      kind: "ends_within",
+      shape: "circle",
+      lat: 53.0,
+      lng: -1.0,
+      radiusNm: 5,
+      polygon: null,
+      timeFrom: "",
+      timeTo: "",
     });
     expect(compileGroup(g, null)).toEqual({
       ends_within: {
@@ -188,14 +249,25 @@ describe("ends_within", () => {
 describe("region", () => {
   it("circle geometry", () => {
     const g = group({
-      id: "1", kind: "region", regionName: "R", shape: "circle",
-      lat: 51.5, lng: -0.1, radiusNm: 20,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      id: "1",
+      kind: "region",
+      regionName: "R",
+      shape: "circle",
+      lat: 51.5,
+      lng: -0.1,
+      radiusNm: 20,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      timeFrom: "",
+      timeTo: "",
+      squawkCodes: [],
       ...REGION_DEFAULTS,
     });
     expect(compileGroup(g, null)).toEqual({
       trajectory_intersects: {
-        altitude_min_ref: "ft", altitude_max_ref: "ft",
+        altitude_min_ref: "ft",
+        altitude_max_ref: "ft",
         geometry: { type: "Circle", coordinates: [-0.1, 51.5], radius: 20 * 1852 },
       },
     });
@@ -203,9 +275,19 @@ describe("region", () => {
 
   it("includes altitude fields", () => {
     const g = group({
-      id: "1", kind: "region", regionName: "R", shape: "circle",
-      lat: 51.5, lng: -0.1, radiusNm: 20,
-      polygon: null, altMin: 10000, altMax: 40000, timeFrom: "", timeTo: "", squawkCodes: [],
+      id: "1",
+      kind: "region",
+      regionName: "R",
+      shape: "circle",
+      lat: 51.5,
+      lng: -0.1,
+      radiusNm: 20,
+      polygon: null,
+      altMin: 10000,
+      altMax: 40000,
+      timeFrom: "",
+      timeTo: "",
+      squawkCodes: [],
       ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
@@ -215,9 +297,19 @@ describe("region", () => {
 
   it("omits altitude fields when null", () => {
     const g = group({
-      id: "1", kind: "region", regionName: "R", shape: "circle",
-      lat: 51.5, lng: -0.1, radiusNm: 20,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      id: "1",
+      kind: "region",
+      regionName: "R",
+      shape: "circle",
+      lat: 51.5,
+      lng: -0.1,
+      radiusNm: 20,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      timeFrom: "",
+      timeTo: "",
+      squawkCodes: [],
       ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
@@ -227,9 +319,19 @@ describe("region", () => {
 
   it("none shape always produces trajectory_intersects with default refs", () => {
     const g = group({
-      id: "1", kind: "region", regionName: "R", shape: "none",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      id: "1",
+      kind: "region",
+      regionName: "R",
+      shape: "none",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      timeFrom: "",
+      timeTo: "",
+      squawkCodes: [],
       ...REGION_DEFAULTS,
     });
     expect(compileGroup(g, null)).toEqual({
@@ -239,10 +341,19 @@ describe("region", () => {
 
   it("includes time fields", () => {
     const g = group({
-      id: "1", kind: "region", regionName: "R", shape: "none",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, altMin: null, altMax: null,
-      timeFrom: "2025-03-15T06:00", timeTo: "2025-03-15T18:00", squawkCodes: [],
+      id: "1",
+      kind: "region",
+      regionName: "R",
+      shape: "none",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      timeFrom: "2025-03-15T06:00",
+      timeTo: "2025-03-15T18:00",
+      squawkCodes: [],
       ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
@@ -252,9 +363,18 @@ describe("region", () => {
 
   it("includes squawk_codes when non-empty", () => {
     const g = group({
-      id: "1", kind: "region", regionName: "R", shape: "none",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
+      id: "1",
+      kind: "region",
+      regionName: "R",
+      shape: "none",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      timeFrom: "",
+      timeTo: "",
       squawkCodes: ["7700", "7600"],
       ...REGION_DEFAULTS,
     });
@@ -264,9 +384,19 @@ describe("region", () => {
 
   it("omits squawk_codes when empty", () => {
     const g = group({
-      id: "1", kind: "region", regionName: "R", shape: "none",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      id: "1",
+      kind: "region",
+      regionName: "R",
+      shape: "none",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      timeFrom: "",
+      timeTo: "",
+      squawkCodes: [],
       ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
@@ -279,14 +409,25 @@ describe("region", () => {
 describe("always_within", () => {
   it("circle geometry compiles to trajectory_within", () => {
     const g = group({
-      id: "1", kind: "always_within", regionName: "R", shape: "circle",
-      lat: 51.5, lng: -0.1, radiusNm: 20,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "", squawkCodes: [],
+      id: "1",
+      kind: "always_within",
+      regionName: "R",
+      shape: "circle",
+      lat: 51.5,
+      lng: -0.1,
+      radiusNm: 20,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      timeFrom: "",
+      timeTo: "",
+      squawkCodes: [],
       ...REGION_DEFAULTS,
     });
     expect(compileGroup(g, null)).toEqual({
       trajectory_within: {
-        altitude_min_ref: "ft", altitude_max_ref: "ft",
+        altitude_min_ref: "ft",
+        altitude_max_ref: "ft",
         geometry: { type: "Circle", coordinates: [-0.1, 51.5], radius: 20 * 1852 },
       },
     });
@@ -294,10 +435,19 @@ describe("always_within", () => {
 
   it("includes altitude and time fields", () => {
     const g = group({
-      id: "1", kind: "always_within", regionName: "R", shape: "circle",
-      lat: 51.5, lng: -0.1, radiusNm: 20,
-      polygon: null, altMin: 5000, altMax: 30000,
-      timeFrom: "2025-04-01T00:00", timeTo: "2025-04-01T12:00", squawkCodes: [],
+      id: "1",
+      kind: "always_within",
+      regionName: "R",
+      shape: "circle",
+      lat: 51.5,
+      lng: -0.1,
+      radiusNm: 20,
+      polygon: null,
+      altMin: 5000,
+      altMax: 30000,
+      timeFrom: "2025-04-01T00:00",
+      timeTo: "2025-04-01T12:00",
+      squawkCodes: [],
       ...REGION_DEFAULTS,
     });
     const result = compileGroup(g, null) as { trajectory_within: Record<string, unknown> };
@@ -309,9 +459,18 @@ describe("always_within", () => {
 
   it("includes squawk_codes when non-empty", () => {
     const g = group({
-      id: "1", kind: "always_within", regionName: "R", shape: "none",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, altMin: null, altMax: null, timeFrom: "", timeTo: "",
+      id: "1",
+      kind: "always_within",
+      regionName: "R",
+      shape: "none",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      timeFrom: "",
+      timeTo: "",
       squawkCodes: ["1200"],
       ...REGION_DEFAULTS,
     });
@@ -387,9 +546,15 @@ describe("group combinators", () => {
 describe("toIso (via time fields)", () => {
   it("passes through an already-full ISO string", () => {
     const g = group({
-      id: "1", kind: "starts_within", shape: "none",
-      lat: null, lng: null, radiusNm: 25,
-      polygon: null, timeFrom: "2025-01-01T12:00:00", timeTo: "",
+      id: "1",
+      kind: "starts_within",
+      shape: "none",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      timeFrom: "2025-01-01T12:00:00",
+      timeTo: "",
     });
     const result = compileGroup(g, null) as { starts_within: Record<string, unknown> };
     expect(result.starts_within.time_from).toBe("2025-01-01T12:00:00Z");
