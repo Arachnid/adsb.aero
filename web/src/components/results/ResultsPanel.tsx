@@ -27,7 +27,9 @@ function fmtEndTime(endIso: string, startDate: string): string {
   const endDate = endIso.slice(0, 10);
   const t = fmtTime(endIso);
   if (endDate === startDate) return t;
-  const diff = Math.round((Date.parse(endDate) - Date.parse(startDate)) / 86400000);
+  const diff = Math.round(
+    (Date.parse(endDate) - Date.parse(startDate)) / 86400000,
+  );
   return `${t} (+${String(diff)}d)`;
 }
 
@@ -77,11 +79,14 @@ function SparklineChart({
   const tSpan = flatTs != null ? (flatTs[n - 1] ?? 0) - t0 : n - 1;
   const toX = (flatIdx: number): number => {
     if (flatTs != null) {
-      return PAD + (((flatTs[flatIdx] ?? 0) - t0) / (tSpan || 1)) * (W - PAD * 2);
+      return (
+        PAD + (((flatTs[flatIdx] ?? 0) - t0) / (tSpan || 1)) * (W - PAD * 2)
+      );
     }
     return PAD + (flatIdx / (n - 1)) * (W - PAD * 2);
   };
-  const toY = (alt: number): number => PAD + (1 - (alt - minAlt) / range) * (H - PAD * 2);
+  const toY = (alt: number): number =>
+    PAD + (1 - (alt - minAlt) / range) * (H - PAD * 2);
   const n2s = (x: number): string => x.toFixed(3);
 
   // Build per-sub-sequence fills and polylines; no line crosses a coverage gap.
@@ -101,7 +106,14 @@ function SparklineChart({
       const polyPoints = subSeq
         .map((c, j) => `${n2s(toX(flatOffset + j))},${n2s(toY(c[2]))}`)
         .join(" ");
-      fills.push(<path key={flatOffset} d={fillD} fill="rgba(110,168,255,0.15)" stroke="none" />);
+      fills.push(
+        <path
+          key={flatOffset}
+          d={fillD}
+          fill="rgba(110,168,255,0.15)"
+          stroke="none"
+        />,
+      );
       lines.push(
         <polyline
           key={flatOffset}
@@ -115,11 +127,15 @@ function SparklineChart({
     flatOffset += subSeq.length;
   }
 
-  const activeIdx = hoveredIdx !== null && hoveredIdx >= 0 && hoveredIdx < n ? hoveredIdx : null;
+  const activeIdx =
+    hoveredIdx !== null && hoveredIdx >= 0 && hoveredIdx < n
+      ? hoveredIdx
+      : null;
   const activeAlt = activeIdx !== null ? (flatAlts[activeIdx] ?? 0) : 0;
   const activeHx = activeIdx !== null ? toX(activeIdx) : 0;
   const activeHy = activeIdx !== null ? toY(activeAlt) : 0;
-  const tooltipLeft = activeIdx !== null ? `${((toX(activeIdx) / W) * 100).toFixed(2)}%` : "0%";
+  const tooltipLeft =
+    activeIdx !== null ? `${((toX(activeIdx) / W) * 100).toFixed(2)}%` : "0%";
 
   return (
     <div style={{ position: "relative", marginTop: 5 }}>
@@ -225,7 +241,13 @@ export function ResultsPanel({
 
   if (error) {
     return (
-      <div style={{ padding: "20px 16px", color: "var(--color-red, #e55)", fontSize: 12 }}>
+      <div
+        style={{
+          padding: "20px 16px",
+          color: "var(--color-red, #e55)",
+          fontSize: 12,
+        }}
+      >
         <strong>Error:</strong> {error}
       </div>
     );
@@ -234,7 +256,12 @@ export function ResultsPanel({
   if (flights === null && !loading) {
     return (
       <div
-        style={{ textAlign: "center", padding: "40px 20px", color: "var(--fg-3)", fontSize: 12 }}
+        style={{
+          textAlign: "center",
+          padding: "40px 20px",
+          color: "var(--fg-3)",
+          fontSize: 12,
+        }}
       >
         <div style={{ marginBottom: 8, opacity: 0.4 }}>
           <Plane size={32} />
@@ -245,10 +272,21 @@ export function ResultsPanel({
     );
   }
 
-  if (flights !== null && flights.length === 0 && !loading) {
+  if (
+    flights !== null &&
+    flights.length === 0 &&
+    !loading &&
+    !hasMore &&
+    !windowFrom
+  ) {
     return (
       <div
-        style={{ textAlign: "center", padding: "40px 20px", color: "var(--fg-3)", fontSize: 12 }}
+        style={{
+          textAlign: "center",
+          padding: "40px 20px",
+          color: "var(--fg-3)",
+          fontSize: 12,
+        }}
       >
         <div>No flights matched.</div>
       </div>
@@ -284,19 +322,37 @@ export function ResultsPanel({
               selected={item.flight.flight_id === selectedFlightId}
               onClick={() => {
                 onSelectFlight?.(
-                  item.flight.flight_id === selectedFlightId ? null : item.flight.flight_id,
+                  item.flight.flight_id === selectedFlightId
+                    ? null
+                    : item.flight.flight_id,
                 );
               }}
               hoveredPointIdx={
-                hoveredPoint?.flightId === item.flight.flight_id ? hoveredPoint.pointIdx : null
+                hoveredPoint?.flightId === item.flight.flight_id
+                  ? hoveredPoint.pointIdx
+                  : null
               }
               onHoverPointIdx={(idx) => {
                 onHoverPoint?.(
-                  idx !== null ? { flightId: item.flight.flight_id, pointIdx: idx } : null,
+                  idx !== null
+                    ? { flightId: item.flight.flight_id, pointIdx: idx }
+                    : null,
                 );
               }}
             />
           ),
+        )}
+        {flights !== null && flights.length === 0 && !loading && (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "40px 20px",
+              color: "var(--fg-3)",
+              fontSize: 12,
+            }}
+          >
+            No flights matched.
+          </div>
         )}
         {loading && (
           <div
@@ -372,7 +428,9 @@ function FlightRow({
   onHoverPointIdx: (idx: number | null) => void;
 }): React.ReactElement {
   const label = flight.callsign ?? flight.icao24;
-  const sub = [flight.icao_type, flight.emitter_category].filter(Boolean).join(" · ") || "—";
+  const sub =
+    [flight.icao_type, flight.emitter_category].filter(Boolean).join(" · ") ||
+    "—";
   const coords = flight.path?.coordinates ?? null;
 
   const detailRows: [string, string, boolean][] = [
@@ -380,7 +438,9 @@ function FlightRow({
     ...(flight.registration != null
       ? [["Reg", flight.registration, false] as [string, string, boolean]]
       : []),
-    ...(flight.model != null ? [["Model", flight.model, false] as [string, string, boolean]] : []),
+    ...(flight.model != null
+      ? [["Model", flight.model, false] as [string, string, boolean]]
+      : []),
     ...(flight.year != null
       ? [["Year", String(flight.year), false] as [string, string, boolean]]
       : []),
@@ -396,14 +456,21 @@ function FlightRow({
       style={{
         padding: "8px 14px",
         borderBottom: "1px solid var(--line-1)",
-        borderLeft: selected ? "3px solid var(--accent)" : "3px solid transparent",
+        borderLeft: selected
+          ? "3px solid var(--accent)"
+          : "3px solid transparent",
         background: selected ? "var(--accent-soft)" : "transparent",
         fontSize: 12,
         cursor: "pointer",
       }}
     >
       <div
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: 8,
+        }}
       >
         <span
           style={{
@@ -414,10 +481,15 @@ function FlightRow({
         >
           {label}
         </span>
-        <span style={{ color: "var(--fg-3)", fontSize: 11, whiteSpace: "nowrap" }}>{sub}</span>
+        <span
+          style={{ color: "var(--fg-3)", fontSize: 11, whiteSpace: "nowrap" }}
+        >
+          {sub}
+        </span>
       </div>
       <div style={{ color: "var(--fg-3)", marginTop: 2 }}>
-        {fmtTime(flight.start_ts)} → {fmtEndTime(flight.end_ts, flight.start_ts.slice(0, 10))}
+        {fmtTime(flight.start_ts)} →{" "}
+        {fmtEndTime(flight.end_ts, flight.start_ts.slice(0, 10))}
       </div>
       {coords && (
         <SparklineChart

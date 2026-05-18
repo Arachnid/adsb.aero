@@ -62,6 +62,25 @@ describe("ResultsPanel", () => {
     expect(screen.getByText("No flights matched.")).toBeInTheDocument();
   });
 
+  it("shows empty state and load-more footer when zero results but hasMore", () => {
+    render(
+      <ResultsPanel
+        flights={[]}
+        loading={false}
+        error={null}
+        hasMore={true}
+        onLoadMore={() => {}}
+        windowFrom="2025-03-05T00:00:00Z"
+        queryEndDate="2025-04-01"
+      />,
+    );
+    expect(screen.getByText("No flights matched.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Load earlier results" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Fetched/)).toBeInTheDocument();
+  });
+
   it("shows error message", () => {
     render(
       <ResultsPanel
@@ -143,7 +162,9 @@ describe("ResultsPanel", () => {
         onLoadMore={() => {}}
       />,
     );
-    expect(screen.getByRole("button", { name: "Load earlier results" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Load earlier results" }),
+    ).toBeInTheDocument();
   });
 
   it("does not show Load more button when hasMore is false", () => {
@@ -156,7 +177,9 @@ describe("ResultsPanel", () => {
         onLoadMore={() => {}}
       />,
     );
-    expect(screen.queryByRole("button", { name: "Load earlier results" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Load earlier results" }),
+    ).not.toBeInTheDocument();
   });
 
   it("calls onLoadMore when Load more is clicked", () => {
@@ -170,7 +193,9 @@ describe("ResultsPanel", () => {
         onLoadMore={onLoadMore}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Load earlier results" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Load earlier results" }),
+    );
     expect(onLoadMore).toHaveBeenCalledOnce();
   });
 
@@ -184,7 +209,9 @@ describe("ResultsPanel", () => {
         onLoadMore={() => {}}
       />,
     );
-    expect(screen.queryByRole("button", { name: "Load earlier results" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Load earlier results" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
