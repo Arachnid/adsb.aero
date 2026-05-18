@@ -1511,23 +1511,38 @@
       },
       "QueryRequest": {
         "properties": {
-          "start_from": {
+          "end_date": {
             "type": "string",
             "format": "date-time",
-            "title": "Start From",
-            "description": "Inclusive lower bound on flight start time (`start_ts`). Required.",
+            "title": "End Date",
+            "description": "Exclusive upper bound on flight start time (`start_ts`). The query returns flights whose `start_ts` is strictly before this value. Defaults to the most recent date with data.",
             "examples": [
-              "2025-03-25T00:00:00Z"
+              "2025-04-02T00:00:00Z"
             ]
           },
-          "start_to": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Start To",
-            "description": "Exclusive upper bound on flight start time (`start_ts`). Must be strictly after `start_from` and within 7 days of it.",
+          "start_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start From",
+            "description": "Optional inclusive lower bound on `start_ts`. When set, overrides the automatic window floor if it falls later. Must be strictly before `end_date`.",
             "examples": [
-              "2025-04-01T00:00:00Z"
+              "2025-03-01T00:00:00Z"
             ]
+          },
+          "window_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Window Days",
+            "description": "Size of the sliding search window in days, measured back from the current cursor position (or `end_date` on the first page). Combined with keyset pagination this lets callers walk back through history one window at a time by passing the previous response's `window_from` as the next `end_date`.",
+            "default": 28
           },
           "match": {
             "anyOf": [
@@ -1600,8 +1615,7 @@
         },
         "type": "object",
         "required": [
-          "start_from",
-          "start_to"
+          "end_date"
         ],
         "title": "QueryRequest",
         "description": "Request body for `POST /api/v1/query`."
@@ -1626,13 +1640,20 @@
               }
             ],
             "title": "Cursor",
-            "description": "Opaque continuation token. Pass unchanged as `cursor` in the next request to retrieve the next page. `null` when there are no more results."
+            "description": "Opaque continuation token. Present when the current window contained more results than `limit`; pass unchanged as `cursor` in the next request. `null` when the window was exhausted \u2014 use `window_from` as `end_date` to continue searching earlier windows."
+          },
+          "window_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window From",
+            "description": "The inclusive lower bound on `start_ts` that was actually applied. Reflects the sliding window floor (cursor position minus `window_days`, or `start_from` if that is later). Pass this as `end_date` on the next request to continue searching the preceding window."
           }
         },
         "type": "object",
         "required": [
           "flights",
-          "cursor"
+          "cursor",
+          "window_from"
         ],
         "title": "QueryResponse",
         "description": "Paginated list of flights matching a query."

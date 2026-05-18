@@ -204,33 +204,31 @@ const EMITTER_CATEGORIES: { code: string; label: string }[] = [
 // ===== Global date range =====
 
 export interface GlobalDateRange {
-  from: string; // "YYYY-MM-DD" inclusive
-  to: string; // "YYYY-MM-DD" inclusive
+  to: string; // "YYYY-MM-DD" inclusive, mandatory end date
+  from?: string; // "YYYY-MM-DD" inclusive, optional earliest bound
 }
 
-const MAX_RANGE_DAYS = 6; // 7-day inclusive window = 6-day difference
-
 export function isDateRangeValid(range: GlobalDateRange): boolean {
-  if (!range.from || !range.to) return false;
+  if (!range.to) return false;
+  if (!range.from) return true;
   try {
     const f = parseDate(range.from);
     const t = parseDate(range.to);
-    const diffMs = t.toDate("UTC").getTime() - f.toDate("UTC").getTime();
-    return diffMs >= 0 && diffMs <= MAX_RANGE_DAYS * 86400000;
+    return f.compare(t) <= 0;
   } catch {
     return false;
   }
 }
 
-/** Convert an inclusive GlobalDateRange to the exclusive ISO strings the API expects. */
+/** Convert a GlobalDateRange to the ISO strings the API expects. */
 export function dateRangeToApiParams(range: GlobalDateRange): {
-  startFrom: string;
-  startTo: string;
+  endDate: string;
+  startFrom: string | null;
 } {
   const toDate = parseDate(range.to).add({ days: 1 });
   return {
-    startFrom: range.from + "T00:00:00Z",
-    startTo: toDate.toString() + "T00:00:00Z",
+    endDate: toDate.toString() + "T00:00:00Z",
+    startFrom: range.from ? range.from + "T00:00:00Z" : null,
   };
 }
 
@@ -255,22 +253,12 @@ export function QueryBuilderDateRange({
   const fromValue = range.from ? parseDate(range.from) : null;
   const toValue = range.to ? parseDate(range.to) : null;
 
-  const toMaxValue = fromValue
-    ? maxValue
-      ? fromValue.add({ days: MAX_RANGE_DAYS }).compare(maxValue) < 0
-        ? fromValue.add({ days: MAX_RANGE_DAYS })
-        : maxValue
-      : fromValue.add({ days: MAX_RANGE_DAYS })
-    : maxValue;
-
   const handleFromChange = (d: CalendarDate | null): void => {
-    const newFrom = d ? d.toString() : "";
-    let newTo = range.to;
-    if (d && range.to) {
-      const maxTo = d.add({ days: MAX_RANGE_DAYS });
-      if (parseDate(range.to).compare(maxTo) > 0) newTo = maxTo.toString();
+    if (d) {
+      onChange({ ...range, from: d.toString() });
+    } else {
+      onChange({ to: range.to });
     }
-    onChange({ from: newFrom, to: newTo });
   };
 
   const handleToChange = (d: CalendarDate | null): void => {
@@ -279,20 +267,15 @@ export function QueryBuilderDateRange({
 
   const handleReset = (): void => {
     if (!dataRange?.last_date) return;
-    const last = new Date(dataRange.last_date + "T00:00:00Z");
-    last.setUTCDate(last.getUTCDate() - MAX_RANGE_DAYS);
-    onChange({ from: last.toISOString().slice(0, 10), to: dataRange.last_date });
+    const { from } = range;
+    onChange(from !== undefined ? { to: dataRange.last_date, from } : { to: dataRange.last_date });
   };
 
-  const bothSet = range.from && range.to;
   let error: string | null = null;
-  if (bothSet) {
+  if (range.from && range.to) {
     try {
-      const f = parseDate(range.from);
-      const t = parseDate(range.to);
-      const diffMs = t.toDate("UTC").getTime() - f.toDate("UTC").getTime();
-      if (diffMs < 0) error = "End must be after start";
-      else if (diffMs > MAX_RANGE_DAYS * 86400000) error = "Range must be 7 days or less";
+      if (parseDate(range.from).compare(parseDate(range.to)) > 0)
+        error = "Start must be on or before end date";
     } catch {
       error = "Invalid date";
     }
@@ -301,47 +284,69 @@ export function QueryBuilderDateRange({
   return (
     <div className="date-range-bar">
       <div className="date-range-bar-header">
-        <div className="date-range-bar-label">Departure window</div>
+        <div className="date-range-bar-label">Date range</div>
         {dataRange?.last_date && (
           <button className="date-range-reset" onClick={handleReset}>
-            ↺ Last 7 days
+            ↺ Latest
           </button>
         )}
       </div>
       <div className="date-range-bar-row">
         <div className="date-range-bar-field">
-          <FieldLabel>From</FieldLabel>
-          <DatePicker<CalendarDate>
-            granularity="day"
-            value={fromValue}
-            onChange={handleFromChange}
-            {...(minValue !== undefined ? { minValue } : {})}
-            {...(maxValue !== undefined ? { maxValue } : {})}
-          >
-            <Group className="datetime-date-group">
-              <DateInput className="datetime-date-input">
-                {(segment) => <DateSegment segment={segment} />}
-              </DateInput>
-              <Button className="datetime-cal-btn">▾</Button>
-            </Group>
-            <Popover className="datetime-popover">
-              <Dialog>
-                <Calendar>
-                  <header className="datetime-cal-header">
-                    <Button slot="previous">◀</Button>
-                    <Heading />
-                    <Button slot="next">▶</Button>
-                  </header>
-                  <CalendarGrid>
-                    <CalendarGridHeader>
-                      {(day) => <CalendarHeaderCell>{day}</CalendarHeaderCell>}
-                    </CalendarGridHeader>
-                    <CalendarGridBody>{(date) => <CalendarCell date={date} />}</CalendarGridBody>
-                  </CalendarGrid>
-                </Calendar>
-              </Dialog>
-            </Popover>
-          </DatePicker>
+          <FieldLabel>From (optional)</FieldLabel>
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <DatePicker<CalendarDate>
+              style={{ flex: 1, minWidth: 0 }}
+              granularity="day"
+              value={fromValue}
+              onChange={handleFromChange}
+              {...(minValue !== undefined ? { minValue } : {})}
+              {...(maxValue !== undefined ? { maxValue } : {})}
+            >
+              <Group className="datetime-date-group">
+                <DateInput className="datetime-date-input">
+                  {(segment) => <DateSegment segment={segment} />}
+                </DateInput>
+                <Button className="datetime-cal-btn">▾</Button>
+              </Group>
+              <Popover className="datetime-popover">
+                <Dialog>
+                  <Calendar>
+                    <header className="datetime-cal-header">
+                      <Button slot="previous">◀</Button>
+                      <Heading />
+                      <Button slot="next">▶</Button>
+                    </header>
+                    <CalendarGrid>
+                      <CalendarGridHeader>
+                        {(day) => <CalendarHeaderCell>{day}</CalendarHeaderCell>}
+                      </CalendarGridHeader>
+                      <CalendarGridBody>{(date) => <CalendarCell date={date} />}</CalendarGridBody>
+                    </CalendarGrid>
+                  </Calendar>
+                </Dialog>
+              </Popover>
+            </DatePicker>
+            {range.from && (
+              <button
+                onClick={() => {
+                  onChange({ to: range.to });
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--fg-3)",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  lineHeight: 1,
+                  padding: "0 2px",
+                }}
+                title="Clear start date"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
         <div className="date-range-bar-field">
           <FieldLabel>To</FieldLabel>
@@ -350,7 +355,7 @@ export function QueryBuilderDateRange({
             value={toValue}
             onChange={handleToChange}
             {...(minValue !== undefined ? { minValue } : {})}
-            {...(toMaxValue !== undefined ? { maxValue: toMaxValue } : {})}
+            {...(maxValue !== undefined ? { maxValue } : {})}
           >
             <Group className="datetime-date-group">
               <DateInput className="datetime-date-input">
@@ -461,13 +466,30 @@ function FieldLabel({ children }: { children: React.ReactNode }): React.ReactEle
   return <div className="field-label">{children}</div>;
 }
 
-function RefToggle({ value, onChange }: { value: "ft" | "fl"; onChange: (r: "ft" | "fl") => void }): React.ReactElement {
+function RefToggle({
+  value,
+  onChange,
+}: {
+  value: "ft" | "fl";
+  onChange: (r: "ft" | "fl") => void;
+}): React.ReactElement {
   return (
-    <div style={{ display: "inline-flex", border: "1px solid var(--line-2)", borderRadius: 3, overflow: "hidden", fontSize: 9.5, fontFamily: "JetBrains Mono, monospace" }}>
+    <div
+      style={{
+        display: "inline-flex",
+        border: "1px solid var(--line-2)",
+        borderRadius: 3,
+        overflow: "hidden",
+        fontSize: 9.5,
+        fontFamily: "JetBrains Mono, monospace",
+      }}
+    >
       {(["ft", "fl"] as const).map((ref) => (
         <button
           key={ref}
-          onClick={() => { onChange(ref); }}
+          onClick={() => {
+            onChange(ref);
+          }}
           style={{
             padding: "1px 5px",
             background: value === ref ? "var(--accent)" : "transparent",
@@ -562,19 +584,44 @@ function ShapeToggle({
 }): React.ReactElement {
   return (
     <div className="shape-toggle">
-      <button className={shape === "none" ? "active" : ""} onClick={() => { onChange("none"); }}>
+      <button
+        className={shape === "none" ? "active" : ""}
+        onClick={() => {
+          onChange("none");
+        }}
+      >
         —
       </button>
-      <button className={shape === "circle" ? "active" : ""} onClick={() => { onChange("circle"); }}>
+      <button
+        className={shape === "circle" ? "active" : ""}
+        onClick={() => {
+          onChange("circle");
+        }}
+      >
         <Circle size={12} /> Circle
       </button>
-      <button className={shape === "polygon" ? "active" : ""} onClick={() => { onChange("polygon"); }}>
+      <button
+        className={shape === "polygon" ? "active" : ""}
+        onClick={() => {
+          onChange("polygon");
+        }}
+      >
         <Polygon size={12} /> Poly
       </button>
-      <button className={shape === "viewport" ? "active" : ""} onClick={() => { onChange("viewport"); }}>
+      <button
+        className={shape === "viewport" ? "active" : ""}
+        onClick={() => {
+          onChange("viewport");
+        }}
+      >
         <Viewport size={12} /> View
       </button>
-      <button className={shape === "airspace" ? "active" : ""} onClick={() => { onChange("airspace"); }}>
+      <button
+        className={shape === "airspace" ? "active" : ""}
+        onClick={() => {
+          onChange("airspace");
+        }}
+      >
         <Zone size={12} /> Zone
       </button>
     </div>
@@ -719,9 +766,14 @@ function AircraftCard({
   const [icaoTypeOptions, setIcaoTypeOptions] = useState<ChipOption[]>([]);
 
   useEffect(() => {
-    if (!globalDateRange?.from || !globalDateRange.to) return;
+    if (!globalDateRange?.to) return;
+    // Use explicit start if provided, otherwise a 28-day window before end.
+    const end = globalDateRange.to;
+    const start =
+      globalDateRange.from ??
+      new Date(Date.parse(end + "T00:00:00Z") - 28 * 86400000).toISOString().slice(0, 10);
     const controller = new AbortController();
-    getIcaoTypes(globalDateRange.from, globalDateRange.to, { signal: controller.signal })
+    getIcaoTypes(start, end, { signal: controller.signal })
       .then((stats) => {
         setIcaoTypeOptions(
           stats.map((s) => ({ code: s.icao_type, label: s.model ?? s.icao_type })),
@@ -895,11 +947,7 @@ function PointRadiusCard({
               className={"btn-secondary" + (isPickingAirspace ? " armed" : "")}
               onClick={onArmAirspacePicker}
             >
-              {isPickingAirspace
-                ? "Click on map…"
-                : pred.polygon
-                  ? "Change"
-                  : "Choose from map"}
+              {isPickingAirspace ? "Click on map…" : pred.polygon ? "Change" : "Choose from map"}
             </button>
           </div>
         </>
@@ -985,7 +1033,8 @@ function RegionCard({
   };
 
   const toggleAlt = (checked: boolean): void => {
-    if (!checked) onChange({ ...pred, altMin: null, altMinRef: "ft", altMax: null, altMaxRef: "ft" });
+    if (!checked)
+      onChange({ ...pred, altMin: null, altMinRef: "ft", altMax: null, altMaxRef: "ft" });
     setAltOpenLocal(checked);
   };
 
@@ -1000,7 +1049,14 @@ function RegionCard({
   };
 
   const toggleDwellDist = (checked: boolean): void => {
-    if (!checked) onChange({ ...pred, dwellMinMin: null, dwellMaxMin: null, distanceMinNm: null, distanceMaxNm: null });
+    if (!checked)
+      onChange({
+        ...pred,
+        dwellMinMin: null,
+        dwellMaxMin: null,
+        distanceMinNm: null,
+        distanceMaxNm: null,
+      });
     setDwellDistOpenLocal(checked);
   };
 
@@ -1120,11 +1176,7 @@ function RegionCard({
               className={"btn-secondary" + (isPickingAirspace ? " armed" : "")}
               onClick={onArmAirspacePicker}
             >
-              {isPickingAirspace
-                ? "Click on map…"
-                : pred.polygon
-                  ? "Change"
-                  : "Choose from map"}
+              {isPickingAirspace ? "Click on map…" : pred.polygon ? "Change" : "Choose from map"}
             </button>
           </div>
         </>
@@ -1144,9 +1196,23 @@ function RegionCard({
           {altOpen && (
             <div className="pred-row optional-group-body">
               <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span className="field-label" style={{ marginBottom: 0 }}>Alt min</span>
-                  <RefToggle value={pred.altMinRef} onChange={(r) => { onChange({ ...pred, altMinRef: r }); }} />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 4,
+                  }}
+                >
+                  <span className="field-label" style={{ marginBottom: 0 }}>
+                    Alt min
+                  </span>
+                  <RefToggle
+                    value={pred.altMinRef}
+                    onChange={(r) => {
+                      onChange({ ...pred, altMinRef: r });
+                    }}
+                  />
                 </div>
                 <input
                   className="text-field mono"
@@ -1159,9 +1225,23 @@ function RegionCard({
                 />
               </div>
               <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span className="field-label" style={{ marginBottom: 0 }}>Alt max</span>
-                  <RefToggle value={pred.altMaxRef} onChange={(r) => { onChange({ ...pred, altMaxRef: r }); }} />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 4,
+                  }}
+                >
+                  <span className="field-label" style={{ marginBottom: 0 }}>
+                    Alt max
+                  </span>
+                  <RefToggle
+                    value={pred.altMaxRef}
+                    onChange={(r) => {
+                      onChange({ ...pred, altMaxRef: r });
+                    }}
+                  />
                 </div>
                 <input
                   className="text-field mono"
@@ -1269,7 +1349,9 @@ function RegionCard({
             <input
               type="checkbox"
               checked={dwellDistOpen}
-              onChange={(e) => { toggleDwellDist(e.target.checked); }}
+              onChange={(e) => {
+                toggleDwellDist(e.target.checked);
+              }}
             />
             Dwell &amp; distance
           </label>
@@ -1285,7 +1367,10 @@ function RegionCard({
                     placeholder="0"
                     value={pred.dwellMinMin ?? ""}
                     onChange={(e) => {
-                      onChange({ ...pred, dwellMinMin: e.target.value === "" ? null : +e.target.value });
+                      onChange({
+                        ...pred,
+                        dwellMinMin: e.target.value === "" ? null : +e.target.value,
+                      });
                     }}
                   />
                 </div>
@@ -1298,7 +1383,10 @@ function RegionCard({
                     placeholder="∞"
                     value={pred.dwellMaxMin ?? ""}
                     onChange={(e) => {
-                      onChange({ ...pred, dwellMaxMin: e.target.value === "" ? null : +e.target.value });
+                      onChange({
+                        ...pred,
+                        dwellMaxMin: e.target.value === "" ? null : +e.target.value,
+                      });
                     }}
                   />
                 </div>
@@ -1313,7 +1401,10 @@ function RegionCard({
                     placeholder="0"
                     value={pred.distanceMinNm ?? ""}
                     onChange={(e) => {
-                      onChange({ ...pred, distanceMinNm: e.target.value === "" ? null : +e.target.value });
+                      onChange({
+                        ...pred,
+                        distanceMinNm: e.target.value === "" ? null : +e.target.value,
+                      });
                     }}
                   />
                 </div>
@@ -1326,7 +1417,10 @@ function RegionCard({
                     placeholder="∞"
                     value={pred.distanceMaxNm ?? ""}
                     onChange={(e) => {
-                      onChange({ ...pred, distanceMaxNm: e.target.value === "" ? null : +e.target.value });
+                      onChange({
+                        ...pred,
+                        distanceMaxNm: e.target.value === "" ? null : +e.target.value,
+                      });
                     }}
                   />
                 </div>
@@ -1415,7 +1509,9 @@ function AddFilterMenu({ onAdd }: { onAdd: (kind: AddKind) => void }): React.Rea
       {open && (
         <div
           className="add-filter-menu"
-          style={dropUp ? undefined : { bottom: "auto", top: "100%", marginBottom: 0, marginTop: 6 }}
+          style={
+            dropUp ? undefined : { bottom: "auto", top: "100%", marginBottom: 0, marginTop: 6 }
+          }
         >
           {FILTER_OPTS.map((o) => (
             <button
@@ -1484,7 +1580,9 @@ function PredicateRenderer({
       return (
         <PointRadiusCard
           pred={pred}
-          onChange={(p) => { onChange(p); }}
+          onChange={(p) => {
+            onChange(p);
+          }}
           onRemove={onRemove}
           onArmPicker={onArmPicker}
           isPicking={isPicking}
@@ -1501,7 +1599,9 @@ function PredicateRenderer({
       return (
         <RegionCard
           pred={pred}
-          onChange={(p) => { onChange(p); }}
+          onChange={(p) => {
+            onChange(p);
+          }}
           onRemove={onRemove}
           onArmDraw={onArmDraw}
           isDrawing={isDrawing}
@@ -1642,8 +1742,12 @@ function GroupBlock({
             <GroupBlock
               key={item.id}
               group={item}
-              onChange={(g) => { updateChild(item.id, g); }}
-              onRemove={() => { removeChild(item.id); }}
+              onChange={(g) => {
+                updateChild(item.id, g);
+              }}
+              onRemove={() => {
+                removeChild(item.id);
+              }}
               onArmPicker={onArmPicker}
               pickingId={pickingId}
               onArmDraw={onArmDraw}
@@ -1659,13 +1763,23 @@ function GroupBlock({
             <PredicateRenderer
               key={item.id}
               pred={item}
-              onChange={(p) => { updateChild(item.id, p); }}
-              onRemove={() => { removeChild(item.id); }}
-              onArmPicker={() => { onArmPicker(item.id); }}
+              onChange={(p) => {
+                updateChild(item.id, p);
+              }}
+              onRemove={() => {
+                removeChild(item.id);
+              }}
+              onArmPicker={() => {
+                onArmPicker(item.id);
+              }}
               isPicking={pickingId === item.id}
-              onArmDraw={() => { onArmDraw(item.id); }}
+              onArmDraw={() => {
+                onArmDraw(item.id);
+              }}
               isDrawing={drawingId === item.id}
-              onArmAirspacePicker={() => { onArmAirspacePicker(item.id); }}
+              onArmAirspacePicker={() => {
+                onArmAirspacePicker(item.id);
+              }}
               isPickingAirspace={airspacePickingId === item.id}
               name={labels.get(item.id) ?? (item.kind === "aircraft" ? "Aircraft" : "Callsign")}
               dateRange={dateRange}

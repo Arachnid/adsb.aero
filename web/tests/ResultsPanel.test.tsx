@@ -23,39 +23,95 @@ function makeFlight(overrides: Partial<FlightDetail> = {}): FlightDetail {
 
 describe("ResultsPanel", () => {
   it("shows idle placeholder when no flights and not loading", () => {
-    render(<ResultsPanel flights={null} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={null}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText("No results yet.")).toBeInTheDocument();
     expect(screen.getByText("Run a query to see flights.")).toBeInTheDocument();
   });
 
   it("shows loading indicator when loading with no flights yet", () => {
-    render(<ResultsPanel flights={null} loading={true} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={null}
+        loading={true}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
   it("shows empty state when flights list is empty and not loading", () => {
-    render(<ResultsPanel flights={[]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={[]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText("No flights matched.")).toBeInTheDocument();
   });
 
   it("shows error message", () => {
-    render(<ResultsPanel flights={null} loading={false} error="Server error" hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={null}
+        loading={false}
+        error="Server error"
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText(/Server error/)).toBeInTheDocument();
   });
 
   it("renders a flight row with callsign and type", () => {
-    render(<ResultsPanel flights={[makeFlight()]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={[makeFlight()]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText("BAW123")).toBeInTheDocument();
     expect(screen.getByText(/B738/)).toBeInTheDocument();
   });
 
   it("falls back to icao24 when callsign is null", () => {
-    render(<ResultsPanel flights={[makeFlight({ callsign: null })]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={[makeFlight({ callsign: null })]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText("aabbcc")).toBeInTheDocument();
   });
 
   it("shows em-dash when no type or emitter category", () => {
-    render(<ResultsPanel flights={[makeFlight({ icao_type: null, emitter_category: null })]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={[makeFlight({ icao_type: null, emitter_category: null })]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText("—")).toBeInTheDocument();
   });
 
@@ -64,50 +120,124 @@ describe("ResultsPanel", () => {
       makeFlight({ flight_id: "a:1", icao24: "aa1111", callsign: "EZY001" }),
       makeFlight({ flight_id: "b:2", icao24: "bb2222", callsign: "RYR002" }),
     ];
-    render(<ResultsPanel flights={flights} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={flights}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText("EZY001")).toBeInTheDocument();
     expect(screen.getByText("RYR002")).toBeInTheDocument();
   });
 
   it("shows Load more button when hasMore is true", () => {
-    render(<ResultsPanel flights={[makeFlight()]} loading={false} error={null} hasMore={true} onLoadMore={() => {}} />);
-    expect(screen.getByRole("button", { name: "Load more" })).toBeInTheDocument();
+    render(
+      <ResultsPanel
+        flights={[makeFlight()]}
+        loading={false}
+        error={null}
+        hasMore={true}
+        onLoadMore={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Load earlier results" })).toBeInTheDocument();
   });
 
   it("does not show Load more button when hasMore is false", () => {
-    render(<ResultsPanel flights={[makeFlight()]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
-    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+    render(
+      <ResultsPanel
+        flights={[makeFlight()]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Load earlier results" })).not.toBeInTheDocument();
   });
 
   it("calls onLoadMore when Load more is clicked", () => {
     const onLoadMore = vi.fn();
-    render(<ResultsPanel flights={[makeFlight()]} loading={false} error={null} hasMore={true} onLoadMore={onLoadMore} />);
-    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    render(
+      <ResultsPanel
+        flights={[makeFlight()]}
+        loading={false}
+        error={null}
+        hasMore={true}
+        onLoadMore={onLoadMore}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Load earlier results" }));
     expect(onLoadMore).toHaveBeenCalledOnce();
   });
 
   it("hides Load more button while loading (to prevent double-clicks)", () => {
-    render(<ResultsPanel flights={[makeFlight()]} loading={true} error={null} hasMore={true} onLoadMore={() => {}} />);
-    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+    render(
+      <ResultsPanel
+        flights={[makeFlight()]}
+        loading={true}
+        error={null}
+        hasMore={true}
+        onLoadMore={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Load earlier results" })).not.toBeInTheDocument();
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
   it("renders a date divider for each group of flights on the same day", () => {
     const flights = [
-      makeFlight({ flight_id: "a:1", start_ts: "2025-01-01T10:00:00Z", end_ts: "2025-01-01T12:00:00Z" }),
-      makeFlight({ flight_id: "b:2", start_ts: "2025-01-02T08:00:00Z", end_ts: "2025-01-02T10:00:00Z" }),
+      makeFlight({
+        flight_id: "a:1",
+        start_ts: "2025-01-01T10:00:00Z",
+        end_ts: "2025-01-01T12:00:00Z",
+      }),
+      makeFlight({
+        flight_id: "b:2",
+        start_ts: "2025-01-02T08:00:00Z",
+        end_ts: "2025-01-02T10:00:00Z",
+      }),
     ];
-    render(<ResultsPanel flights={flights} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={flights}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText("2025-01-01")).toBeInTheDocument();
     expect(screen.getByText("2025-01-02")).toBeInTheDocument();
   });
 
   it("renders one divider for multiple flights on the same date", () => {
     const flights = [
-      makeFlight({ flight_id: "a:1", start_ts: "2025-03-15T08:00:00Z", end_ts: "2025-03-15T10:00:00Z", callsign: "EZY100" }),
-      makeFlight({ flight_id: "b:2", start_ts: "2025-03-15T12:00:00Z", end_ts: "2025-03-15T14:00:00Z", callsign: "EZY200" }),
+      makeFlight({
+        flight_id: "a:1",
+        start_ts: "2025-03-15T08:00:00Z",
+        end_ts: "2025-03-15T10:00:00Z",
+        callsign: "EZY100",
+      }),
+      makeFlight({
+        flight_id: "b:2",
+        start_ts: "2025-03-15T12:00:00Z",
+        end_ts: "2025-03-15T14:00:00Z",
+        callsign: "EZY200",
+      }),
     ];
-    render(<ResultsPanel flights={flights} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={flights}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     const dividers = screen.getAllByText("2025-03-15");
     expect(dividers).toHaveLength(1);
   });
@@ -117,7 +247,15 @@ describe("ResultsPanel", () => {
       start_ts: "2025-06-30T23:00:00Z",
       end_ts: "2025-07-01T01:30:00Z",
     });
-    render(<ResultsPanel flights={[flight]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />);
+    render(
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
     expect(screen.getByText(/\+1d/)).toBeInTheDocument();
   });
 
@@ -133,14 +271,26 @@ describe("ResultsPanel", () => {
       },
     });
     const { container } = render(
-      <ResultsPanel flights={[flight]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />,
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
     );
     expect(container.querySelector("svg")).not.toBeNull();
   });
 
   it("does not render a sparkline when path is absent", () => {
     const { container } = render(
-      <ResultsPanel flights={[makeFlight()]} loading={false} error={null} hasMore={false} onLoadMore={() => {}} />,
+      <ResultsPanel
+        flights={[makeFlight()]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
     );
     expect(container.querySelector("svg")).toBeNull();
   });
@@ -256,8 +406,14 @@ describe("ResultsPanel", () => {
     );
     const svg = container.querySelector("svg")!;
     vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
-      left: 0, top: 0, width: 200, height: 20,
-      right: 200, bottom: 20, x: 0, y: 0,
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 20,
+      right: 200,
+      bottom: 20,
+      x: 0,
+      y: 0,
       toJSON: () => ({}),
     } as DOMRect);
     fireEvent.mouseMove(svg, { clientX: 100, clientY: 10 });

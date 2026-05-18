@@ -4,1063 +4,1141 @@
  */
 
 export interface paths {
-    "/api/v1/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Health check
-         * @description Return `{"status": "ok"}` when the server is running.
-         */
-        get: operations["health_api_v1_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/api/v1/health": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/data-range": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Data availability range
-         * @description Return the earliest and latest dates for which flight data exists in the archive.
-         */
-        get: operations["get_data_range_api_v1_data_range_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Health check
+     * @description Return `{"status": "ok"}` when the server is running.
+     */
+    get: operations["health_api_v1_health_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/data-range": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/icao-types": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * ICAO type counts for a date range
-         * @description Return all ICAO aircraft type designators observed between `start` and `end` (inclusive), with the total flight count and a representative model name for each. Sorted by count descending. Backed by a pre-aggregated per-day stats table — fast even over wide date ranges.
-         */
-        get: operations["get_icao_types_api_v1_icao_types_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Data availability range
+     * @description Return the earliest and latest dates for which flight data exists in the archive.
+     */
+    get: operations["get_data_range_api_v1_data_range_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/icao-types": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/query": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Query flights
-         * @description Query flights matching a filter predicate. Returns a paginated list of flight details ordered by `start_ts` descending.
-         *
-         *     ### Pagination
-         *
-         *     Use keyset-based cursor pagination: if the response includes a non-null `cursor`, repeat the same request with that value as `cursor` to fetch the next page. Stop when `cursor` is `null`.
-         *
-         *     ### Query DSL
-         *
-         *     The `match` field accepts a predicate — a JSON object with exactly one key naming the predicate type. Predicates can be nested with `and`, `or`, and `not`. See the schema definitions for the full predicate vocabulary.
-         */
-        post: operations["query_flights_api_v1_query_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * ICAO type counts for a date range
+     * @description Return all ICAO aircraft type designators observed between `start` and `end` (inclusive), with the total flight count and a representative model name for each. Sorted by count descending. Backed by a pre-aggregated per-day stats table — fast even over wide date ranges.
+     */
+    get: operations["get_icao_types_api_v1_icao_types_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/query": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/flights/{flight_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get flight by ID
-         * @description Fetch the full trajectory for a single flight by its `flight_id`.
-         *
-         *     `flight_id` is the value returned in `flight_id` fields from `/query`, in the form `<icao24>:<start_ts_utc>` — for example, `aabbcc:2025-04-01T10:00:00Z`.
-         */
-        get: operations["get_flight_api_v1_flights__flight_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Query flights
+     * @description Query flights matching a filter predicate. Returns a paginated list of flight details ordered by `start_ts` descending.
+     *
+     *     ### Pagination
+     *
+     *     Use keyset-based cursor pagination: if the response includes a non-null `cursor`, repeat the same request with that value as `cursor` to fetch the next page. Stop when `cursor` is `null`.
+     *
+     *     ### Query DSL
+     *
+     *     The `match` field accepts a predicate — a JSON object with exactly one key naming the predicate type. Predicates can be nested with `and`, `or`, and `not`. See the schema definitions for the full predicate vocabulary.
+     */
+    post: operations["query_flights_api_v1_query_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/flights/{flight_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    /**
+     * Get flight by ID
+     * @description Fetch the full trajectory for a single flight by its `flight_id`.
+     *
+     *     `flight_id` is the value returned in `flight_id` fields from `/query`, in the form `<icao24>:<start_ts_utc>` — for example, `aabbcc:2025-04-01T10:00:00Z`.
+     */
+    get: operations["get_flight_api_v1_flights__flight_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        /**
-         * AndPredicate
-         * @description All child predicates must be true (logical AND).
-         */
-        AndPredicate: {
-            /**
-             * And
-             * @description All of these predicates must match.
-             */
-            and: (components["schemas"]["TrajectoryIntersects"] | components["schemas"]["TrajectoryWithin"] | components["schemas"]["StartsWithin"] | components["schemas"]["EndsWithin"] | components["schemas"]["IcaoType"] | components["schemas"]["EmitterCategory"] | components["schemas"]["CallsignMatches"] | components["schemas"]["Duration"] | components["schemas"]["AndPredicate"] | components["schemas"]["OrPredicate"] | components["schemas"]["NotPredicate"])[];
-        };
-        /**
-         * CallsignMatches
-         * @description Flights whose callsign matches a POSIX regular expression.
-         */
-        CallsignMatches: {
-            /**
-             * Callsign Matches
-             * @description POSIX regular expression matched against the callsign (case-sensitive). Flights with a null callsign never match.
-             * @example ^BAW
-             */
-            callsign_matches: string;
-        };
-        /**
-         * CircleGeometry
-         * @description Circle geometry extension (not part of the GeoJSON standard).
-         */
-        CircleGeometry: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "Circle";
-            /**
-             * Coordinates
-             * @description `[longitude, latitude]` of the circle centre.
-             */
-            coordinates: number[];
-            /**
-             * Radius
-             * @description Radius in metres.
-             */
-            radius: number;
-        };
-        /**
-         * DataRange
-         * @description Date range of available flight data.
-         */
-        DataRange: {
-            /**
-             * First Date
-             * @description Earliest date for which flight data is available, or null if the table is empty.
-             * @example 2025-01-01
-             */
-            first_date: string | null;
-            /**
-             * Last Date
-             * @description Most recent date for which flight data is available, or null if the table is empty.
-             * @example 2026-05-01
-             */
-            last_date: string | null;
-        };
-        /**
-         * Duration
-         * @description Flights whose duration (`end_ts - start_ts`) falls within the given bounds.
-         */
-        Duration: {
-            duration: components["schemas"]["DurationValue"];
-        };
-        /**
-         * DurationValue
-         * @description Bounds for a flight duration filter. Both bounds are optional.
-         */
-        DurationValue: {
-            /**
-             * Min S
-             * @description Minimum duration in seconds (inclusive).
-             */
-            min_s?: number | null;
-            /**
-             * Max S
-             * @description Maximum duration in seconds (inclusive).
-             */
-            max_s?: number | null;
-        };
-        /**
-         * EmitterCategory
-         * @description Flights matching one or more ADS-B emitter category codes.
-         */
-        EmitterCategory: {
-            /**
-             * Emitter Category
-             * @description List of ADS-B emitter category codes to match. OR semantics.
-             * @example [
-             *       "A3",
-             *       "A5"
-             *     ]
-             */
-            emitter_category: string[];
-        };
-        /**
-         * EndsWithin
-         * @description Flights whose arrival point falls within the given geometry and/or arrives within the given time window.
-         */
-        EndsWithin: {
-            /** @description Spatial and/or temporal constraints on the arrival point and time. */
-            ends_within: components["schemas"]["SpatioTemporalValue"];
-        };
-        /**
-         * FlightDetail
-         * @description Full trajectory detail for a single flight leg, extending FlightSummary.
-         */
-        FlightDetail: {
-            /**
-             * Flight Id
-             * @description Stable identifier: `<icao24>:<start_ts_utc>`. Pass this to `GET /api/v1/flights/{flight_id}` to retrieve the full trajectory.
-             * @example aabbcc:2025-04-01T10:00:00Z
-             */
-            flight_id: string;
-            /**
-             * Icao24
-             * @description 24-bit Mode S transponder address in lowercase hex.
-             * @example aabbcc
-             */
-            icao24: string;
-            /**
-             * Callsign
-             * @description Most common callsign observed during the flight, or null if none was broadcast.
-             * @example BAW123
-             */
-            callsign: string | null;
-            /**
-             * Icao Type
-             * @description ICAO aircraft type designator (e.g. `B738`, `A320`), or null if unknown.
-             * @example B738
-             */
-            icao_type: string | null;
-            /**
-             * Emitter Category
-             * @description ADS-B emitter category code (e.g. `A3` = large aircraft), or null if unknown.
-             * @example A3
-             */
-            emitter_category: string | null;
-            /**
-             * Registration
-             * @description Aircraft registration mark (tail number), from the airframes reference table. Null when the icao24 is not in the database.
-             * @example G-EUOF
-             */
-            registration: string | null;
-            /**
-             * Model
-             * @description Aircraft model description from the airframes reference table. Null when the icao24 is not in the database.
-             * @example AIRBUS A-319
-             */
-            model: string | null;
-            /**
-             * Year
-             * @description Year of manufacture from the airframes reference table. Null when unknown or not in the database.
-             * @example 2003
-             */
-            year: number | null;
-            /**
-             * Operator
-             * @description Owner or operator name from the airframes reference table. Null when unknown or not in the database.
-             * @example British Airways
-             */
-            operator: string | null;
-            /**
-             * Start Ts
-             * Format: date-time
-             * @description UTC timestamp of the first observed position in this leg.
-             */
-            start_ts: string;
-            /**
-             * End Ts
-             * Format: date-time
-             * @description UTC timestamp of the last observed position in this leg.
-             */
-            end_ts: string;
-            /**
-             * @description GeoJSON Point of the first observed position. Coordinates are `[longitude, latitude, altitude_ft]`.
-             * @example {
-             *       "coordinates": [
-             *         -0.1275,
-             *         51.5072,
-             *         35000
-             *       ],
-             *       "type": "Point"
-             *     }
-             */
-            start_point: components["schemas"]["GeoJSONPointZ"];
-            /**
-             * @description GeoJSON Point of the last observed position. Coordinates are `[longitude, latitude, altitude_ft]`.
-             * @example {
-             *       "coordinates": [
-             *         -2.2667,
-             *         53.4667,
-             *         35000
-             *       ],
-             *       "type": "Point"
-             *     }
-             */
-            end_point: components["schemas"]["GeoJSONPointZ"];
-            /**
-             * Point Count
-             * @description Number of vertices in the simplified path geometry. Always present, even when `include_path` is false.
-             */
-            point_count: number;
-            /**
-             * @description Simplified flight path as a GeoJSON MultiLineString. Each element of `coordinates` is one contiguous sub-sequence of ADS-B coverage. Coordinates are `[longitude, latitude, altitude_ft]`. Altitude is pressure altitude in feet (QNH correction not applied). Ground-roll points are excluded. Simplified using two-pass TD-TR: spatial pass with ε=50 m (cross-track error), then altitude pass with ε=100 ft on the surviving vertices. Squawk change points are always preserved and divide simplification intervals. Coverage gaps >60 s produce separate sub-sequences with no interpolation across them. Omitted when the request sets `include_path` to false.
-             * @example {
-             *       "coordinates": [
-             *         [
-             *           [
-             *             -0.1275,
-             *             51.5072,
-             *             35000
-             *           ],
-             *           [
-             *             -1.2,
-             *             52.5,
-             *             36000
-             *           ]
-             *         ],
-             *         [
-             *           [
-             *             -30,
-             *             55,
-             *             37000
-             *           ],
-             *           [
-             *             -52,
-             *             47,
-             *             37000
-             *           ]
-             *         ]
-             *       ],
-             *       "type": "MultiLineString"
-             *     }
-             */
-            path?: components["schemas"]["GeoJSONMultiLineStringZ"] | null;
-            /**
-             * Timestamps
-             * @description Unix epoch seconds (UTC) for each vertex in `path.coordinates`, structured as a list of sub-sequences matching `path.coordinates`. `timestamps[i][j]` is the timestamp for `path.coordinates[i][j]`. Omitted when `include_path` is false.
-             * @example [
-             *       [
-             *         1743501600,
-             *         1743505200
-             *       ],
-             *       [
-             *         1743530000,
-             *         1743540000
-             *       ]
-             *     ]
-             */
-            timestamps?: number[][] | null;
-            /**
-             * Path Tracks
-             * @description Ground track (heading) timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, degrees_0_359], ...]`. Rounded to the nearest integer degree. Derived from the path-simplified points, then further reduced by TD-TR with ε=5°. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Timestamps are independent of `timestamps` (different simplification pass). Omitted when `include_path` is false.
-             * @example [
-             *       [
-             *         [
-             *           1743501600,
-             *           90
-             *         ],
-             *         [
-             *           1743505200,
-             *           315
-             *         ]
-             *       ]
-             *     ]
-             */
-            path_tracks?: number[][][] | null;
-            /**
-             * Path Gs
-             * @description Ground speed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no ground speed data was available for this flight.
-             * @example [
-             *       [
-             *         [
-             *           1743501600,
-             *           450
-             *         ],
-             *         [
-             *           1743505200,
-             *           460
-             *         ]
-             *       ]
-             *     ]
-             */
-            path_gs?: number[][][] | null;
-            /**
-             * Path Vr
-             * @description Vertical rate timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, fpm], ...]`. Rounded to the nearest integer fpm. Positive = climbing, negative = descending. Derived from the path-simplified points, then further reduced by TD-TR with ε=100 fpm. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no vertical rate data was available for this flight.
-             * @example [
-             *       [
-             *         [
-             *           1743501600,
-             *           0
-             *         ],
-             *         [
-             *           1743505200,
-             *           -512
-             *         ]
-             *       ]
-             *     ]
-             */
-            path_vr?: number[][][] | null;
-            /**
-             * Path Ias
-             * @description Indicated airspeed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no IAS data was available for this flight.
-             * @example [
-             *       [
-             *         [
-             *           1743501600,
-             *           275
-             *         ]
-             *       ]
-             *     ]
-             */
-            path_ias?: number[][][] | null;
-            /**
-             * Squawk Runs
-             * @description Run-length encoding of transponder squawk codes, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_timestamp, squawk_code], ...]` marking code changes. Forward-fill from each entry to the next within a sub-sequence. Omitted when `include_path` is false.
-             * @example [
-             *       [
-             *         [
-             *           1743501600,
-             *           "1234"
-             *         ],
-             *         [
-             *           1743508800,
-             *           "1234"
-             *         ]
-             *       ]
-             *     ]
-             */
-            squawk_runs?: [
-                number,
-                string
-            ][][] | null;
-            /**
-             * Alt Correction Ft
-             * @description QNH altitude correction timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, correction_ft], ...]`. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Add to the pressure altitude from `path.coordinates[i][j][2]` to obtain feet MSL. Null when no correction data was available at ingestion time.
-             * @example [
-             *       [
-             *         [
-             *           1743501600,
-             *           14.5
-             *         ],
-             *         [
-             *           1743505200,
-             *           14.5
-             *         ]
-             *       ]
-             *     ]
-             */
-            alt_correction_ft?: number[][][] | null;
-            /**
-             * Raw Point Count
-             * @description Number of raw ADS-B messages ingested for this leg, including ground-roll points not present in the simplified path geometry.
-             */
-            raw_point_count: number;
-            /**
-             * Ingest Batch Date
-             * Format: date
-             * @description Calendar date of the archive batch this flight was ingested from.
-             * @example 2025-04-01
-             */
-            ingest_batch_date: string;
-        };
-        /**
-         * GeoJSONGeometryCollection
-         * @description GeoJSON GeometryCollection — a heterogeneous collection of geometries.
-         */
-        GeoJSONGeometryCollection: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "GeometryCollection";
-            /**
-             * Geometries
-             * @description Array of geometry objects.
-             */
-            geometries: (components["schemas"]["GeoJSONPoint"] | components["schemas"]["GeoJSONMultiPoint"] | components["schemas"]["GeoJSONLineString"] | components["schemas"]["GeoJSONMultiLineString"] | components["schemas"]["GeoJSONPolygon"] | components["schemas"]["GeoJSONMultiPolygon"] | components["schemas"]["GeoJSONGeometryCollection"] | components["schemas"]["CircleGeometry"])[];
-        };
-        /**
-         * GeoJSONLineString
-         * @description GeoJSON LineString geometry.
-         */
-        GeoJSONLineString: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "LineString";
-            /**
-             * Coordinates
-             * @description Array of `[longitude, latitude]` pairs.
-             */
-            coordinates: number[][];
-        };
-        /**
-         * GeoJSONMultiLineString
-         * @description GeoJSON MultiLineString geometry.
-         */
-        GeoJSONMultiLineString: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "MultiLineString";
-            /**
-             * Coordinates
-             * @description Array of LineString coordinate arrays.
-             */
-            coordinates: number[][][];
-        };
-        /**
-         * GeoJSONMultiLineStringZ
-         * @description GeoJSON MultiLineString with altitude on every vertex, as returned in flight path fields.
-         *
-         *     Each element of `coordinates` is one contiguous sub-sequence of ADS-B coverage.
-         *     Gaps between sub-sequences (e.g. oceanic blackout) are explicit: no interpolation
-         *     is performed across them.
-         */
-        GeoJSONMultiLineStringZ: {
-            /**
-             * Type
-             * @constant
-             */
-            type: "MultiLineString";
-            /**
-             * Coordinates
-             * @description List of sub-sequences; each is a list of `[longitude, latitude, altitude_ft]` vertices.
-             */
-            coordinates: [
-                number,
-                number,
-                number
-            ][][];
-        };
-        /**
-         * GeoJSONMultiPoint
-         * @description GeoJSON MultiPoint geometry.
-         */
-        GeoJSONMultiPoint: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "MultiPoint";
-            /**
-             * Coordinates
-             * @description Array of Point coordinate arrays.
-             */
-            coordinates: number[][];
-        };
-        /**
-         * GeoJSONMultiPolygon
-         * @description GeoJSON MultiPolygon geometry.
-         */
-        GeoJSONMultiPolygon: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "MultiPolygon";
-            /**
-             * Coordinates
-             * @description Array of Polygon coordinate arrays.
-             */
-            coordinates: number[][][][];
-        };
-        /**
-         * GeoJSONPoint
-         * @description GeoJSON Point geometry.
-         */
-        GeoJSONPoint: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "Point";
-            /**
-             * Coordinates
-             * @description `[longitude, latitude]` or `[longitude, latitude, altitude]`.
-             */
-            coordinates: number[];
-        };
-        /**
-         * GeoJSONPointZ
-         * @description GeoJSON Point with a mandatory altitude component, as returned in flight position fields.
-         */
-        GeoJSONPointZ: {
-            /**
-             * Type
-             * @constant
-             */
-            type: "Point";
-            /**
-             * Coordinates
-             * @description `[longitude, latitude, altitude_ft]`.
-             */
-            coordinates: [
-                number,
-                number,
-                number
-            ];
-        };
-        /**
-         * GeoJSONPolygon
-         * @description GeoJSON Polygon geometry.
-         */
-        GeoJSONPolygon: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "Polygon";
-            /**
-             * Coordinates
-             * @description Array of linear rings. First ring is the exterior boundary; subsequent rings are interior holes. Each ring is closed (first == last position).
-             */
-            coordinates: number[][][];
-        };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
-        };
-        /**
-         * IcaoType
-         * @description Flights matching one or more ICAO aircraft type designators.
-         */
-        IcaoType: {
-            /**
-             * Icao Type
-             * @description List of ICAO type designators to match (case-sensitive). OR semantics.
-             * @example [
-             *       "B738",
-             *       "B737"
-             *     ]
-             */
-            icao_type: string[];
-        };
-        /**
-         * IcaoTypeStat
-         * @description Flight count and model name for one ICAO type designator over a date range.
-         */
-        IcaoTypeStat: {
-            /**
-             * Icao Type
-             * @description ICAO aircraft type designator (e.g. `B738`).
-             * @example B738
-             */
-            icao_type: string;
-            /**
-             * Model
-             * @description Most common model description from the airframes table, or null if unknown.
-             * @example BOEING 737-800
-             */
-            model: string | null;
-            /**
-             * Count
-             * @description Total number of flights of this type in the requested date range.
-             * @example 1234
-             */
-            count: number;
-        };
-        /**
-         * NotPredicate
-         * @description Negates a child predicate (logical NOT).
-         */
-        NotPredicate: {
-            /**
-             * Not
-             * @description This predicate must not match.
-             */
-            not: components["schemas"]["TrajectoryIntersects"] | components["schemas"]["TrajectoryWithin"] | components["schemas"]["StartsWithin"] | components["schemas"]["EndsWithin"] | components["schemas"]["IcaoType"] | components["schemas"]["EmitterCategory"] | components["schemas"]["CallsignMatches"] | components["schemas"]["Duration"] | components["schemas"]["AndPredicate"] | components["schemas"]["OrPredicate"] | components["schemas"]["NotPredicate"];
-        };
-        /**
-         * OrPredicate
-         * @description At least one child predicate must be true (logical OR).
-         */
-        OrPredicate: {
-            /**
-             * Or
-             * @description At least one of these predicates must match.
-             */
-            or: (components["schemas"]["TrajectoryIntersects"] | components["schemas"]["TrajectoryWithin"] | components["schemas"]["StartsWithin"] | components["schemas"]["EndsWithin"] | components["schemas"]["IcaoType"] | components["schemas"]["EmitterCategory"] | components["schemas"]["CallsignMatches"] | components["schemas"]["Duration"] | components["schemas"]["AndPredicate"] | components["schemas"]["OrPredicate"] | components["schemas"]["NotPredicate"])[];
-        };
-        /**
-         * QueryRequest
-         * @description Request body for `POST /api/v1/query`.
-         */
-        QueryRequest: {
-            /**
-             * Start From
-             * Format: date-time
-             * @description Inclusive lower bound on flight start time (`start_ts`). Required.
-             * @example 2025-03-25T00:00:00Z
-             */
-            start_from: string;
-            /**
-             * Start To
-             * Format: date-time
-             * @description Exclusive upper bound on flight start time (`start_ts`). Must be strictly after `start_from` and within 7 days of it.
-             * @example 2025-04-01T00:00:00Z
-             */
-            start_to: string;
-            /**
-             * Match
-             * @description Filter predicate. Omit or set to `null` to return all flights.
-             */
-            match?: components["schemas"]["TrajectoryIntersects"] | components["schemas"]["TrajectoryWithin"] | components["schemas"]["StartsWithin"] | components["schemas"]["EndsWithin"] | components["schemas"]["IcaoType"] | components["schemas"]["EmitterCategory"] | components["schemas"]["CallsignMatches"] | components["schemas"]["Duration"] | components["schemas"]["AndPredicate"] | components["schemas"]["OrPredicate"] | components["schemas"]["NotPredicate"] | null;
-            /**
-             * Limit
-             * @description Maximum number of flights to return per page.
-             * @default 100
-             */
-            limit: number;
-            /**
-             * Cursor
-             * @description Continuation token from the previous page's `cursor` field.
-             */
-            cursor?: string | null;
-            /**
-             * Include Path
-             * @description Whether to include `path`, `timestamps`, `path_tracks`, and `squawk_runs` in each result. Set to `false` for lightweight listing queries where trajectory data is not needed.
-             * @default true
-             */
-            include_path: boolean;
-        };
-        /**
-         * QueryResponse
-         * @description Paginated list of flights matching a query.
-         */
-        QueryResponse: {
-            /**
-             * Flights
-             * @description Flights on this page, ordered by `start_ts` descending then `icao24` descending.
-             */
-            flights: components["schemas"]["FlightDetail"][];
-            /**
-             * Cursor
-             * @description Opaque continuation token. Pass unchanged as `cursor` in the next request to retrieve the next page. `null` when there are no more results.
-             */
-            cursor: string | null;
-        };
-        /**
-         * SpatioTemporalAltitudeValue
-         * @description Spatial, altitude, and/or temporal filter for trajectory predicates.
-         *
-         *     At least one constraint must be provided.
-         */
-        SpatioTemporalAltitudeValue: {
-            /**
-             * Geometry
-             * @description GeoJSON geometry or Circle to test the flight path against. Omit for a time- or altitude-only filter.
-             */
-            geometry?: (components["schemas"]["GeoJSONPoint"] | components["schemas"]["GeoJSONMultiPoint"] | components["schemas"]["GeoJSONLineString"] | components["schemas"]["GeoJSONMultiLineString"] | components["schemas"]["GeoJSONPolygon"] | components["schemas"]["GeoJSONMultiPolygon"] | components["schemas"]["GeoJSONGeometryCollection"] | components["schemas"]["CircleGeometry"]) | null;
-            /**
-             * Altitude Min
-             * @description Lower altitude bound (inclusive). Interpretation depends on `altitude_min_ref`.
-             */
-            altitude_min?: number | null;
-            /**
-             * Altitude Min Ref
-             * @description Reference system for `altitude_min`. `'fl'`: flight level (e.g. `100` = FL100 = 10 000 ft pressure altitude). `'ft'` (default): feet MSL using the stored QNH correction.
-             * @default ft
-             * @enum {string}
-             */
-            altitude_min_ref: "fl" | "ft";
-            /**
-             * Altitude Max
-             * @description Upper altitude bound (inclusive). Interpretation depends on `altitude_max_ref`.
-             */
-            altitude_max?: number | null;
-            /**
-             * Altitude Max Ref
-             * @description Reference system for `altitude_max`. `'fl'`: flight level (e.g. `100` = FL100 = 10 000 ft pressure altitude). `'ft'` (default): feet MSL using the stored QNH correction.
-             * @default ft
-             * @enum {string}
-             */
-            altitude_max_ref: "fl" | "ft";
-            /**
-             * Time From
-             * @description Inclusive lower bound on the time window. When combined with `geometry` or altitude, constrains the intersection to occur within this window. Without geometry/altitude, filters by activity window (end_ts >= time_from).
-             */
-            time_from?: string | null;
-            /**
-             * Time To
-             * @description Exclusive upper bound on the time window. When combined with `geometry` or altitude, constrains the intersection to occur within this window. Without geometry/altitude, filters by activity window (start_ts < time_to).
-             */
-            time_to?: string | null;
-            /**
-             * Squawk Codes
-             * @description Transponder squawk codes to match (OR semantics). When `geometry` is set, only squawk codes broadcast while the flight was inside the geometry (and within any altitude/time window) are checked. Without `geometry`, any code broadcast during the flight matches.
-             * @example [
-             *       "7700",
-             *       "7600"
-             *     ]
-             */
-            squawk_codes?: string[] | null;
-            /**
-             * Dwell Min S
-             * @description Minimum time the flight must spend inside the geometry (seconds, inclusive). Measured as the total duration of the path clipped to the geometry plus any altitude and time constraints. Requires `geometry`.
-             */
-            dwell_min_s?: number | null;
-            /**
-             * Dwell Max S
-             * @description Maximum time the flight may spend inside the geometry (seconds, inclusive). Requires `geometry`.
-             */
-            dwell_max_s?: number | null;
-            /**
-             * Distance Min M
-             * @description Minimum distance the flight must cover inside the geometry (metres, inclusive). Measured along the clipped path. Requires `geometry`.
-             */
-            distance_min_m?: number | null;
-            /**
-             * Distance Max M
-             * @description Maximum distance the flight may cover inside the geometry (metres, inclusive). Requires `geometry`.
-             */
-            distance_max_m?: number | null;
-        };
-        /**
-         * SpatioTemporalValue
-         * @description Spatial and/or temporal filter without altitude — used by starts_within / ends_within.
-         *
-         *     At least one of geometry, time_from, or time_to must be provided.
-         */
-        SpatioTemporalValue: {
-            /**
-             * Geometry
-             * @description GeoJSON geometry or Circle to test the departure/arrival point against. Omit for a time-only filter.
-             */
-            geometry?: (components["schemas"]["GeoJSONPoint"] | components["schemas"]["GeoJSONMultiPoint"] | components["schemas"]["GeoJSONLineString"] | components["schemas"]["GeoJSONMultiLineString"] | components["schemas"]["GeoJSONPolygon"] | components["schemas"]["GeoJSONMultiPolygon"] | components["schemas"]["GeoJSONGeometryCollection"] | components["schemas"]["CircleGeometry"]) | null;
-            /**
-             * Time From
-             * @description Inclusive lower bound on start_ts (starts_within) or end_ts (ends_within).
-             */
-            time_from?: string | null;
-            /**
-             * Time To
-             * @description Exclusive upper bound on start_ts or end_ts.
-             */
-            time_to?: string | null;
-        };
-        /**
-         * StartsWithin
-         * @description Flights whose departure point falls within the given geometry and/or departs within the given time window.
-         */
-        StartsWithin: {
-            /** @description Spatial and/or temporal constraints on the departure point and time. */
-            starts_within: components["schemas"]["SpatioTemporalValue"];
-        };
-        /**
-         * TrajectoryIntersects
-         * @description Flights whose simplified path intersects the given constraints.
-         *
-         *     When geometry, altitude, and/or time are combined, all constraints are applied
-         *     simultaneously — the intersection must occur at the right altitude and within the
-         *     time window, not just at any point during the flight. Squawk codes are similarly
-         *     checked only at instants when the path was inside the geometry (if provided).
-         */
-        TrajectoryIntersects: {
-            trajectory_intersects: components["schemas"]["SpatioTemporalAltitudeValue"];
-        };
-        /**
-         * TrajectoryWithin
-         * @description Flights whose entire simplified path lies within the given geometry.
-         *
-         *     Altitude and time constraints narrow the portion of the path that must lie within
-         *     the geometry; squawk codes are checked only at instants when the path was inside
-         *     the geometry (if provided).
-         */
-        TrajectoryWithin: {
-            trajectory_within: components["schemas"]["SpatioTemporalAltitudeValue"];
-        };
-        /** ValidationError */
-        ValidationError: {
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
-        };
+  schemas: {
+    /**
+     * AndPredicate
+     * @description All child predicates must be true (logical AND).
+     */
+    AndPredicate: {
+      /**
+       * And
+       * @description All of these predicates must match.
+       */
+      and: (
+        | components["schemas"]["TrajectoryIntersects"]
+        | components["schemas"]["TrajectoryWithin"]
+        | components["schemas"]["StartsWithin"]
+        | components["schemas"]["EndsWithin"]
+        | components["schemas"]["IcaoType"]
+        | components["schemas"]["EmitterCategory"]
+        | components["schemas"]["CallsignMatches"]
+        | components["schemas"]["Duration"]
+        | components["schemas"]["AndPredicate"]
+        | components["schemas"]["OrPredicate"]
+        | components["schemas"]["NotPredicate"]
+      )[];
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    /**
+     * CallsignMatches
+     * @description Flights whose callsign matches a POSIX regular expression.
+     */
+    CallsignMatches: {
+      /**
+       * Callsign Matches
+       * @description POSIX regular expression matched against the callsign (case-sensitive). Flights with a null callsign never match.
+       * @example ^BAW
+       */
+      callsign_matches: string;
+    };
+    /**
+     * CircleGeometry
+     * @description Circle geometry extension (not part of the GeoJSON standard).
+     */
+    CircleGeometry: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "Circle";
+      /**
+       * Coordinates
+       * @description `[longitude, latitude]` of the circle centre.
+       */
+      coordinates: number[];
+      /**
+       * Radius
+       * @description Radius in metres.
+       */
+      radius: number;
+    };
+    /**
+     * DataRange
+     * @description Date range of available flight data.
+     */
+    DataRange: {
+      /**
+       * First Date
+       * @description Earliest date for which flight data is available, or null if the table is empty.
+       * @example 2025-01-01
+       */
+      first_date: string | null;
+      /**
+       * Last Date
+       * @description Most recent date for which flight data is available, or null if the table is empty.
+       * @example 2026-05-01
+       */
+      last_date: string | null;
+    };
+    /**
+     * Duration
+     * @description Flights whose duration (`end_ts - start_ts`) falls within the given bounds.
+     */
+    Duration: {
+      duration: components["schemas"]["DurationValue"];
+    };
+    /**
+     * DurationValue
+     * @description Bounds for a flight duration filter. Both bounds are optional.
+     */
+    DurationValue: {
+      /**
+       * Min S
+       * @description Minimum duration in seconds (inclusive).
+       */
+      min_s?: number | null;
+      /**
+       * Max S
+       * @description Maximum duration in seconds (inclusive).
+       */
+      max_s?: number | null;
+    };
+    /**
+     * EmitterCategory
+     * @description Flights matching one or more ADS-B emitter category codes.
+     */
+    EmitterCategory: {
+      /**
+       * Emitter Category
+       * @description List of ADS-B emitter category codes to match. OR semantics.
+       * @example [
+       *       "A3",
+       *       "A5"
+       *     ]
+       */
+      emitter_category: string[];
+    };
+    /**
+     * EndsWithin
+     * @description Flights whose arrival point falls within the given geometry and/or arrives within the given time window.
+     */
+    EndsWithin: {
+      /** @description Spatial and/or temporal constraints on the arrival point and time. */
+      ends_within: components["schemas"]["SpatioTemporalValue"];
+    };
+    /**
+     * FlightDetail
+     * @description Full trajectory detail for a single flight leg, extending FlightSummary.
+     */
+    FlightDetail: {
+      /**
+       * Flight Id
+       * @description Stable identifier: `<icao24>:<start_ts_utc>`. Pass this to `GET /api/v1/flights/{flight_id}` to retrieve the full trajectory.
+       * @example aabbcc:2025-04-01T10:00:00Z
+       */
+      flight_id: string;
+      /**
+       * Icao24
+       * @description 24-bit Mode S transponder address in lowercase hex.
+       * @example aabbcc
+       */
+      icao24: string;
+      /**
+       * Callsign
+       * @description Most common callsign observed during the flight, or null if none was broadcast.
+       * @example BAW123
+       */
+      callsign: string | null;
+      /**
+       * Icao Type
+       * @description ICAO aircraft type designator (e.g. `B738`, `A320`), or null if unknown.
+       * @example B738
+       */
+      icao_type: string | null;
+      /**
+       * Emitter Category
+       * @description ADS-B emitter category code (e.g. `A3` = large aircraft), or null if unknown.
+       * @example A3
+       */
+      emitter_category: string | null;
+      /**
+       * Registration
+       * @description Aircraft registration mark (tail number), from the airframes reference table. Null when the icao24 is not in the database.
+       * @example G-EUOF
+       */
+      registration: string | null;
+      /**
+       * Model
+       * @description Aircraft model description from the airframes reference table. Null when the icao24 is not in the database.
+       * @example AIRBUS A-319
+       */
+      model: string | null;
+      /**
+       * Year
+       * @description Year of manufacture from the airframes reference table. Null when unknown or not in the database.
+       * @example 2003
+       */
+      year: number | null;
+      /**
+       * Operator
+       * @description Owner or operator name from the airframes reference table. Null when unknown or not in the database.
+       * @example British Airways
+       */
+      operator: string | null;
+      /**
+       * Start Ts
+       * Format: date-time
+       * @description UTC timestamp of the first observed position in this leg.
+       */
+      start_ts: string;
+      /**
+       * End Ts
+       * Format: date-time
+       * @description UTC timestamp of the last observed position in this leg.
+       */
+      end_ts: string;
+      /**
+       * @description GeoJSON Point of the first observed position. Coordinates are `[longitude, latitude, altitude_ft]`.
+       * @example {
+       *       "coordinates": [
+       *         -0.1275,
+       *         51.5072,
+       *         35000
+       *       ],
+       *       "type": "Point"
+       *     }
+       */
+      start_point: components["schemas"]["GeoJSONPointZ"];
+      /**
+       * @description GeoJSON Point of the last observed position. Coordinates are `[longitude, latitude, altitude_ft]`.
+       * @example {
+       *       "coordinates": [
+       *         -2.2667,
+       *         53.4667,
+       *         35000
+       *       ],
+       *       "type": "Point"
+       *     }
+       */
+      end_point: components["schemas"]["GeoJSONPointZ"];
+      /**
+       * Point Count
+       * @description Number of vertices in the simplified path geometry. Always present, even when `include_path` is false.
+       */
+      point_count: number;
+      /**
+       * @description Simplified flight path as a GeoJSON MultiLineString. Each element of `coordinates` is one contiguous sub-sequence of ADS-B coverage. Coordinates are `[longitude, latitude, altitude_ft]`. Altitude is pressure altitude in feet (QNH correction not applied). Ground-roll points are excluded. Simplified using two-pass TD-TR: spatial pass with ε=50 m (cross-track error), then altitude pass with ε=100 ft on the surviving vertices. Squawk change points are always preserved and divide simplification intervals. Coverage gaps >60 s produce separate sub-sequences with no interpolation across them. Omitted when the request sets `include_path` to false.
+       * @example {
+       *       "coordinates": [
+       *         [
+       *           [
+       *             -0.1275,
+       *             51.5072,
+       *             35000
+       *           ],
+       *           [
+       *             -1.2,
+       *             52.5,
+       *             36000
+       *           ]
+       *         ],
+       *         [
+       *           [
+       *             -30,
+       *             55,
+       *             37000
+       *           ],
+       *           [
+       *             -52,
+       *             47,
+       *             37000
+       *           ]
+       *         ]
+       *       ],
+       *       "type": "MultiLineString"
+       *     }
+       */
+      path?: components["schemas"]["GeoJSONMultiLineStringZ"] | null;
+      /**
+       * Timestamps
+       * @description Unix epoch seconds (UTC) for each vertex in `path.coordinates`, structured as a list of sub-sequences matching `path.coordinates`. `timestamps[i][j]` is the timestamp for `path.coordinates[i][j]`. Omitted when `include_path` is false.
+       * @example [
+       *       [
+       *         1743501600,
+       *         1743505200
+       *       ],
+       *       [
+       *         1743530000,
+       *         1743540000
+       *       ]
+       *     ]
+       */
+      timestamps?: number[][] | null;
+      /**
+       * Path Tracks
+       * @description Ground track (heading) timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, degrees_0_359], ...]`. Rounded to the nearest integer degree. Derived from the path-simplified points, then further reduced by TD-TR with ε=5°. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Timestamps are independent of `timestamps` (different simplification pass). Omitted when `include_path` is false.
+       * @example [
+       *       [
+       *         [
+       *           1743501600,
+       *           90
+       *         ],
+       *         [
+       *           1743505200,
+       *           315
+       *         ]
+       *       ]
+       *     ]
+       */
+      path_tracks?: number[][][] | null;
+      /**
+       * Path Gs
+       * @description Ground speed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no ground speed data was available for this flight.
+       * @example [
+       *       [
+       *         [
+       *           1743501600,
+       *           450
+       *         ],
+       *         [
+       *           1743505200,
+       *           460
+       *         ]
+       *       ]
+       *     ]
+       */
+      path_gs?: number[][][] | null;
+      /**
+       * Path Vr
+       * @description Vertical rate timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, fpm], ...]`. Rounded to the nearest integer fpm. Positive = climbing, negative = descending. Derived from the path-simplified points, then further reduced by TD-TR with ε=100 fpm. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no vertical rate data was available for this flight.
+       * @example [
+       *       [
+       *         [
+       *           1743501600,
+       *           0
+       *         ],
+       *         [
+       *           1743505200,
+       *           -512
+       *         ]
+       *       ]
+       *     ]
+       */
+      path_vr?: number[][][] | null;
+      /**
+       * Path Ias
+       * @description Indicated airspeed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no IAS data was available for this flight.
+       * @example [
+       *       [
+       *         [
+       *           1743501600,
+       *           275
+       *         ]
+       *       ]
+       *     ]
+       */
+      path_ias?: number[][][] | null;
+      /**
+       * Squawk Runs
+       * @description Run-length encoding of transponder squawk codes, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_timestamp, squawk_code], ...]` marking code changes. Forward-fill from each entry to the next within a sub-sequence. Omitted when `include_path` is false.
+       * @example [
+       *       [
+       *         [
+       *           1743501600,
+       *           "1234"
+       *         ],
+       *         [
+       *           1743508800,
+       *           "1234"
+       *         ]
+       *       ]
+       *     ]
+       */
+      squawk_runs?: [number, string][][] | null;
+      /**
+       * Alt Correction Ft
+       * @description QNH altitude correction timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, correction_ft], ...]`. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Add to the pressure altitude from `path.coordinates[i][j][2]` to obtain feet MSL. Null when no correction data was available at ingestion time.
+       * @example [
+       *       [
+       *         [
+       *           1743501600,
+       *           14.5
+       *         ],
+       *         [
+       *           1743505200,
+       *           14.5
+       *         ]
+       *       ]
+       *     ]
+       */
+      alt_correction_ft?: number[][][] | null;
+      /**
+       * Raw Point Count
+       * @description Number of raw ADS-B messages ingested for this leg, including ground-roll points not present in the simplified path geometry.
+       */
+      raw_point_count: number;
+      /**
+       * Ingest Batch Date
+       * Format: date
+       * @description Calendar date of the archive batch this flight was ingested from.
+       * @example 2025-04-01
+       */
+      ingest_batch_date: string;
+    };
+    /**
+     * GeoJSONGeometryCollection
+     * @description GeoJSON GeometryCollection — a heterogeneous collection of geometries.
+     */
+    GeoJSONGeometryCollection: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "GeometryCollection";
+      /**
+       * Geometries
+       * @description Array of geometry objects.
+       */
+      geometries: (
+        | components["schemas"]["GeoJSONPoint"]
+        | components["schemas"]["GeoJSONMultiPoint"]
+        | components["schemas"]["GeoJSONLineString"]
+        | components["schemas"]["GeoJSONMultiLineString"]
+        | components["schemas"]["GeoJSONPolygon"]
+        | components["schemas"]["GeoJSONMultiPolygon"]
+        | components["schemas"]["GeoJSONGeometryCollection"]
+        | components["schemas"]["CircleGeometry"]
+      )[];
+    };
+    /**
+     * GeoJSONLineString
+     * @description GeoJSON LineString geometry.
+     */
+    GeoJSONLineString: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "LineString";
+      /**
+       * Coordinates
+       * @description Array of `[longitude, latitude]` pairs.
+       */
+      coordinates: number[][];
+    };
+    /**
+     * GeoJSONMultiLineString
+     * @description GeoJSON MultiLineString geometry.
+     */
+    GeoJSONMultiLineString: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "MultiLineString";
+      /**
+       * Coordinates
+       * @description Array of LineString coordinate arrays.
+       */
+      coordinates: number[][][];
+    };
+    /**
+     * GeoJSONMultiLineStringZ
+     * @description GeoJSON MultiLineString with altitude on every vertex, as returned in flight path fields.
+     *
+     *     Each element of `coordinates` is one contiguous sub-sequence of ADS-B coverage.
+     *     Gaps between sub-sequences (e.g. oceanic blackout) are explicit: no interpolation
+     *     is performed across them.
+     */
+    GeoJSONMultiLineStringZ: {
+      /**
+       * Type
+       * @constant
+       */
+      type: "MultiLineString";
+      /**
+       * Coordinates
+       * @description List of sub-sequences; each is a list of `[longitude, latitude, altitude_ft]` vertices.
+       */
+      coordinates: [number, number, number][][];
+    };
+    /**
+     * GeoJSONMultiPoint
+     * @description GeoJSON MultiPoint geometry.
+     */
+    GeoJSONMultiPoint: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "MultiPoint";
+      /**
+       * Coordinates
+       * @description Array of Point coordinate arrays.
+       */
+      coordinates: number[][];
+    };
+    /**
+     * GeoJSONMultiPolygon
+     * @description GeoJSON MultiPolygon geometry.
+     */
+    GeoJSONMultiPolygon: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "MultiPolygon";
+      /**
+       * Coordinates
+       * @description Array of Polygon coordinate arrays.
+       */
+      coordinates: number[][][][];
+    };
+    /**
+     * GeoJSONPoint
+     * @description GeoJSON Point geometry.
+     */
+    GeoJSONPoint: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "Point";
+      /**
+       * Coordinates
+       * @description `[longitude, latitude]` or `[longitude, latitude, altitude]`.
+       */
+      coordinates: number[];
+    };
+    /**
+     * GeoJSONPointZ
+     * @description GeoJSON Point with a mandatory altitude component, as returned in flight position fields.
+     */
+    GeoJSONPointZ: {
+      /**
+       * Type
+       * @constant
+       */
+      type: "Point";
+      /**
+       * Coordinates
+       * @description `[longitude, latitude, altitude_ft]`.
+       */
+      coordinates: [number, number, number];
+    };
+    /**
+     * GeoJSONPolygon
+     * @description GeoJSON Polygon geometry.
+     */
+    GeoJSONPolygon: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "Polygon";
+      /**
+       * Coordinates
+       * @description Array of linear rings. First ring is the exterior boundary; subsequent rings are interior holes. Each ring is closed (first == last position).
+       */
+      coordinates: number[][][];
+    };
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components["schemas"]["ValidationError"][];
+    };
+    /**
+     * IcaoType
+     * @description Flights matching one or more ICAO aircraft type designators.
+     */
+    IcaoType: {
+      /**
+       * Icao Type
+       * @description List of ICAO type designators to match (case-sensitive). OR semantics.
+       * @example [
+       *       "B738",
+       *       "B737"
+       *     ]
+       */
+      icao_type: string[];
+    };
+    /**
+     * IcaoTypeStat
+     * @description Flight count and model name for one ICAO type designator over a date range.
+     */
+    IcaoTypeStat: {
+      /**
+       * Icao Type
+       * @description ICAO aircraft type designator (e.g. `B738`).
+       * @example B738
+       */
+      icao_type: string;
+      /**
+       * Model
+       * @description Most common model description from the airframes table, or null if unknown.
+       * @example BOEING 737-800
+       */
+      model: string | null;
+      /**
+       * Count
+       * @description Total number of flights of this type in the requested date range.
+       * @example 1234
+       */
+      count: number;
+    };
+    /**
+     * NotPredicate
+     * @description Negates a child predicate (logical NOT).
+     */
+    NotPredicate: {
+      /**
+       * Not
+       * @description This predicate must not match.
+       */
+      not:
+        | components["schemas"]["TrajectoryIntersects"]
+        | components["schemas"]["TrajectoryWithin"]
+        | components["schemas"]["StartsWithin"]
+        | components["schemas"]["EndsWithin"]
+        | components["schemas"]["IcaoType"]
+        | components["schemas"]["EmitterCategory"]
+        | components["schemas"]["CallsignMatches"]
+        | components["schemas"]["Duration"]
+        | components["schemas"]["AndPredicate"]
+        | components["schemas"]["OrPredicate"]
+        | components["schemas"]["NotPredicate"];
+    };
+    /**
+     * OrPredicate
+     * @description At least one child predicate must be true (logical OR).
+     */
+    OrPredicate: {
+      /**
+       * Or
+       * @description At least one of these predicates must match.
+       */
+      or: (
+        | components["schemas"]["TrajectoryIntersects"]
+        | components["schemas"]["TrajectoryWithin"]
+        | components["schemas"]["StartsWithin"]
+        | components["schemas"]["EndsWithin"]
+        | components["schemas"]["IcaoType"]
+        | components["schemas"]["EmitterCategory"]
+        | components["schemas"]["CallsignMatches"]
+        | components["schemas"]["Duration"]
+        | components["schemas"]["AndPredicate"]
+        | components["schemas"]["OrPredicate"]
+        | components["schemas"]["NotPredicate"]
+      )[];
+    };
+    /**
+     * QueryRequest
+     * @description Request body for `POST /api/v1/query`.
+     */
+    QueryRequest: {
+      /**
+       * End Date
+       * Format: date-time
+       * @description Exclusive upper bound on flight start time (`start_ts`). The query returns flights whose `start_ts` is strictly before this value. Defaults to the most recent date with data.
+       * @example 2025-04-02T00:00:00Z
+       */
+      end_date: string;
+      /**
+       * Start From
+       * @description Optional inclusive lower bound on `start_ts`. When set, overrides the automatic window floor if it falls later. Must be strictly before `end_date`.
+       * @example 2025-03-01T00:00:00Z
+       */
+      start_from?: string | null;
+      /**
+       * Window Days
+       * @description Size of the sliding search window in days, measured back from the current cursor position (or `end_date` on the first page). Combined with keyset pagination this lets callers walk back through history one window at a time by passing the previous response's `window_from` as the next `end_date`.
+       * @default 28
+       */
+      window_days: number;
+      /**
+       * Match
+       * @description Filter predicate. Omit or set to `null` to return all flights.
+       */
+      match?:
+        | components["schemas"]["TrajectoryIntersects"]
+        | components["schemas"]["TrajectoryWithin"]
+        | components["schemas"]["StartsWithin"]
+        | components["schemas"]["EndsWithin"]
+        | components["schemas"]["IcaoType"]
+        | components["schemas"]["EmitterCategory"]
+        | components["schemas"]["CallsignMatches"]
+        | components["schemas"]["Duration"]
+        | components["schemas"]["AndPredicate"]
+        | components["schemas"]["OrPredicate"]
+        | components["schemas"]["NotPredicate"]
+        | null;
+      /**
+       * Limit
+       * @description Maximum number of flights to return per page.
+       * @default 100
+       */
+      limit: number;
+      /**
+       * Cursor
+       * @description Continuation token from the previous page's `cursor` field.
+       */
+      cursor?: string | null;
+      /**
+       * Include Path
+       * @description Whether to include `path`, `timestamps`, `path_tracks`, and `squawk_runs` in each result. Set to `false` for lightweight listing queries where trajectory data is not needed.
+       * @default true
+       */
+      include_path: boolean;
+    };
+    /**
+     * QueryResponse
+     * @description Paginated list of flights matching a query.
+     */
+    QueryResponse: {
+      /**
+       * Flights
+       * @description Flights on this page, ordered by `start_ts` descending then `icao24` descending.
+       */
+      flights: components["schemas"]["FlightDetail"][];
+      /**
+       * Cursor
+       * @description Opaque continuation token. Present when the current window contained more results than `limit`; pass unchanged as `cursor` in the next request. `null` when the window was exhausted — use `window_from` as `end_date` to continue searching earlier windows.
+       */
+      cursor: string | null;
+      /**
+       * Window From
+       * Format: date-time
+       * @description The inclusive lower bound on `start_ts` that was actually applied. Reflects the sliding window floor (cursor position minus `window_days`, or `start_from` if that is later). Pass this as `end_date` on the next request to continue searching the preceding window.
+       */
+      window_from: string;
+    };
+    /**
+     * SpatioTemporalAltitudeValue
+     * @description Spatial, altitude, and/or temporal filter for trajectory predicates.
+     *
+     *     At least one constraint must be provided.
+     */
+    SpatioTemporalAltitudeValue: {
+      /**
+       * Geometry
+       * @description GeoJSON geometry or Circle to test the flight path against. Omit for a time- or altitude-only filter.
+       */
+      geometry?:
+        | (
+            | components["schemas"]["GeoJSONPoint"]
+            | components["schemas"]["GeoJSONMultiPoint"]
+            | components["schemas"]["GeoJSONLineString"]
+            | components["schemas"]["GeoJSONMultiLineString"]
+            | components["schemas"]["GeoJSONPolygon"]
+            | components["schemas"]["GeoJSONMultiPolygon"]
+            | components["schemas"]["GeoJSONGeometryCollection"]
+            | components["schemas"]["CircleGeometry"]
+          )
+        | null;
+      /**
+       * Altitude Min
+       * @description Lower altitude bound (inclusive). Interpretation depends on `altitude_min_ref`.
+       */
+      altitude_min?: number | null;
+      /**
+       * Altitude Min Ref
+       * @description Reference system for `altitude_min`. `'fl'`: flight level (e.g. `100` = FL100 = 10 000 ft pressure altitude). `'ft'` (default): feet MSL using the stored QNH correction.
+       * @default ft
+       * @enum {string}
+       */
+      altitude_min_ref: "fl" | "ft";
+      /**
+       * Altitude Max
+       * @description Upper altitude bound (inclusive). Interpretation depends on `altitude_max_ref`.
+       */
+      altitude_max?: number | null;
+      /**
+       * Altitude Max Ref
+       * @description Reference system for `altitude_max`. `'fl'`: flight level (e.g. `100` = FL100 = 10 000 ft pressure altitude). `'ft'` (default): feet MSL using the stored QNH correction.
+       * @default ft
+       * @enum {string}
+       */
+      altitude_max_ref: "fl" | "ft";
+      /**
+       * Time From
+       * @description Inclusive lower bound on the time window. When combined with `geometry` or altitude, constrains the intersection to occur within this window. Without geometry/altitude, filters by activity window (end_ts >= time_from).
+       */
+      time_from?: string | null;
+      /**
+       * Time To
+       * @description Exclusive upper bound on the time window. When combined with `geometry` or altitude, constrains the intersection to occur within this window. Without geometry/altitude, filters by activity window (start_ts < time_to).
+       */
+      time_to?: string | null;
+      /**
+       * Squawk Codes
+       * @description Transponder squawk codes to match (OR semantics). When `geometry` is set, only squawk codes broadcast while the flight was inside the geometry (and within any altitude/time window) are checked. Without `geometry`, any code broadcast during the flight matches.
+       * @example [
+       *       "7700",
+       *       "7600"
+       *     ]
+       */
+      squawk_codes?: string[] | null;
+      /**
+       * Dwell Min S
+       * @description Minimum time the flight must spend inside the geometry (seconds, inclusive). Measured as the total duration of the path clipped to the geometry plus any altitude and time constraints. Requires `geometry`.
+       */
+      dwell_min_s?: number | null;
+      /**
+       * Dwell Max S
+       * @description Maximum time the flight may spend inside the geometry (seconds, inclusive). Requires `geometry`.
+       */
+      dwell_max_s?: number | null;
+      /**
+       * Distance Min M
+       * @description Minimum distance the flight must cover inside the geometry (metres, inclusive). Measured along the clipped path. Requires `geometry`.
+       */
+      distance_min_m?: number | null;
+      /**
+       * Distance Max M
+       * @description Maximum distance the flight may cover inside the geometry (metres, inclusive). Requires `geometry`.
+       */
+      distance_max_m?: number | null;
+    };
+    /**
+     * SpatioTemporalValue
+     * @description Spatial and/or temporal filter without altitude — used by starts_within / ends_within.
+     *
+     *     At least one of geometry, time_from, or time_to must be provided.
+     */
+    SpatioTemporalValue: {
+      /**
+       * Geometry
+       * @description GeoJSON geometry or Circle to test the departure/arrival point against. Omit for a time-only filter.
+       */
+      geometry?:
+        | (
+            | components["schemas"]["GeoJSONPoint"]
+            | components["schemas"]["GeoJSONMultiPoint"]
+            | components["schemas"]["GeoJSONLineString"]
+            | components["schemas"]["GeoJSONMultiLineString"]
+            | components["schemas"]["GeoJSONPolygon"]
+            | components["schemas"]["GeoJSONMultiPolygon"]
+            | components["schemas"]["GeoJSONGeometryCollection"]
+            | components["schemas"]["CircleGeometry"]
+          )
+        | null;
+      /**
+       * Time From
+       * @description Inclusive lower bound on start_ts (starts_within) or end_ts (ends_within).
+       */
+      time_from?: string | null;
+      /**
+       * Time To
+       * @description Exclusive upper bound on start_ts or end_ts.
+       */
+      time_to?: string | null;
+    };
+    /**
+     * StartsWithin
+     * @description Flights whose departure point falls within the given geometry and/or departs within the given time window.
+     */
+    StartsWithin: {
+      /** @description Spatial and/or temporal constraints on the departure point and time. */
+      starts_within: components["schemas"]["SpatioTemporalValue"];
+    };
+    /**
+     * TrajectoryIntersects
+     * @description Flights whose simplified path intersects the given constraints.
+     *
+     *     When geometry, altitude, and/or time are combined, all constraints are applied
+     *     simultaneously — the intersection must occur at the right altitude and within the
+     *     time window, not just at any point during the flight. Squawk codes are similarly
+     *     checked only at instants when the path was inside the geometry (if provided).
+     */
+    TrajectoryIntersects: {
+      trajectory_intersects: components["schemas"]["SpatioTemporalAltitudeValue"];
+    };
+    /**
+     * TrajectoryWithin
+     * @description Flights whose entire simplified path lies within the given geometry.
+     *
+     *     Altitude and time constraints narrow the portion of the path that must lie within
+     *     the geometry; squawk codes are checked only at instants when the path was inside
+     *     the geometry (if provided).
+     */
+    TrajectoryWithin: {
+      trajectory_within: components["schemas"]["SpatioTemporalAltitudeValue"];
+    };
+    /** ValidationError */
+    ValidationError: {
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+      /** Input */
+      input?: unknown;
+      /** Context */
+      ctx?: Record<string, never>;
+    };
+  };
+  responses: never;
+  parameters: never;
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    health_api_v1_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
-                };
-            };
-        };
+  health_api_v1_health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    get_data_range_api_v1_data_range_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DataRange"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: string;
+          };
         };
+      };
     };
-    get_icao_types_api_v1_icao_types_get: {
-        parameters: {
-            query: {
-                start: string;
-                end: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IcaoTypeStat"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  get_data_range_api_v1_data_range_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    query_flights_api_v1_query_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["QueryRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["DataRange"];
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QueryResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+      };
     };
-    get_flight_api_v1_flights__flight_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                flight_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FlightDetail"];
-                };
-            };
-            /** @description No flight exists for the given `flight_id`. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description `flight_id` is malformed (missing `:` separator or invalid timestamp). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
+  };
+  get_icao_types_api_v1_icao_types_get: {
+    parameters: {
+      query: {
+        start: string;
+        end: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IcaoTypeStat"][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  query_flights_api_v1_query_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["QueryRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["QueryResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_flight_api_v1_flights__flight_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        flight_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FlightDetail"];
+        };
+      };
+      /** @description No flight exists for the given `flight_id`. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `flight_id` is malformed (missing `:` separator or invalid timestamp). */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
 }

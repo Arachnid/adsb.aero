@@ -30,16 +30,17 @@ async function parseError(res: Response): Promise<never> {
 export async function postQuery(
   match: QueryRequest["match"],
   opts: {
-    startFrom: string;
-    startTo: string;
+    endDate: string;
+    startFrom?: string | null;
     cursor?: string | null;
     limit?: number;
     signal?: AbortSignal;
   },
 ): Promise<QueryResponse> {
   const body: QueryRequest = {
-    start_from: opts.startFrom,
-    start_to: opts.startTo,
+    end_date: opts.endDate,
+    ...(opts.startFrom ? { start_from: opts.startFrom } : {}),
+    window_days: 28,
     match: match ?? null,
     limit: opts.limit ?? 100,
     include_path: true,

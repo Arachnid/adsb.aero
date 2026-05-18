@@ -13,6 +13,10 @@ interface ResultsPanelProps {
   onSelectFlight?: (id: string | null) => void;
   hoveredPoint?: HoveredPoint | null;
   onHoverPoint?: (p: HoveredPoint | null) => void;
+  /** ISO datetime lower bound from last response — how far back has been searched. */
+  windowFrom?: string | null;
+  /** The end date shown in the query form ("YYYY-MM-DD"), for the range label. */
+  queryEndDate?: string | null;
 }
 
 function fmtTime(iso: string): string {
@@ -89,13 +93,24 @@ function SparklineChart({
       const lastJ = subSeq.length - 1;
       const fillD =
         `M ${n2s(toX(flatOffset))},${n2s(toY(subSeq[0]?.[2] ?? 0))} ` +
-        subSeq.slice(1).map((c, j) => `L ${n2s(toX(flatOffset + j + 1))},${n2s(toY(c[2]))}`).join(" ") +
+        subSeq
+          .slice(1)
+          .map((c, j) => `L ${n2s(toX(flatOffset + j + 1))},${n2s(toY(c[2]))}`)
+          .join(" ") +
         ` L ${n2s(toX(flatOffset + lastJ))},${String(H)} L ${n2s(toX(flatOffset))},${String(H)} Z`;
       const polyPoints = subSeq
         .map((c, j) => `${n2s(toX(flatOffset + j))},${n2s(toY(c[2]))}`)
         .join(" ");
       fills.push(<path key={flatOffset} d={fillD} fill="rgba(110,168,255,0.15)" stroke="none" />);
-      lines.push(<polyline key={flatOffset} points={polyPoints} fill="none" stroke="rgba(110,168,255,0.8)" strokeWidth="1.5" />);
+      lines.push(
+        <polyline
+          key={flatOffset}
+          points={polyPoints}
+          fill="none"
+          stroke="rgba(110,168,255,0.8)"
+          strokeWidth="1.5"
+        />,
+      );
     }
     flatOffset += subSeq.length;
   }
@@ -137,12 +152,16 @@ function SparklineChart({
         style={{ width: "100%", height: 20, display: "block" }}
         onMouseMove={(e): void => {
           const rect = e.currentTarget.getBoundingClientRect();
-          const svgX = (e.clientX - rect.left) / rect.width * W;
+          const svgX = ((e.clientX - rect.left) / rect.width) * W;
           // Find the flat point index whose x position is closest to the cursor.
-          let best = 0, bestDist = Infinity;
+          let best = 0,
+            bestDist = Infinity;
           for (let i = 0; i < n; i++) {
             const d = Math.abs(toX(i) - svgX);
-            if (d < bestDist) { bestDist = d; best = i; }
+            if (d < bestDist) {
+              bestDist = d;
+              best = i;
+            }
           }
           onHoverIdx(best);
         }}
@@ -177,6 +196,10 @@ function SparklineChart({
   );
 }
 
+function fmtDateLabel(iso: string): string {
+  return iso.slice(0, 10);
+}
+
 export function ResultsPanel({
   flights,
   loading,
@@ -187,6 +210,8 @@ export function ResultsPanel({
   onSelectFlight,
   hoveredPoint,
   onHoverPoint,
+  windowFrom,
+  queryEndDate,
 }: ResultsPanelProps): React.ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -287,24 +312,46 @@ export function ResultsPanel({
         )}
       </div>
 
-      {hasMore && !loading && (
-        <div style={{ padding: "8px 12px", borderTop: "1px solid var(--line-1)", flexShrink: 0 }}>
-          <button
-            onClick={onLoadMore}
-            style={{
-              width: "100%",
-              padding: "7px 0",
-              borderRadius: "var(--radius-1)",
-              border: "1px solid var(--line-1)",
-              background: "var(--bg-2)",
-              color: "var(--fg-1)",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Load more
-          </button>
+      {(hasMore || windowFrom) && !loading && (
+        <div
+          style={{
+            padding: "8px 12px",
+            borderTop: "1px solid var(--line-1)",
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          {windowFrom && queryEndDate && (
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--fg-3)",
+                textAlign: "center",
+              }}
+            >
+              Fetched {fmtDateLabel(windowFrom)} – {queryEndDate}
+            </div>
+          )}
+          {hasMore && (
+            <button
+              onClick={onLoadMore}
+              style={{
+                width: "100%",
+                padding: "7px 0",
+                borderRadius: "var(--radius-1)",
+                border: "1px solid var(--line-1)",
+                background: "var(--bg-2)",
+                color: "var(--fg-1)",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Load earlier results
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -330,10 +377,16 @@ function FlightRow({
 
   const detailRows: [string, string, boolean][] = [
     ["ICAO24", flight.icao24, true],
-    ...(flight.registration != null ? [["Reg", flight.registration, false] as [string, string, boolean]] : []),
+    ...(flight.registration != null
+      ? [["Reg", flight.registration, false] as [string, string, boolean]]
+      : []),
     ...(flight.model != null ? [["Model", flight.model, false] as [string, string, boolean]] : []),
-    ...(flight.year != null ? [["Year", String(flight.year), false] as [string, string, boolean]] : []),
-    ...(flight.operator != null ? [["Operator", flight.operator, false] as [string, string, boolean]] : []),
+    ...(flight.year != null
+      ? [["Year", String(flight.year), false] as [string, string, boolean]]
+      : []),
+    ...(flight.operator != null
+      ? [["Operator", flight.operator, false] as [string, string, boolean]]
+      : []),
   ];
 
   return (
@@ -367,7 +420,12 @@ function FlightRow({
         {fmtTime(flight.start_ts)} → {fmtEndTime(flight.end_ts, flight.start_ts.slice(0, 10))}
       </div>
       {coords && (
-        <SparklineChart coords={coords} timestamps={flight.timestamps} hoveredIdx={hoveredPointIdx} onHoverIdx={onHoverPointIdx} />
+        <SparklineChart
+          coords={coords}
+          timestamps={flight.timestamps}
+          hoveredIdx={hoveredPointIdx}
+          onHoverIdx={onHoverPointIdx}
+        />
       )}
       {selected && (
         <div

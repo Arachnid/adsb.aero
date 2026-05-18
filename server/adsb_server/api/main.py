@@ -8,7 +8,7 @@ import re
 import textwrap
 from collections.abc import AsyncGenerator  # noqa: TC003
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
@@ -454,21 +454,39 @@ async def query_flights(
     pool = await get_pool(request)
     params: list[Any] = []
 
+    # Decode cursor to get its timestamp, used both for keyset dedup and window anchoring.
+    cursor_ts: datetime | None = None
+    cursor_icao: str | None = None
+    if body.cursor is not None:
+        cursor_ts, cursor_icao = decode_cursor(body.cursor)
+
+    # Effective upper bound: the earlier of end_date and the cursor position.
+    # This anchors the window floor so each page slides back by window_days.
+    effective_end: datetime = (
+        min(body.end_date, cursor_ts) if cursor_ts is not None else body.end_date
+    )
+
+    # Window floor: window_days back from the effective upper bound, then clamped
+    # up to start_from if the caller supplied an explicit earliest bound.
+    window_floor: datetime = effective_end - timedelta(days=body.window_days)
+    if body.start_from is not None and body.start_from > window_floor:
+        window_floor = body.start_from
+
     # Build WHERE clause
     where_parts: list[str] = []
 
-    # Global start-time range (always present — validated in QueryRequest)
-    where_parts.append(f"start_ts >= {_p(params, body.start_from)}")
-    where_parts.append(f"start_ts < {_p(params, body.start_to)}")
+    # Time bounds: window floor (inclusive) and end_date (exclusive).
+    where_parts.append(f"f.start_ts >= {_p(params, window_floor)}")
+    where_parts.append(f"f.start_ts < {_p(params, body.end_date)}")
 
     compiled: CompiledPredicate | None = None
     if body.match is not None:
         compiled = compile_predicate(body.match, params)
         where_parts.append(f"({compiled})")
 
-    # Cursor condition
-    if body.cursor is not None:
-        cursor_ts, cursor_icao = decode_cursor(body.cursor)
+    # Keyset cursor: excludes results already returned on prior pages.
+    # Combined with start_ts < end_date, this correctly deduplicates ties at cursor_ts.
+    if cursor_ts is not None and cursor_icao is not None:
         ts_p = _p(params, cursor_ts)
         icao_p = _p(params, cursor_icao)
         where_parts.append(
@@ -511,12 +529,22 @@ async def query_flights(
 
     next_cursor: str | None = None
     if has_more and result_rows:
+        # Intra-window: more results exist; cursor points to the last returned row.
         last = result_rows[-1]
         next_cursor = encode_cursor(last["start_ts"], last["icao24"])
+    else:
+        # Window exhausted.  Emit a sentinel cursor pointing to window_floor so
+        # the next call automatically searches [window_floor - window_days, window_floor).
+        # Exception: if window_floor was clamped to start_from we've reached the
+        # explicit floor and there is nowhere further to look.
+        floored_by_start = body.start_from is not None and window_floor <= body.start_from
+        if not floored_by_start:
+            next_cursor = encode_cursor(window_floor, "")
 
     return QueryResponse(
         flights=[_row_to_detail(r, include_path=body.include_path) for r in result_rows],
         cursor=next_cursor,
+        window_from=window_floor,
     )
 
 

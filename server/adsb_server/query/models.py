@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -231,8 +231,16 @@ class QueryResponse(BaseModel):
         description="Flights on this page, ordered by `start_ts` descending then `icao24` descending."  # noqa: E501
     )
     cursor: str | None = Field(
-        description="Opaque continuation token. Pass unchanged as `cursor` in the next request "
-        "to retrieve the next page. `null` when there are no more results."
+        description="Opaque continuation token. Present when the current window contained "
+        "more results than `limit`; pass unchanged as `cursor` in the next request. "
+        "`null` when the window was exhausted — use `window_from` as `end_date` to "
+        "continue searching earlier windows."
+    )
+    window_from: datetime = Field(
+        description="The inclusive lower bound on `start_ts` that was actually applied. "
+        "Reflects the sliding window floor (cursor position minus `window_days`, "
+        "or `start_from` if that is later). Pass this as `end_date` on the next "
+        "request to continue searching the preceding window."
     )
 
 
@@ -669,20 +677,31 @@ NotPredicate.model_rebuild()
 # ---------------------------------------------------------------------------
 
 
-_MAX_DATE_RANGE = timedelta(days=7)
-
-
 class QueryRequest(BaseModel):
     """Request body for `POST /api/v1/query`."""
 
-    start_from: datetime = Field(
-        description="Inclusive lower bound on flight start time (`start_ts`). Required.",
-        examples=["2025-03-25T00:00:00Z"],
-    )
-    start_to: datetime = Field(
+    end_date: datetime = Field(
         description="Exclusive upper bound on flight start time (`start_ts`). "
-        "Must be strictly after `start_from` and within 7 days of it.",
-        examples=["2025-04-01T00:00:00Z"],
+        "The query returns flights whose `start_ts` is strictly before this value. "
+        "Defaults to the most recent date with data.",
+        examples=["2025-04-02T00:00:00Z"],
+    )
+    start_from: datetime | None = Field(
+        default=None,
+        description="Optional inclusive lower bound on `start_ts`. "
+        "When set, overrides the automatic window floor if it falls later. "
+        "Must be strictly before `end_date`.",
+        examples=["2025-03-01T00:00:00Z"],
+    )
+    window_days: int = Field(
+        default=28,
+        ge=1,
+        le=365,
+        description="Size of the sliding search window in days, measured back from the "
+        "current cursor position (or `end_date` on the first page). "
+        "Combined with keyset pagination this lets callers walk back through history "
+        "one window at a time by passing the previous response's `window_from` as the "
+        "next `end_date`.",
     )
     match: Predicate | None = Field(
         default=None,
@@ -705,9 +724,7 @@ class QueryRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_start_range(self) -> QueryRequest:
-        if self.start_to <= self.start_from:
-            raise ValueError("start_to must be strictly after start_from")
-        if self.start_to - self.start_from > _MAX_DATE_RANGE:
-            raise ValueError("date range (start_to - start_from) must not exceed 7 days")
+    def _validate_dates(self) -> QueryRequest:
+        if self.start_from is not None and self.start_from >= self.end_date:
+            raise ValueError("start_from must be strictly before end_date")
         return self

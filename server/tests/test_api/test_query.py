@@ -22,15 +22,15 @@ MANCHESTER_CIRCLE = {
     "radius": 50000,
 }
 
-# Both test flights start on 2025-04-01; this window covers both.
+# Both test flights start on 2025-04-01.  end_date=Apr-02, window_days=2 covers both.
 _START_RANGE = {
-    "start_from": "2025-04-01T00:00:00Z",
-    "start_to": "2025-04-02T00:00:00Z",
+    "end_date": "2025-04-02T00:00:00Z",
+    "window_days": 2,
 }
 
 
 def qbody(**kwargs: Any) -> dict[str, Any]:
-    """Build a query request body with the required start range."""
+    """Build a query request body with the required date bounds."""
     return {**_START_RANGE, **kwargs}
 
 
@@ -140,12 +140,15 @@ async def test_cursor_pagination(api_client: AsyncClient) -> None:
     data1 = resp1.json()
     assert len(data1["flights"]) == 1
     assert data1["cursor"] is not None
+    assert data1["window_from"] is not None
 
     resp2 = await api_client.post("/api/v1/query", json=qbody(limit=1, cursor=data1["cursor"]))
     assert resp2.status_code == 200
     data2 = resp2.json()
     assert len(data2["flights"]) == 1
     assert data1["flights"][0]["flight_id"] != data2["flights"][0]["flight_id"]
+    # Second page window slides back from cursor position
+    assert data2["window_from"] is not None
 
 
 async def test_duration_filter(api_client: AsyncClient) -> None:
@@ -428,9 +431,28 @@ async def test_not_predicate(api_client: AsyncClient) -> None:
 
 
 async def test_empty_result(api_client: AsyncClient) -> None:
+    # No start_from: server emits a sentinel cursor so callers can page further back.
     resp = await api_client.post(
         "/api/v1/query",
         json=qbody(match={"icao_type": ["NONEXISTENT"]}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["flights"] == []
+    assert data["cursor"] is not None
+    assert "window_from" in data
+
+
+async def test_empty_result_with_start_from_yields_null_cursor(api_client: AsyncClient) -> None:
+    # With start_from equal to the window floor, the explicit floor is exhausted → null cursor.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={
+            "end_date": "2025-04-02T00:00:00Z",
+            "start_from": "2025-04-01T00:00:00Z",
+            "window_days": 1,
+            "match": {"icao_type": ["NONEXISTENT"]},
+        },
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -439,12 +461,12 @@ async def test_empty_result(api_client: AsyncClient) -> None:
 
 
 async def test_start_range_filters_by_start_time(api_client: AsyncClient) -> None:
-    # Narrow window covering only Flight A (starts 10:00), not Flight B (starts 06:00).
+    # start_from as optional floor: covers only Flight A (starts 10:00), not Flight B (06:00).
     resp = await api_client.post(
         "/api/v1/query",
         json={
+            "end_date": "2025-04-01T11:00:00Z",
             "start_from": "2025-04-01T09:00:00Z",
-            "start_to": "2025-04-01T11:00:00Z",
         },
     )
     assert resp.status_code == 200
@@ -453,34 +475,43 @@ async def test_start_range_filters_by_start_time(api_client: AsyncClient) -> Non
     assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
 
 
-async def test_start_range_too_wide_rejected(api_client: AsyncClient) -> None:
+async def test_window_days_limits_results(api_client: AsyncClient) -> None:
+    # window_days=0.001 would be invalid; use window_days=1 anchored after Flight B starts.
+    # end_date=2025-04-01T12:00:00Z, window_days=1 → floor=2025-03-31T12:00:00Z, covers both.
+    # Narrow via start_from instead to exclude Flight B.
     resp = await api_client.post(
         "/api/v1/query",
         json={
-            "start_from": "2025-04-01T00:00:00Z",
-            "start_to": "2025-04-09T00:00:00Z",  # 8 days — over limit
+            "end_date": "2025-04-02T00:00:00Z",
+            "start_from": "2025-04-01T09:00:00Z",  # excludes Flight B (starts 06:00)
+            "window_days": 28,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+    assert data["window_from"] is not None
+
+
+async def test_start_from_after_end_date_rejected(api_client: AsyncClient) -> None:
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={
+            "end_date": "2025-04-01T00:00:00Z",
+            "start_from": "2025-04-02T00:00:00Z",  # after end_date
         },
     )
     assert resp.status_code == 422
 
 
-async def test_start_range_inverted_rejected(api_client: AsyncClient) -> None:
+async def test_start_from_equal_end_date_rejected(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
         json={
-            "start_from": "2025-04-02T00:00:00Z",
-            "start_to": "2025-04-01T00:00:00Z",  # to before from
-        },
-    )
-    assert resp.status_code == 422
-
-
-async def test_start_range_equal_rejected(api_client: AsyncClient) -> None:
-    resp = await api_client.post(
-        "/api/v1/query",
-        json={
-            "start_from": "2025-04-01T00:00:00Z",
-            "start_to": "2025-04-01T00:00:00Z",  # equal — not strictly after
+            "end_date": "2025-04-01T00:00:00Z",
+            "start_from": "2025-04-01T00:00:00Z",  # equal — not strictly before
         },
     )
     assert resp.status_code == 422
