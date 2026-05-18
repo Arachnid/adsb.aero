@@ -14,11 +14,13 @@ import pytest
 from adsb_server.ingestion.scheduler import (
     _download_and_process_release,
     _download_asset,
+    _find_tag_for_date,
     _get_errored_dates,
     _get_releases,
     _is_batch_already_processed,
     _tag_to_date,
     check_and_run_new_batches,
+    reimport_specific_dates,
     scheduler_loop,
 )
 
@@ -973,6 +975,215 @@ class TestCheckAndRunNewBatches:
         assert date(2025, 4, 3) in processed_dates, "follow-up of errored batch not reprocessed"
         assert date(2025, 4, 1) not in processed_dates, "stop-point batch should not be processed"
         assert processed_dates == sorted(processed_dates), "batches processed out of order"
+
+
+# ---------------------------------------------------------------------------
+# _find_tag_for_date
+# ---------------------------------------------------------------------------
+
+
+class TestFindTagForDate:
+    async def test_returns_tag_when_found(self) -> None:
+        releases = [
+            {"tag_name": "v2025.04.03-planes-readsb-prod-0"},
+            {"tag_name": "v2025.04.02-planes-readsb-prod-0"},
+            {"tag_name": "v2025.04.01-planes-readsb-prod-0"},
+        ]
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = releases
+        client = MagicMock()
+        client.get = AsyncMock(return_value=resp)
+
+        result = await _find_tag_for_date(client, 2025, date(2025, 4, 2))
+
+        assert result == "v2025.04.02-planes-readsb-prod-0"
+
+    async def test_returns_none_when_date_not_found(self) -> None:
+        releases = [
+            {"tag_name": "v2025.04.03-planes-readsb-prod-0"},
+            {"tag_name": "v2025.04.01-planes-readsb-prod-0"},  # gap: no Apr 2
+        ]
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = releases
+        client = MagicMock()
+        client.get = AsyncMock(return_value=resp)
+
+        result = await _find_tag_for_date(client, 2025, date(2025, 4, 2))
+
+        assert result is None
+
+    async def test_returns_newest_revision_when_multiple_tags_for_same_date(self) -> None:
+        releases = [
+            {"tag_name": "v2025.04.02-planes-readsb-prod-1"},  # newer revision
+            {"tag_name": "v2025.04.02-planes-readsb-prod-0"},
+        ]
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = releases
+        client = MagicMock()
+        client.get = AsyncMock(return_value=resp)
+
+        result = await _find_tag_for_date(client, 2025, date(2025, 4, 2))
+
+        assert result == "v2025.04.02-planes-readsb-prod-1"
+
+    async def test_returns_none_on_empty_releases(self) -> None:
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = []
+        client = MagicMock()
+        client.get = AsyncMock(return_value=resp)
+
+        result = await _find_tag_for_date(client, 2025, date(2025, 4, 2))
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# reimport_specific_dates
+# ---------------------------------------------------------------------------
+
+
+class TestReimportSpecificDates:
+    async def test_processes_each_date_in_order(self, tmp_path: Path) -> None:
+        processed: list[date] = []
+
+        async def mock_dapr(
+            conn: object,
+            client: object,
+            year: int,
+            tag: str,
+            batch_date: date,
+            cache_dir: object,
+            keep_traces: bool = False,
+        ) -> bool:
+            processed.append(batch_date)
+            return True
+
+        async def mock_find(client: object, year: int, target: date) -> str:
+            return f"v{target.year}.{target.month:02d}.{target.day:02d}-planes-readsb-prod-0"
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch("adsb_server.ingestion.scheduler._find_tag_for_date", side_effect=mock_find),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                side_effect=mock_dapr,
+            ),
+        ):
+            await reimport_specific_dates(
+                AsyncMock(),
+                [date(2025, 4, 3), date(2025, 4, 1), date(2025, 4, 2)],
+                tmp_path,
+            )
+
+        assert processed == [date(2025, 4, 1), date(2025, 4, 2), date(2025, 4, 3)]
+
+    async def test_skips_date_with_no_release(self, tmp_path: Path) -> None:
+        async def mock_find(client: object, year: int, target: date) -> str | None:
+            return None if target == date(2025, 4, 2) else "v2025.04.01-planes-readsb-prod-0"
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch("adsb_server.ingestion.scheduler._find_tag_for_date", side_effect=mock_find),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                new=AsyncMock(return_value=True),
+            ) as mock_dapr,
+        ):
+            await reimport_specific_dates(
+                AsyncMock(), [date(2025, 4, 1), date(2025, 4, 2)], tmp_path
+            )
+
+        assert mock_dapr.call_count == 1
+        called_date = mock_dapr.call_args[0][4]
+        assert called_date == date(2025, 4, 1)
+
+
+# ---------------------------------------------------------------------------
+# check_and_run_new_batches — force-date gap fix
+# ---------------------------------------------------------------------------
+
+
+class TestCheckAndRunNewBatchesForceGap:
+    async def test_force_dates_found_when_scan_stops_before_them(self, tmp_path: Path) -> None:
+        """Errored batch older than newest succeeded batch is still reprocessed."""
+        # Newest-first scan: Apr 5 (succeeded) stops the scan before Apr 3 (errored).
+        # The explicit force-date lookup must still find and queue Apr 3 and Apr 4.
+        releases: list[dict[str, object]] = [
+            {"tag_name": "v2025.04.05-planes-readsb-prod-0"},
+            {"tag_name": "v2025.04.04-planes-readsb-prod-0"},
+            {"tag_name": "v2025.04.03-planes-readsb-prod-0"},
+        ]
+        processed_dates: list[date] = []
+
+        async def mock_dapr(
+            conn: object,
+            client: object,
+            year: int,
+            tag: str,
+            batch_date: date,
+            cache_dir: object,
+            keep_traces: bool = False,
+        ) -> bool:
+            processed_dates.append(batch_date)
+            return True
+
+        async def mock_find(client: object, year: int, target: date) -> str | None:
+            for r in releases:
+                tag = str(r["tag_name"])
+                if _tag_to_date(tag) == target:
+                    return tag
+            return None
+
+        async def mock_get_releases(
+            client: object, year: int, page: int = 1
+        ) -> list[dict[str, object]]:
+            return releases if year == 2025 and page == 1 else []
+
+        # Apr 5 succeeded (newest) — stops the scan; Apr 3 errored; Apr 4 is its follow-up.
+        def is_already_processed(conn: object, batch_date: date) -> bool:
+            return batch_date == date(2025, 4, 5)
+
+        with (
+            patch(
+                "adsb_server.ingestion.scheduler.httpx.AsyncClient",
+                return_value=_patch_httpx_client(),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_releases",
+                side_effect=mock_get_releases,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._is_batch_already_processed",
+                side_effect=is_already_processed,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._get_errored_dates",
+                new=AsyncMock(return_value={date(2025, 4, 3)}),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._find_tag_for_date",
+                side_effect=mock_find,
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._download_and_process_release",
+                side_effect=mock_dapr,
+            ),
+        ):
+            await check_and_run_new_batches(AsyncMock(), tmp_path)
+
+        assert date(2025, 4, 3) in processed_dates, "errored batch behind frontier not processed"
+        assert date(2025, 4, 4) in processed_dates, "follow-up of errored batch not processed"
+        assert date(2025, 4, 5) not in processed_dates, "already-succeeded batch re-run"
 
 
 # ---------------------------------------------------------------------------

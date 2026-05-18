@@ -78,6 +78,29 @@ async def _get_errored_dates(conn: asyncpg.Connection) -> set[date]:
     return {row["batch_date"] for row in rows}
 
 
+async def _find_tag_for_date(
+    client: httpx.AsyncClient,
+    year: int,
+    target: date,
+) -> str | None:
+    """Return the newest release tag for a specific date, or None if not found."""
+    page = 1
+    while True:
+        releases = await _get_releases(client, year, page=page)
+        if not releases:
+            return None
+        for release in releases:
+            tag = str(release.get("tag_name", ""))
+            batch_date = _tag_to_date(tag)
+            if batch_date == target:
+                return tag  # newest-first, so first match is the latest revision
+            if batch_date is not None and batch_date < target:
+                return None  # passed the target date without finding it
+        if len(releases) < _GITHUB_RELEASES_PER_PAGE:
+            return None
+        page += 1
+
+
 async def _download_asset(
     client: httpx.AsyncClient,
     asset_url: str,
@@ -268,6 +291,17 @@ async def check_and_run_new_batches(
 
                 page += 1
 
+            # The main scan stops at the first succeeded non-force batch, so
+            # force_dates older than that frontier are never encountered.  Look
+            # them up explicitly so they are always retried.
+            missed_force = {d for d in force_dates if d.year == year and d not in to_process}
+            for fd in sorted(missed_force):
+                fd_tag = await _find_tag_for_date(client, year, fd)
+                if fd_tag:
+                    to_process[fd] = fd_tag
+                else:
+                    logger.debug("No release found for force date %s", fd)
+
             for batch_date in sorted(to_process):
                 tag = to_process[batch_date]
                 logger.info("New batch found: %s (tag=%s)", batch_date, tag)
@@ -285,6 +319,36 @@ async def check_and_run_new_batches(
 
             if stop:
                 break  # processed release found; all earlier years are also done
+
+
+async def reimport_specific_dates(
+    conn: asyncpg.Connection,
+    dates: list[date],
+    cache_dir: Path,
+    keep_traces: bool = False,
+) -> None:
+    """Download and reprocess specific batch dates, bypassing normal discovery.
+
+    Useful for manually recovering dates that were skipped due to transient
+    network errors or that fall behind the normal scan frontier.
+    """
+    async with httpx.AsyncClient(
+        timeout=_HTTP_TIMEOUT,
+        follow_redirects=True,
+        headers={"Accept": "application/vnd.github+json"},
+    ) as client:
+        for batch_date in sorted(dates):
+            year = batch_date.year
+            tag = await _find_tag_for_date(client, year, batch_date)
+            if tag is None:
+                logger.warning("No release found for %s — skipping", batch_date)
+                continue
+            logger.info("Reimporting %s (tag=%s)", batch_date, tag)
+            ok = await _download_and_process_release(
+                conn, client, year, tag, batch_date, cache_dir, keep_traces=keep_traces
+            )
+            if not ok:
+                logger.warning("Reimport of %s failed", batch_date)
 
 
 async def scheduler_loop(
