@@ -877,6 +877,7 @@ function PointRadiusCard({
   isPickingAirspace,
   name,
   dateRange,
+  globalDateRange,
 }: {
   pred: EndpointWithinPred;
   onChange: (p: EndpointWithinPred) => void;
@@ -889,7 +890,12 @@ function PointRadiusCard({
   isPickingAirspace: boolean;
   name: string;
   dateRange: DataRange | null;
+  globalDateRange: GlobalDateRange | null;
 }): React.ReactElement {
+  const effectiveMinDate =
+    globalDateRange?.from ?? dateRange?.first_date ?? undefined;
+  const effectiveMaxDate =
+    globalDateRange?.to ?? dateRange?.last_date ?? undefined;
   const showStartTime =
     pred.mode === "start" || pred.mode === "either" || pred.mode === "both";
   const showEndTime =
@@ -1068,8 +1074,8 @@ function PointRadiusCard({
             onChange={(v) => {
               onChange({ ...pred, startTimeFrom: v });
             }}
-            minDate={dateRange?.first_date ?? undefined}
-            maxDate={dateRange?.last_date ?? undefined}
+            minDate={effectiveMinDate}
+            maxDate={effectiveMaxDate}
           />
           <DateTimeField
             label="To"
@@ -1077,8 +1083,8 @@ function PointRadiusCard({
             onChange={(v) => {
               onChange({ ...pred, startTimeTo: v });
             }}
-            minDate={dateRange?.first_date ?? undefined}
-            maxDate={dateRange?.last_date ?? undefined}
+            minDate={effectiveMinDate}
+            maxDate={effectiveMaxDate}
           />
         </div>
       )}
@@ -1095,8 +1101,8 @@ function PointRadiusCard({
             onChange={(v) => {
               onChange({ ...pred, endTimeFrom: v });
             }}
-            minDate={dateRange?.first_date ?? undefined}
-            maxDate={dateRange?.last_date ?? undefined}
+            minDate={effectiveMinDate}
+            maxDate={effectiveMaxDate}
           />
           <DateTimeField
             label="To"
@@ -1104,8 +1110,8 @@ function PointRadiusCard({
             onChange={(v) => {
               onChange({ ...pred, endTimeTo: v });
             }}
-            minDate={dateRange?.first_date ?? undefined}
-            maxDate={dateRange?.last_date ?? undefined}
+            minDate={effectiveMinDate}
+            maxDate={effectiveMaxDate}
           />
         </div>
       )}
@@ -1127,6 +1133,7 @@ function RegionCard({
   isPickingAirspace,
   name,
   dateRange,
+  globalDateRange,
 }: {
   pred: RegionLikePred;
   onChange: (p: RegionLikePred) => void;
@@ -1139,7 +1146,12 @@ function RegionCard({
   isPickingAirspace: boolean;
   name: string;
   dateRange: DataRange | null;
+  globalDateRange: GlobalDateRange | null;
 }): React.ReactElement {
+  const effectiveMinDate =
+    globalDateRange?.from ?? dateRange?.first_date ?? undefined;
+  const effectiveMaxDate =
+    globalDateRange?.to ?? dateRange?.last_date ?? undefined;
   const geometryTooLarge =
     (pred.shape === "circle" &&
       pred.lat !== null &&
@@ -1461,8 +1473,8 @@ function RegionCard({
               onChange={(v) => {
                 onChange({ ...pred, timeFrom: v });
               }}
-              minDate={dateRange?.first_date ?? undefined}
-              maxDate={dateRange?.last_date ?? undefined}
+              minDate={effectiveMinDate}
+              maxDate={effectiveMaxDate}
             />
             <DateTimeField
               label="To"
@@ -1470,8 +1482,8 @@ function RegionCard({
               onChange={(v) => {
                 onChange({ ...pred, timeTo: v });
               }}
-              minDate={dateRange?.first_date ?? undefined}
-              maxDate={dateRange?.last_date ?? undefined}
+              minDate={effectiveMinDate}
+              maxDate={effectiveMaxDate}
             />
           </div>
         )}
@@ -1821,6 +1833,7 @@ function PredicateRenderer({
           isPickingAirspace={isPickingAirspace}
           name={name}
           dateRange={dateRange}
+          globalDateRange={globalDateRange}
         />
       );
     case "region":
@@ -1840,6 +1853,7 @@ function PredicateRenderer({
           isPickingAirspace={isPickingAirspace}
           name={name}
           dateRange={dateRange}
+          globalDateRange={globalDateRange}
         />
       );
     case "callsign":
