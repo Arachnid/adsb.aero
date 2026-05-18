@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     import asyncpg
 
 from adsb_server.config import get_settings
+from adsb_server.geometry.h3_cells import path_h3_cells
 from adsb_server.geometry.wkt import (
     tfloat_stepwise_seqset,
     tgeompoint_seqset,
@@ -71,12 +72,12 @@ INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
     start_ts, end_ts, path, path_tracks,
     squawk_seq, alt_correction_ft,
     path_gs, path_vr, path_ias,
-    raw_point_count, ingest_batch_date)
+    raw_point_count, ingest_batch_date, path_h3, squawk_codes)
 VALUES ($1,$2,$3,$4,$5,$6,
     $7::tgeompoint, $8::tint,
     $9::ttext, $10::tfloat,
     $11::tint, $12::tint, $13::tint,
-    $14, $15)
+    $14, $15, $16::h3index[], $17::text[])
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
@@ -86,7 +87,9 @@ ON CONFLICT (icao24, start_ts) DO UPDATE SET
     alt_correction_ft=EXCLUDED.alt_correction_ft,
     path_gs=EXCLUDED.path_gs, path_vr=EXCLUDED.path_vr, path_ias=EXCLUDED.path_ias,
     raw_point_count=EXCLUDED.raw_point_count,
-    ingest_batch_date=EXCLUDED.ingest_batch_date
+    ingest_batch_date=EXCLUDED.ingest_batch_date,
+    path_h3=EXCLUDED.path_h3,
+    squawk_codes=EXCLUDED.squawk_codes
 """
 
 _FlightParams = tuple[
@@ -105,6 +108,8 @@ _FlightParams = tuple[
     str | None,
     int,
     date,
+    list[str],
+    list[str],
 ]
 
 
@@ -178,6 +183,8 @@ def _flight_to_params(
         tint_seqset(flight.path_ias_series),
         flight.raw_point_count,
         batch_date,
+        path_h3_cells(flight.vertex_sequences),
+        list({code for seq in flight.squawk_runs for _, code in seq}),
     )
 
 

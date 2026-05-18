@@ -53,6 +53,98 @@ class TestValueValidators:
 
 
 # ---------------------------------------------------------------------------
+# H3 pre-filter — path_h3 && $n::h3index[]
+# ---------------------------------------------------------------------------
+
+
+class TestH3PreFilter:
+    def test_circle_emits_h3_gin_filter(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_CIRCLE)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_h3 &&" in sql
+        assert "::h3index[]" in sql
+        # First param should be the h3 cell list (a Python list of strings)
+        assert isinstance(params[0], list)
+        assert len(params[0]) > 0
+
+    def test_polygon_emits_h3_gin_filter(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_h3 &&" in sql
+        assert "::h3index[]" in sql
+        assert isinstance(params[0], list)
+        assert len(params[0]) > 0
+
+    def test_no_geometry_no_h3_filter(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                altitude_min=350, altitude_min_ref="fl"
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_h3" not in sql
+
+    def test_h3_filter_uses_python_binding_not_sql_subquery(self) -> None:
+        # The old implementation used a SQL subquery with h3_grid_disk; new uses bound array.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_CIRCLE)
+        )
+        sql = compile_predicate(pred, params)
+        assert "h3_grid_disk" not in sql
+        assert "h3_lat_lng_to_cell" not in sql
+        assert "ARRAY(SELECT" not in sql
+
+    def test_h3_filter_present_with_altitude_and_time(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON,
+                altitude_min=100,
+                altitude_min_ref="fl",
+                time_from=_T1,
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_h3 &&" in sql
+        assert "::h3index[]" in sql
+
+    def test_multipolygon_emits_h3_gin_filter(self) -> None:
+        multipolygon = {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [[[-2, 50], [2, 50], [2, 52], [-2, 52], [-2, 50]]],
+                [[[5, 48], [8, 48], [8, 50], [5, 50], [5, 48]]],
+            ],
+        }
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=multipolygon)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_h3 &&" in sql
+        assert "::h3index[]" in sql
+        assert isinstance(params[0], list)
+        assert len(params[0]) > 0
+
+    def test_point_geometry_no_h3_filter(self) -> None:
+        point = {"type": "Point", "coordinates": [-1.0, 52.0]}
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=point)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_h3" not in sql
+
+
+# ---------------------------------------------------------------------------
 # _compile_geometry_sql — Circle vs GeoJSON
 # ---------------------------------------------------------------------------
 
@@ -66,7 +158,7 @@ class TestCircleGeometry:
         sql = compile_predicate(pred, params)
         assert "ST_Buffer" in sql
         assert "ST_MakePoint" in sql
-        assert len(params) == 3  # lon, lat, radius
+        assert len(params) == 4  # h3_cells, lon, lat, radius
 
     def test_polygon_path_predicate_uses_geomfromgeojson(self) -> None:
         params: list = []
@@ -76,7 +168,7 @@ class TestCircleGeometry:
         sql = compile_predicate(pred, params)
         assert "ST_GeomFromGeoJSON" in sql
         assert "ST_Buffer" not in sql
-        assert len(params) == 1  # serialised GeoJSON string
+        assert len(params) == 2  # h3_cells, serialised GeoJSON string
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +184,7 @@ class TestTrajectoryIntersects:
         )
         sql = compile_predicate(pred, params)
         assert "eIntersects(path," in sql
+        assert "ST_Intersects(trajectory(path)::geometry," not in sql
         assert "atStbox" not in sql
         assert "stbox" not in sql
 
@@ -477,10 +570,10 @@ class TestTrajectoryIntersects:
         assert "start_ts <" in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
         assert "ST_ZMin(trajectory(path)::box3d)" not in compiled
-        # Params: alt_min (x100), alt_max (x100), time_from, time_to, geom
+        # Params: alt_min (x100), alt_max (x100), time_from, time_to, h3_cells, geom
         assert 10000.0 in params
         assert 40000.0 in params
-        assert len(params) == 5
+        assert len(params) == 6
 
     def test_geometry_time_only_uses_stbox_cte(self) -> None:
         params: list = []
@@ -567,12 +660,14 @@ class TestTrajectoryWithin:
 
 class TestSquawkFilter:
     def test_squawk_codes_only_no_geometry(self) -> None:
-        # No geometry: check entire squawk_seq, no atgeometry correlation.
+        # No geometry: GIN pre-filter then entire squawk_seq check, no atgeometry.
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(squawk_codes=["7700"])
         )
         sql = compile_predicate(pred, params)
+        assert "squawk_codes &&" in sql
+        assert "::text[]" in sql
         assert "squawk_seq IS NOT NULL" in sql
         assert "EXISTS" in sql
         assert "getValue(_inst)" in sql
@@ -585,8 +680,20 @@ class TestSquawkFilter:
             trajectory_intersects=SpatioTemporalAltitudeValue(squawk_codes=["7700", "7600", "7500"])
         )
         sql = compile_predicate(pred, params)
+        assert "squawk_codes &&" in sql
         assert "squawk_seq IS NOT NULL" in sql
         assert ["7700", "7600", "7500"] in params
+
+    def test_squawk_gin_prefilter_reuses_param(self) -> None:
+        # The same $n placeholder is used for both the GIN pre-filter and the EXISTS check.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(squawk_codes=["7700"])
+        )
+        sql = compile_predicate(pred, params)
+        assert len(params) == 1
+        # Both the pre-filter and the EXISTS check reference the same param.
+        assert sql.count("$1") == 2
 
     def test_squawk_codes_with_geometry_correlates_atgeometry(self) -> None:
         # With geometry: squawk is checked only at instants the path was inside the polygon.
@@ -657,7 +764,7 @@ class TestSquawkFilter:
         assert ["7700"] in params
 
     def test_squawk_codes_param_count_no_geometry(self) -> None:
-        # squawk_codes alone = 1 param (the list itself, asyncpg sends as text[])
+        # squawk_codes alone = 1 param (reused for both GIN pre-filter and EXISTS check)
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(squawk_codes=["7700"])

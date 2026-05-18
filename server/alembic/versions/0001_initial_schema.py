@@ -6,7 +6,6 @@ Create Date: 2026-05-03
 
 """
 
-
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
@@ -25,15 +24,22 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS postgis"))
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS mobilitydb"))
+    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS h3"))
     op.execute(sa.text("CREATE SCHEMA IF NOT EXISTS partman"))
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman"))
 
     # ------------------------------------------------------------------
     # flights — finalised trajectories, partitioned monthly by start_ts
     #
-    # path       tgeompoint — SRID 4326, 3D with Z=pressure-alt-ft;
-    #                         timestamps are the native temporal dimension.
-    # path_tracks tint      — per-instant heading (0-359°), stepwise.
+    # path        tgeompoint  — SRID 4326, 3D with Z=pressure-alt-ft;
+    #                           timestamps are the native temporal dimension.
+    # path_tracks tint        — per-instant heading (0-359°), stepwise.
+    # path_h3     h3index[]   — H3 res-4 cells covering the trajectory,
+    #                           computed in Python at ingestion; drives the
+    #                           GIN spatial pre-filter.
+    # squawk_codes text[]     — distinct squawk codes seen on the flight,
+    #                           computed in Python at ingestion; drives the
+    #                           GIN squawk pre-filter.
     # start_point / end_point are derived at query time via startValue(path)
     # and endValue(path), with expression indexes for radius queries.
     # ------------------------------------------------------------------
@@ -73,6 +79,8 @@ def upgrade() -> None:
                 ) STORED,
             raw_point_count   INTEGER      NOT NULL DEFAULT 0,
             ingest_batch_date DATE         NOT NULL,
+            path_h3           h3index[]    NOT NULL DEFAULT '{}',
+            squawk_codes      text[]       NOT NULL DEFAULT '{}',
             PRIMARY KEY (icao24, start_ts)
         ) PARTITION BY RANGE (start_ts)
         """)
@@ -90,12 +98,15 @@ def upgrade() -> None:
         """)
     )
 
-    # STBOX GiST index on path — covers X, Y, Z (altitude), T (time) in a
-    # single scan; replaces the old gist_geometry_ops_nd + alt btree indexes.
+    # H3 GIN index — drives spatial pre-filtering via path_h3 && $cells::h3index[].
+    # Replaces the old MobilityDB GiST index on path.
     op.execute(
-        sa.text("""
-        CREATE INDEX flights_path ON flights USING GIST (path)
-        """)
+        sa.text("CREATE INDEX flights_path_h3_gin ON flights USING GIN (path_h3)")
+    )
+
+    # Squawk GIN index — pre-filters squawk queries before MobilityDB temporal check.
+    op.execute(
+        sa.text("CREATE INDEX flights_squawk_codes_gin ON flights USING GIN (squawk_codes)")
     )
 
     # Expression indexes on the derived start/end points for radius queries.
@@ -158,7 +169,6 @@ def upgrade() -> None:
         """)
     )
 
-
     # ------------------------------------------------------------------
     # icao_type_stats — per-day ICAO type flight counts with model name
     #
@@ -213,3 +223,4 @@ def downgrade() -> None:
     op.execute(sa.text("DROP EXTENSION IF EXISTS pg_partman"))
     op.execute(sa.text("DROP SCHEMA IF EXISTS partman CASCADE"))
     op.execute(sa.text("DROP EXTENSION IF EXISTS mobilitydb"))
+    op.execute(sa.text("DROP EXTENSION IF EXISTS h3"))

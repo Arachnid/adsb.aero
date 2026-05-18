@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from adsb_server.geometry.h3_cells import query_disk, query_polygon_cells
 from adsb_server.query.models import (
     AndPredicate,
     AnyGeometry,
@@ -12,6 +13,8 @@ from adsb_server.query.models import (
     Duration,
     EmitterCategory,
     EndsWithin,
+    GeoJSONMultiPolygon,
+    GeoJSONPolygon,
     IcaoType,
     NotPredicate,
     OrPredicate,
@@ -61,6 +64,34 @@ def _p(params: list[Any], val: Any) -> str:
     """Append val to params list and return the $n placeholder string."""
     params.append(val)
     return f"${len(params)}"
+
+
+def _h3_cells_for_geometry(geom: AnyGeometry) -> list[str] | None:
+    """Compute H3 res-4 pre-filter cells for a geometry, or None if unsupported.
+
+    Returns None for Point and MultiPoint (intersecting a trajectory with a point
+    is measure-zero and never true in practice) and for LineString / MultiLineString
+    / GeometryCollection, which lack an implementation here.  LineString could be
+    handled via path_h3_cells on its coordinates if crossing queries become common.
+    Queries with unsupported types still work correctly — they just skip the GIN
+    pre-filter and rely on ST_Intersects to do the full scan.
+    """
+    if isinstance(geom, CircleGeometry):
+        return query_disk(geom.coordinates[1], geom.coordinates[0], geom.radius)
+    if isinstance(geom, GeoJSONPolygon):
+        rings: list[list[tuple[float, float]]] = [
+            [(p[0], p[1]) for p in ring] for ring in geom.coordinates
+        ]
+        return query_polygon_cells(rings)
+    if isinstance(geom, GeoJSONMultiPolygon):
+        cells: set[str] = set()
+        for polygon in geom.coordinates:
+            poly_rings: list[list[tuple[float, float]]] = [
+                [(p[0], p[1]) for p in ring] for ring in polygon
+            ]
+            cells.update(query_polygon_cells(poly_rings))
+        return list(cells)
+    return None
 
 
 def _compile_geometry_sql(geom: AnyGeometry, params: list[Any]) -> str:
@@ -202,9 +233,15 @@ def _compile_spatial_path(
     clipped_path_expr: str | None = None
 
     if v.geometry is not None:
+        h3_cells = _h3_cells_for_geometry(v.geometry)
+        if h3_cells is not None:
+            h3_p = _p(params, h3_cells)
+            parts.append(f"path_h3 && {h3_p}::h3index[]")
+
         geom_sql = _compile_geometry_sql(v.geometry, params)
 
         if has_time or has_alt:
+            assert geom_sql is not None
             # CTE name is unique because len(params) grows monotonically across the
             # entire compile call; each spatial predicate with a CTE adds at least one
             # param before reaching this point.
@@ -267,9 +304,8 @@ def _compile_spatial_path(
             # Geometry only — no altitude or time constraints.
             if spatial_fn == "ST_Within":
                 parts.append(f"ST_Within(trajectory(path), {geom_sql})")
-            else:  # ST_Intersects
+            else:
                 parts.append(f"eIntersects(path, {geom_sql})")
-            # Squawk check window: path clipped to the geometry.
             clipped_path_expr = f"atgeometry(path, {geom_sql})"
 
     # Altitude when no geometry: btree indexes on stored generated columns for all refs.
@@ -305,10 +341,12 @@ def _compile_spatial_path(
         distmax_p = _p(params, v.distance_max_m)
         parts.append(f"length(trajectory({clipped_path_expr})::geography) <= {distmax_p}")
 
-    # Squawk filter: check the given codes at the instants the path was inside the
-    # region of interest.  When there is no geometry, check the entire squawk_seq.
+    # Squawk filter: GIN pre-filter then precise temporal check.
+    # squawk_codes (text[] GIN) eliminates flights that never had any of the
+    # queried codes.  squawk_seq IS NOT NULL + EXISTS then checks exact instants.
     if v.squawk_codes:
         codes_p = _p(params, v.squawk_codes)
+        parts.append(f"squawk_codes && {codes_p}::text[]")
         parts.append("squawk_seq IS NOT NULL")
         if clipped_path_expr is not None:
             # Correlate: squawk must match during the instants the path was in the region.

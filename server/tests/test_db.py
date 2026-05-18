@@ -83,14 +83,25 @@ async def test_flights_monthly_partitions_exist(conn: asyncpg.Connection) -> Non
 
 
 @pytest.mark.asyncio
-async def test_flights_path_gist_index_exists(conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
+async def test_flights_path_h3_gin_index_exists(conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
     row = await conn.fetchrow(
         """
         SELECT indexname FROM pg_indexes
-        WHERE tablename = 'flights' AND indexname = 'flights_path'
+        WHERE tablename = 'flights' AND indexname = 'flights_path_h3_gin'
         """
     )
-    assert row is not None, "MobilityDB STBOX GiST index flights_path not found"
+    assert row is not None, "H3 GIN index flights_path_h3_gin not found"
+
+
+@pytest.mark.asyncio
+async def test_flights_squawk_codes_gin_index_exists(conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
+    row = await conn.fetchrow(
+        """
+        SELECT indexname FROM pg_indexes
+        WHERE tablename = 'flights' AND indexname = 'flights_squawk_codes_gin'
+        """
+    )
+    assert row is not None, "squawk_codes GIN index flights_squawk_codes_gin not found"
 
 
 @pytest.mark.asyncio

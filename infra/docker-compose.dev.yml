@@ -23,7 +23,7 @@ services:
 
   scheduler:
     environment:
-      SCHEDULER_LOOKBACK_DAYS: "7"
+      SCHEDULER_LOOKBACK_DAYS: "80"
       SCHEDULER_KEEP_TRACES: "true"
       HERBIE_KEEP_CACHE: "true"
     volumes:

@@ -19,6 +19,7 @@ dependencies = [
     "scipy>=1.14",
     "cfgrib>=0.9.14",
     "herbie-data>=2025.3",
+    "h3>=4.1",
     "orjson>=3.10",
     "redis>=5.2",
     "sqlalchemy[asyncio]>=2.0",
@@ -60,7 +61,7 @@ python_version = "3.14"
 exclude = ["tests/"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg.*", "dramatiq.*", "pyproj.*", "shapely.*", "testcontainers.*", "alembic.*", "herbie.*", "cfgrib.*"]
+module = ["asyncpg.*", "dramatiq.*", "pyproj.*", "shapely.*", "testcontainers.*", "alembic.*", "herbie.*", "cfgrib.*", "h3.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

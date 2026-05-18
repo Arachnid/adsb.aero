@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     import asyncpg
 
 from adsb_server.api.main import app
+from adsb_server.geometry.h3_cells import path_h3_cells
 from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq, ttext_seq
 
 # ---------------------------------------------------------------------------
@@ -56,12 +57,14 @@ INSERT_FLIGHT = """
         icao24, callsign, icao_type, emitter_category,
         start_ts, end_ts,
         path, path_tracks,
-        squawk_seq, raw_point_count, ingest_batch_date
+        squawk_seq, raw_point_count, ingest_batch_date,
+        path_h3, squawk_codes
     ) VALUES (
         $1, $2, $3, $4,
         $5, $6,
         $7::tgeompoint, $8::tint,
-        $9::ttext, $10, $11
+        $9::ttext, $10, $11,
+        $12::h3index[], $13::text[]
     )
     ON CONFLICT (icao24, start_ts) DO NOTHING
 """
@@ -94,6 +97,8 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
         ttext_seq([(1743501600.0, "1234"), (1743508800.0, "1234")]),
         30,
         date(2025, 4, 1),
+        path_h3_cells([_A_VERTS]),
+        ["1234"],  # squawk_codes seen on flight A
     )
     await pool.execute(
         INSERT_FLIGHT,
@@ -108,6 +113,8 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
         None,
         50,
         date(2025, 4, 1),
+        path_h3_cells([_B_VERTS]),
+        [],  # no squawk data for flight B
     )
     # Airframe data for flight A only; flight B tests the null case.
     await pool.execute(
