@@ -37,7 +37,7 @@ def _fetch_hour(
     Herbie-supplied run-time coordinates are dropped so slices from different
     run cycles can be concatenated without conflicts.
     """
-    from herbie import Herbie  # type: ignore[attr-defined]
+    from herbie import Herbie
 
     logger.debug("Downloading MSLP %s %02dZ+%d", run_date, run_hour, fxx)
     try:

@@ -8,7 +8,7 @@ import logging
 import tarfile
 from collections.abc import Iterator  # noqa: TC003
 from pathlib import Path  # noqa: TC003
-from typing import Any
+from typing import IO, Any, cast
 
 import orjson
 
@@ -311,7 +311,7 @@ def stream_tarball_raw(path: Path) -> Iterator[tuple[str, bytes]]:
             logger.warning("No tar parts found in directory: %s", path)
             return
         stream = _ChainedStream(parts)
-        with tarfile.open(fileobj=stream, mode="r|") as tf:
+        with tarfile.open(fileobj=cast("IO[bytes]", stream), mode="r|") as tf:
             yield from _iter_tarfile_raw(tf)
     else:
         raise FileNotFoundError(f"Path does not exist: {path}")

@@ -25,14 +25,6 @@ services:
     expose:
       - "5173"
 
-  scheduler:
-    environment:
-      SCHEDULER_LOOKBACK_DAYS: "80"
-      SCHEDULER_KEEP_TRACES: "true"
-      HERBIE_KEEP_CACHE: "true"
-    volumes:
-      - dev_scheduler_cache:/data/cache
-
   nginx:
     # dev.conf.template shadows prod.conf.template at the same destination path;
     # Docker uses the last mount for duplicate destinations.
@@ -40,6 +32,47 @@ services:
       - ./nginx/dev.conf.template:/etc/nginx/templates/default.conf.template:ro
     depends_on:
       - vite
+
+  ofelia:
+    profiles: ["tools"]  # disabled in dev — scheduling not needed; use make import-traces
+
+  # One-shot import services for manual dev use (not started by `docker compose up`).
+  # Run with: docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm import-traces
+  import-traces:
+    image: adsb-api:latest
+    profiles: ["tools"]
+    command: ["python", "-m", "adsb_server.ingestion.scheduler_main"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-adsb}
+      POSTGRES_USER: ${POSTGRES_USER:-adsb}
+      SCHEDULER_CACHE_DIR: /data/cache
+      SCHEDULER_LOOKBACK_DAYS: "80"
+      SCHEDULER_KEEP_TRACES: "true"
+      HERBIE_KEEP_CACHE: "true"
+    volumes:
+      - dev_scheduler_cache:/data/cache
+    networks:
+      - db
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  import-airframes:
+    image: adsb-api:latest
+    profiles: ["tools"]
+    command: ["python", "-m", "adsb_server.reference_data.airframes"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-adsb}
+      POSTGRES_USER: ${POSTGRES_USER:-adsb}
+    networks:
+      - db
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   vite_node_modules:

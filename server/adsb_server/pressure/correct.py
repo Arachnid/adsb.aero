@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
-from scipy.interpolate import RegularGridInterpolator  # type: ignore[import-untyped]
+from scipy.interpolate import RegularGridInterpolator
 
 if TYPE_CHECKING:
     import xarray as xr

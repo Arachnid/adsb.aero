@@ -1,4 +1,4 @@
-.PHONY: dev dev-down prod prod-down logs build-web migrate import-airframes
+.PHONY: dev dev-down prod prod-down logs build-web migrate import-airframes import-traces
 
 # ── Dev stack ────────────────────────────────────────────────────────────────
 # Brings up postgres, redis, api (--reload), vite dev server, and nginx.
@@ -27,6 +27,9 @@ migrate:
 
 import-airframes:
 	cd server && .venv/bin/python -m adsb_server.reference_data.airframes
+
+import-traces:
+	cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm import-traces
 
 # ── Code generation ───────────────────────────────────────────────────────────
 # Export the OpenAPI spec from the server and regenerate web TypeScript types.

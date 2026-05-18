@@ -1,3 +1,5 @@
+name: infra
+
 services:
   postgres:
     build: ./postgres
@@ -94,27 +96,13 @@ services:
     depends_on:
       - api
 
-  scheduler:
-    build:
-      context: ../server
+  ofelia:
+    image: mcuadros/ofelia:latest
     restart: unless-stopped
-    command: ["python", "-m", "adsb_server.ingestion.scheduler_main"]
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-adsb}
-      POSTGRES_USER: ${POSTGRES_USER:-adsb}
-      SCHEDULER_CACHE_DIR: /data/cache
-      SCHEDULER_INTERVAL_SECONDS: "43200"
-      SCHEDULER_LOOKBACK_DAYS: "0"
-      SCHEDULER_KEEP_TRACES: "false"
+    command: daemon --config=/etc/ofelia/config.ini
     volumes:
-      - scheduler_cache:/data/cache
-    networks:
-      - db
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./ofelia/config.ini:/etc/ofelia/config.ini:ro
 
 volumes:
   postgres_data:
@@ -132,3 +120,5 @@ secrets:
 
 networks:
   db:
+    # Not marked internal: job containers need outbound internet access to download
+    # traces from GitHub. Postgres is secured by the absence of port mappings.

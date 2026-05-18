@@ -59,8 +59,14 @@ python_version = "3.14"
 exclude = ["tests/"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg", "asyncpg.*", "dramatiq.*", "pyproj.*", "shapely.*", "testcontainers.*", "alembic.*", "herbie.*", "cfgrib.*", "h3", "h3.*"]
+module = ["asyncpg", "asyncpg.*", "dramatiq.*", "pyproj.*", "shapely.*", "testcontainers.*", "alembic.*", "cfgrib.*", "h3", "h3.*", "numpy", "numpy.*", "scipy", "scipy.*", "xarray", "xarray.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# herbie-data doesn't mark its public API with __all__; allow implicit re-exports.
+module = ["herbie", "herbie.*"]
+ignore_missing_imports = true
+no_implicit_reexport = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

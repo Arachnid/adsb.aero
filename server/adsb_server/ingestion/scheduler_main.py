@@ -13,17 +13,16 @@ import sys
 import asyncpg
 
 from adsb_server.config import get_settings
-from adsb_server.ingestion.scheduler import scheduler_loop
+from adsb_server.ingestion.scheduler import check_and_run_new_batches
 
 
 async def _main() -> None:
     settings = get_settings()
     conn: asyncpg.Connection[asyncpg.Record] = await asyncpg.connect(settings.asyncpg_dsn)
     try:
-        await scheduler_loop(
+        await check_and_run_new_batches(
             conn,
             settings.scheduler_cache_dir,
-            interval_seconds=settings.scheduler_interval_seconds,
             lookback_days=settings.scheduler_lookback_days,
             keep_traces=settings.scheduler_keep_traces,
         )
