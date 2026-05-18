@@ -893,9 +893,9 @@ function PointRadiusCard({
   globalDateRange: GlobalDateRange | null;
 }): React.ReactElement {
   const effectiveMinDate =
-    globalDateRange?.from ?? dateRange?.first_date ?? undefined;
+    globalDateRange?.from || dateRange?.first_date || undefined;
   const effectiveMaxDate =
-    globalDateRange?.to ?? dateRange?.last_date ?? undefined;
+    globalDateRange?.to || dateRange?.last_date || undefined;
   const showStartTime =
     pred.mode === "start" || pred.mode === "either" || pred.mode === "both";
   const showEndTime =
@@ -1149,9 +1149,9 @@ function RegionCard({
   globalDateRange: GlobalDateRange | null;
 }): React.ReactElement {
   const effectiveMinDate =
-    globalDateRange?.from ?? dateRange?.first_date ?? undefined;
+    globalDateRange?.from || dateRange?.first_date || undefined;
   const effectiveMaxDate =
-    globalDateRange?.to ?? dateRange?.last_date ?? undefined;
+    globalDateRange?.to || dateRange?.last_date || undefined;
   const geometryTooLarge =
     (pred.shape === "circle" &&
       pred.lat !== null &&
