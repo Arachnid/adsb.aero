@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import {
   MapView,
+  FitBoundsTarget,
   MapBounds,
   HoveredPoint,
   ColorMode,
@@ -234,7 +235,38 @@ export function App(): React.ReactElement {
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
+  const [fitBoundsTarget, setFitBoundsTarget] =
+    useState<FitBoundsTarget | null>(null);
+  const fitBoundsSeqRef = useRef(0);
   const [hoveredPoint, setHoveredPoint] = useState<HoveredPoint | null>(null);
+
+  const handleSelectFlightFromPanel = useCallback(
+    (id: string | null) => {
+      setSelectedFlightId(id);
+      if (id === null) return;
+      const flight = queryFlights?.find((f) => f.flight_id === id);
+      const coords = flight?.path?.coordinates.flat() ?? [];
+      if (coords.length === 0) return;
+      let west = Infinity,
+        south = Infinity,
+        east = -Infinity,
+        north = -Infinity;
+      for (const c of coords) {
+        if (c[0] < west) west = c[0];
+        if (c[0] > east) east = c[0];
+        if (c[1] < south) south = c[1];
+        if (c[1] > north) north = c[1];
+      }
+      setFitBoundsTarget({
+        west,
+        south,
+        east,
+        north,
+        seq: ++fitBoundsSeqRef.current,
+      });
+    },
+    [queryFlights],
+  );
   const queryAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -541,6 +573,7 @@ export function App(): React.ReactElement {
         onSelectFlight={setSelectedFlightId}
         hoveredPoint={hoveredPoint}
         onHoverPoint={setHoveredPoint}
+        fitBoundsTarget={fitBoundsTarget}
       />
 
       {showRerunChip && (
@@ -648,7 +681,7 @@ export function App(): React.ReactElement {
           hasMore={hasMore}
           onLoadMore={handleLoadMore}
           selectedFlightId={selectedFlightId}
-          onSelectFlight={setSelectedFlightId}
+          onSelectFlight={handleSelectFlightFromPanel}
           hoveredPoint={hoveredPoint}
           onHoverPoint={setHoveredPoint}
           windowFrom={queryWindowFrom}

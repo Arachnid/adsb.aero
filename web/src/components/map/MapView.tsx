@@ -423,6 +423,13 @@ function initOverlays(map: MaplibreMap, geoms: MapGeometry[]): void {
 export type MapBounds = [number, number, number, number];
 
 export type HoveredPoint = { flightId: string; pointIdx: number };
+export type FitBoundsTarget = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  seq: number;
+};
 
 interface MapViewProps {
   basemap: Basemap;
@@ -441,6 +448,7 @@ interface MapViewProps {
   onSelectFlight: (id: string | null) => void;
   hoveredPoint: HoveredPoint | null;
   onHoverPoint: (p: HoveredPoint | null) => void;
+  fitBoundsTarget?: FitBoundsTarget | null;
 }
 
 export function MapView({
@@ -460,6 +468,7 @@ export function MapView({
   onSelectFlight,
   hoveredPoint,
   onHoverPoint,
+  fitBoundsTarget,
 }: MapViewProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
@@ -527,6 +536,19 @@ export function MapView({
       setSource(mapRef.current?.getSource("draft"), EMPTY_FC);
     }
   }, [drawingActive]);
+
+  useEffect(() => {
+    if (!fitBoundsTarget) return;
+    const map = mapRef.current;
+    if (!map) return;
+    map.fitBounds(
+      [
+        [fitBoundsTarget.west, fitBoundsTarget.south],
+        [fitBoundsTarget.east, fitBoundsTarget.north],
+      ],
+      { padding: 60, maxZoom: 10 },
+    );
+  }, [fitBoundsTarget]);
 
   useEffect(() => {
     const map = mapRef.current;
