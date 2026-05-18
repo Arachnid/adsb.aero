@@ -49,7 +49,10 @@ type Seg = {
 };
 
 // Step-interpolate (forward-fill) a [[ts, value], ...] series at a given timestamp.
-export function stepValueAt(series: number[][] | null | undefined, ts: number): number | null {
+export function stepValueAt(
+  series: number[][] | null | undefined,
+  ts: number,
+): number | null {
   if (!series || series.length === 0) return null;
   let val: number | null = null;
   for (const entry of series) {
@@ -74,7 +77,10 @@ export function projectOntoSegment(
   if (lenSq === 0) return 0;
   return Math.max(
     0,
-    Math.min(1, ((cursor[0] - from[0]) * dx + (cursor[1] - from[1]) * dy) / lenSq),
+    Math.min(
+      1,
+      ((cursor[0] - from[0]) * dx + (cursor[1] - from[1]) * dy) / lenSq,
+    ),
   );
 }
 
@@ -130,7 +136,15 @@ const SAT_STYLE: StyleSpecification = {
       maxzoom: 19,
     },
   },
-  layers: [{ id: "esri-sat", type: "raster", source: "esri-sat", minzoom: 0, maxzoom: 22 }],
+  layers: [
+    {
+      id: "esri-sat",
+      type: "raster",
+      source: "esri-sat",
+      minzoom: 0,
+      maxzoom: 22,
+    },
+  ],
 };
 
 const STYLES: Record<Basemap, string | StyleSpecification> = {
@@ -231,7 +245,8 @@ function topEdgeInfo(pts: Coord[]): { center: Coord; rotation: number } {
   // rather than averaging, so that a flat edge and a slightly angled neighbour
   // of similar length don't combine into a jaunty result.
   // When all edges are short (e.g. a circle), average them by length instead.
-  const polyWidth = (topMaxLng - topMinLng) * Math.cos((maxLat * Math.PI) / 180);
+  const polyWidth =
+    (topMaxLng - topMinLng) * Math.cos((maxLat * Math.PI) / 180);
   const longThreshold = polyWidth * 0.15;
   const longEdges = topEdges.filter((e) => e.len > longThreshold);
 
@@ -384,7 +399,11 @@ function initOverlays(map: MaplibreMap, geoms: MapGeometry[]): void {
     type: "line",
     source: "draft",
     filter: ["==", "$type", "LineString"],
-    paint: { "line-color": "#ffffff", "line-width": 1.5, "line-dasharray": [3, 2] },
+    paint: {
+      "line-color": "#ffffff",
+      "line-width": 1.5,
+      "line-dasharray": [3, 2],
+    },
   });
   map.addLayer({
     id: "draft-point",
@@ -459,7 +478,9 @@ export function MapView({
   const onPickAirspaceRef = useRef(onPickAirspace);
   const selectedFlightIdRef = useRef(selectedFlightId);
   // Persists the main flight layers so the hover-dot effect can append without rebuilding them.
-  const mainLayersRef = useRef<(LineLayer<Seg> | ScatterplotLayer<FlightDetail>)[]>([]);
+  const mainLayersRef = useRef<
+    (LineLayer<Seg> | ScatterplotLayer<FlightDetail>)[]
+  >([]);
 
   const [mapTooltip, setMapTooltip] = useState<{
     x: number;
@@ -510,14 +531,20 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getLayer("openaip-charts")) return;
-    map.setLayoutProperty("openaip-charts", "visibility", chartsOn ? "visible" : "none");
+    map.setLayoutProperty(
+      "openaip-charts",
+      "visibility",
+      chartsOn ? "visible" : "none",
+    );
   }, [chartsOn]);
 
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas();
     if (canvas) {
       canvas.style.cursor =
-        pickingActive || drawingActive || airspacePickingActive ? "crosshair" : "";
+        pickingActive || drawingActive || airspacePickingActive
+          ? "crosshair"
+          : "";
     }
   }, [pickingActive, drawingActive, airspacePickingActive]);
 
@@ -549,7 +576,9 @@ export function MapView({
       }
     };
 
-    const onDblClick = (e: MapMouseEvent & { preventDefault: () => void }): void => {
+    const onDblClick = (
+      e: MapMouseEvent & { preventDefault: () => void },
+    ): void => {
       if (!drawingRef.current) return;
       e.preventDefault();
       const { lat, lng } = e.lngLat;
@@ -576,7 +605,8 @@ export function MapView({
           tileSize: 256,
           minzoom: 5,
           maxzoom: 14,
-          attribution: "© <a href='https://www.openaip.net/' target='_blank'>OpenAIP</a>",
+          attribution:
+            "© <a href='https://www.openaip.net/' target='_blank'>OpenAIP</a>",
         });
         map.addLayer({
           id: "openaip-charts",
@@ -635,7 +665,10 @@ export function MapView({
             seg.from[0] + t * (seg.to[0] - seg.from[0]),
             seg.from[1] + t * (seg.to[1] - seg.from[1]),
           ];
-          onHoverPointRef.current({ flightId: seg.flightId, pointIdx: seg.pointIdx });
+          onHoverPointRef.current({
+            flightId: seg.flightId,
+            pointIdx: seg.pointIdx,
+          });
           setMapTooltipRef.current({
             x: info.x,
             y: info.y,
@@ -749,7 +782,8 @@ export function MapView({
       return base;
     };
 
-    const getWidth = (s: Seg): number => (hasSel && s.flightId === selectedFlightId ? 4 : 2.5);
+    const getWidth = (s: Seg): number =>
+      hasSel && s.flightId === selectedFlightId ? 4 : 2.5;
 
     const layers = [
       new LineLayer<Seg>({
@@ -770,7 +804,9 @@ export function MapView({
           f.start_point.coordinates[1],
         ],
         getFillColor: (f): RGBA =>
-          hasSel && f.flight_id !== selectedFlightId ? [60, 200, 80, 46] : [60, 200, 80, 230],
+          hasSel && f.flight_id !== selectedFlightId
+            ? [60, 200, 80, 46]
+            : [60, 200, 80, 230],
         getRadius: 3,
         radiusUnits: "pixels",
       }),
@@ -782,7 +818,9 @@ export function MapView({
           f.end_point.coordinates[1],
         ],
         getFillColor: (f): RGBA =>
-          hasSel && f.flight_id !== selectedFlightId ? [220, 60, 60, 46] : [220, 60, 60, 230],
+          hasSel && f.flight_id !== selectedFlightId
+            ? [220, 60, 60, 46]
+            : [220, 60, 60, 230],
         getRadius: 3,
         radiusUnits: "pixels",
       }),
@@ -864,25 +902,59 @@ export function MapView({
             minWidth: 130,
           }}
         >
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 2 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 6,
+              marginBottom: 2,
+            }}
+          >
             <span style={{ fontWeight: 600, fontSize: 12 }}>
               {mapTooltip.callsign ?? mapTooltip.icao24}
             </span>
             {mapTooltip.callsign && (
-              <span style={{ color: "var(--fg-3)", fontSize: 10 }}>{mapTooltip.icao24}</span>
+              <span style={{ color: "var(--fg-3)", fontSize: 10 }}>
+                {mapTooltip.icao24}
+              </span>
             )}
           </div>
           {(mapTooltip.icaoType ?? mapTooltip.cat) && (
-            <div style={{ fontSize: 10, color: "var(--fg-3)", marginBottom: 4 }}>
-              {[mapTooltip.icaoType, mapTooltip.cat].filter(Boolean).join(" · ")}
+            <div
+              style={{ fontSize: 10, color: "var(--fg-3)", marginBottom: 4 }}
+            >
+              {[mapTooltip.icaoType, mapTooltip.cat]
+                .filter(Boolean)
+                .join(" · ")}
             </div>
           )}
-          <div style={{ borderTop: "1px solid var(--line-1)", marginBottom: 4 }} />
-          <table style={{ borderCollapse: "collapse", fontSize: 11, lineHeight: 1.6 }}>
+          <div
+            style={{ borderTop: "1px solid var(--line-1)", marginBottom: 4 }}
+          />
+          <table
+            style={{
+              borderCollapse: "collapse",
+              fontSize: 11,
+              lineHeight: 1.6,
+            }}
+          >
             <tbody>
               <tr>
-                <td style={{ color: "var(--fg-3)", paddingRight: 8, verticalAlign: "top" }}>Alt</td>
-                <td style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: 500 }}>
+                <td
+                  style={{
+                    color: "var(--fg-3)",
+                    paddingRight: 8,
+                    verticalAlign: "top",
+                  }}
+                >
+                  Alt
+                </td>
+                <td
+                  style={{
+                    fontFamily: "JetBrains Mono, monospace",
+                    fontWeight: 500,
+                  }}
+                >
                   {mapTooltip.altFt.toLocaleString()} ft
                 </td>
               </tr>
@@ -924,7 +996,9 @@ export function MapView({
               {mapTooltip.squawk !== null && (
                 <tr>
                   <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>Sqk</td>
-                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>{mapTooltip.squawk}</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                    {mapTooltip.squawk}
+                  </td>
                 </tr>
               )}
               {mapTooltip.ts > 0 && (

@@ -1,5 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MapView, MapBounds, HoveredPoint, ColorMode } from "./components/map/MapView";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  MapView,
+  MapBounds,
+  HoveredPoint,
+  ColorMode,
+} from "./components/map/MapView";
 
 // Numeric codes from the OpenAIP API
 const AIRSPACE_TYPES: Record<number, string> = {
@@ -56,7 +67,9 @@ interface AirspaceCandidate {
 
 function formatAltLimit(limit: AltLimit | null): string {
   if (!limit) return "GND";
-  return limit.ref === "fl" ? `FL${String(limit.value)}` : `${limit.value.toLocaleString()} ft`;
+  return limit.ref === "fl"
+    ? `FL${String(limit.value)}`
+    : `${limit.value.toLocaleString()} ft`;
 }
 
 function airspaceSubtitle(c: AirspaceCandidate): string {
@@ -73,9 +86,13 @@ function airspaceSubtitle(c: AirspaceCandidate): string {
   return [typeClass, altRange].filter(Boolean).join(" · ");
 }
 
-function openaipLimit(limit: { value: number; unit: number } | null | undefined): AltLimit | null {
+function openaipLimit(
+  limit: { value: number; unit: number } | null | undefined,
+): AltLimit | null {
   if (!limit) return null;
-  return limit.unit === 6 ? { value: limit.value, ref: "fl" } : { value: limit.value, ref: "ft" };
+  return limit.unit === 6
+    ? { value: limit.value, ref: "fl" }
+    : { value: limit.value, ref: "ft" };
 }
 import { anyViewportFilter, collectGeometries } from "./lib/queryGeometry";
 import { Topbar } from "./components/layout/Topbar";
@@ -99,7 +116,13 @@ import { ResultsPanel } from "./components/results/ResultsPanel";
 import { Legend } from "./components/ui/Legend";
 import { ChevronLeft, ChevronRight } from "./components/Icons";
 import { compileGroup } from "./lib/compileQuery";
-import { postQuery, getDataRange, FlightDetail, ApiError, DataRange } from "./lib/api";
+import {
+  postQuery,
+  getDataRange,
+  FlightDetail,
+  ApiError,
+  DataRange,
+} from "./lib/api";
 
 type Basemap = "dark" | "light" | "sat";
 type Theme = "dark" | "light";
@@ -122,13 +145,16 @@ function ToggleButton({
   return (
     <button
       onClick={onToggle}
-      aria-label={collapsed ? "Expand " + side + " panel" : "Collapse " + side + " panel"}
+      aria-label={
+        collapsed ? "Expand " + side + " panel" : "Collapse " + side + " panel"
+      }
       style={{
         position: "absolute",
         top: "50%",
         [isLeft ? "left" : "right"]: collapsed ? SIDEBAR_MARGIN : expandedEdge,
         transform: "translateY(-50%)",
-        transition: (isLeft ? "left" : "right") + " 240ms cubic-bezier(0.4, 0, 0.2, 1)",
+        transition:
+          (isLeft ? "left" : "right") + " 240ms cubic-bezier(0.4, 0, 0.2, 1)",
         zIndex: 10,
         width: 22,
         height: 44,
@@ -180,10 +206,14 @@ export function App(): React.ReactElement {
     mode: "all",
     items: [],
   });
-  const [globalDateRange, setGlobalDateRange] = useState<GlobalDateRange>({ to: "" });
+  const [globalDateRange, setGlobalDateRange] = useState<GlobalDateRange>({
+    to: "",
+  });
   const [pickingId, setPickingId] = useState<string | null>(null);
   const [drawingId, setDrawingId] = useState<string | null>(null);
-  const [airspacePickingId, setAirspacePickingId] = useState<string | null>(null);
+  const [airspacePickingId, setAirspacePickingId] = useState<string | null>(
+    null,
+  );
   const [airspaceMenu, setAirspaceMenu] = useState<{
     x: number;
     y: number;
@@ -254,7 +284,12 @@ export function App(): React.ReactElement {
     setAirspacePickingId((prev) => (prev === predId ? null : predId));
   };
 
-  const handlePickAirspace = (lat: number, lng: number, x: number, y: number): void => {
+  const handlePickAirspace = (
+    lat: number,
+    lng: number,
+    x: number,
+    y: number,
+  ): void => {
     const predId = airspacePickingId;
     if (!predId) return;
     setAirspacePickingId(null);
@@ -281,11 +316,16 @@ export function App(): React.ReactElement {
               name: item.name,
               typeCode: item.type,
               icaoClassCode:
-                typeof item.icaoClass === "number" && item.icaoClass <= 6 ? item.icaoClass : null,
+                typeof item.icaoClass === "number" && item.icaoClass <= 6
+                  ? item.icaoClass
+                  : null,
               country: item.country,
               lowerLimit: openaipLimit(item.lowerLimit),
               upperLimit: openaipLimit(item.upperLimit),
-              polygon: (item.geometry.coordinates[0] ?? []) as [number, number][],
+              polygon: (item.geometry.coordinates[0] ?? []) as [
+                number,
+                number,
+              ][],
             }))
             .filter((c) => c.polygon.length >= 3);
           if (candidates.length === 0) {
@@ -309,8 +349,7 @@ export function App(): React.ReactElement {
     setRootGroup((g) =>
       updatePredInGroup(g, predId, (p: UIPredicate) => {
         if (
-          p.kind === "starts_within" ||
-          p.kind === "ends_within" ||
+          p.kind === "endpoint_within" ||
           p.kind === "region" ||
           p.kind === "always_within"
         ) {
@@ -344,8 +383,7 @@ export function App(): React.ReactElement {
     setRootGroup((g) =>
       updatePredInGroup(g, id, (p: UIPredicate) => {
         if (
-          p.kind === "starts_within" ||
-          p.kind === "ends_within" ||
+          p.kind === "endpoint_within" ||
           p.kind === "region" ||
           p.kind === "always_within"
         ) {
@@ -363,8 +401,7 @@ export function App(): React.ReactElement {
     setRootGroup((g) =>
       updatePredInGroup(g, id, (p: UIPredicate) => {
         if (
-          p.kind === "starts_within" ||
-          p.kind === "ends_within" ||
+          p.kind === "endpoint_within" ||
           p.kind === "region" ||
           p.kind === "always_within"
         ) {
@@ -422,7 +459,12 @@ export function App(): React.ReactElement {
     setQueryLoading(true);
     setQueryError(null);
 
-    postQuery(match, { endDate, startFrom, cursor: queryCursor, signal: ctrl.signal })
+    postQuery(match, {
+      endDate,
+      startFrom,
+      cursor: queryCursor,
+      signal: ctrl.signal,
+    })
       .then((res) => {
         setQueryFlights((prev) => [...(prev ?? []), ...res.flights]);
         setQueryCursor(res.cursor);
@@ -442,12 +484,18 @@ export function App(): React.ReactElement {
     setViewportVersion((v) => v + 1);
   }, []);
 
-  const mapGeometries = useMemo(() => collectGeometries(rootGroup), [rootGroup]);
+  const mapGeometries = useMemo(
+    () => collectGeometries(rootGroup),
+    [rootGroup],
+  );
   const hasViewport = anyViewportFilter(rootGroup);
   const predCount = countPredicates(rootGroup);
-  const queryStructureChanged = lastRunGroup !== null && rootGroup !== lastRunGroup;
+  const queryStructureChanged =
+    lastRunGroup !== null && rootGroup !== lastRunGroup;
   const viewportChanged =
-    hasViewport && lastRunVersion !== null && viewportVersion !== lastRunVersion;
+    hasViewport &&
+    lastRunVersion !== null &&
+    viewportVersion !== lastRunVersion;
   const dateRangeOk = isDateRangeValid(globalDateRange);
   // Cursor is always set by the server when there may be more data (both intra-window
   // truncation and exhausted-window sentinel).  Only suppress the button once the
@@ -456,14 +504,26 @@ export function App(): React.ReactElement {
     queryCursor !== null &&
     (queryWindowFrom === null ||
       dataRange?.first_date == null ||
-      new Date(queryWindowFrom) > new Date(dataRange.first_date + "T00:00:00Z"));
+      new Date(queryWindowFrom) >
+        new Date(dataRange.first_date + "T00:00:00Z"));
   const showRerunChip =
-    dateRangeOk && isGroupValid(rootGroup) && (queryStructureChanged || viewportChanged);
+    dateRangeOk &&
+    isGroupValid(rootGroup) &&
+    (queryStructureChanged || viewportChanged);
   const filterMeta =
-    predCount === 0 ? "no filters" : String(predCount) + " filter" + (predCount !== 1 ? "s" : "");
+    predCount === 0
+      ? "no filters"
+      : String(predCount) + " filter" + (predCount !== 1 ? "s" : "");
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        overflow: "hidden",
+      }}
+    >
       <MapView
         basemap={basemap}
         chartsOn={airspaceOn}
@@ -528,7 +588,12 @@ export function App(): React.ReactElement {
         collapsed={leftCollapsed}
         title="Query Builder"
         meta={filterMeta}
-        toolbar={<QueryBuilderAddMenu rootGroup={rootGroup} onGroupChange={setRootGroup} />}
+        toolbar={
+          <QueryBuilderAddMenu
+            rootGroup={rootGroup}
+            onGroupChange={setRootGroup}
+          />
+        }
         footer={
           <QueryBuilderFooter
             rootGroup={rootGroup}
@@ -617,7 +682,11 @@ export function App(): React.ReactElement {
   );
 }
 
-function AirspaceShapePreview({ polygon }: { polygon: [number, number][] }): React.ReactElement {
+function AirspaceShapePreview({
+  polygon,
+}: {
+  polygon: [number, number][];
+}): React.ReactElement {
   const SIZE = 48;
   const PAD = 3;
   const inner = SIZE - PAD * 2;
@@ -637,11 +706,19 @@ function AirspaceShapePreview({ polygon }: { polygon: [number, number][] }): Rea
   ]);
   const d =
     pts
-      .map(([x, y], i) => `${i === 0 ? "M" : "L"}${(x ?? 0).toFixed(1)},${(y ?? 0).toFixed(1)}`)
+      .map(
+        ([x, y], i) =>
+          `${i === 0 ? "M" : "L"}${(x ?? 0).toFixed(1)},${(y ?? 0).toFixed(1)}`,
+      )
       .join(" ") + " Z";
   return (
     <svg width={SIZE} height={SIZE} style={{ display: "block", flexShrink: 0 }}>
-      <path d={d} fill="rgba(60,100,220,0.18)" stroke="#3c64dc" strokeWidth="1.2" />
+      <path
+        d={d}
+        fill="rgba(60,100,220,0.18)"
+        stroke="#3c64dc"
+        strokeWidth="1.2"
+      />
     </svg>
   );
 }
@@ -702,7 +779,13 @@ function AirspacePickerMenu({
         {candidates === null ? "Searching…" : "Select airspace"}
       </div>
       {candidates === null && (
-        <div style={{ padding: "8px 10px 10px", fontSize: 12, color: "var(--fg-3)" }}>
+        <div
+          style={{
+            padding: "8px 10px 10px",
+            fontSize: 12,
+            color: "var(--fg-3)",
+          }}
+        >
           Looking up airspaces…
         </div>
       )}

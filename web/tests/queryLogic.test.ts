@@ -8,6 +8,8 @@ import {
   dateRangeToApiParams,
   countPredicates,
   makeId,
+  updatePredInGroup,
+  UIPredicate,
 } from "../src/components/query/QueryBuilder";
 import { collectGeometries, anyViewportFilter } from "../src/lib/queryGeometry";
 
@@ -25,175 +27,164 @@ const POLYGON: [number, number][] = [
   [-2, 50],
 ];
 
+function epw(
+  id: string,
+  mode: "start" | "end" | "either" | "both",
+  shape: "none" | "circle" | "polygon" | "viewport" | "airspace",
+  overrides: Partial<{
+    lat: number | null;
+    lng: number | null;
+    radiusNm: number;
+    polygon: [number, number][] | null;
+    startTimeFrom: string;
+    startTimeTo: string;
+    endTimeFrom: string;
+    endTimeTo: string;
+  }> = {},
+) {
+  return {
+    id,
+    kind: "endpoint_within" as const,
+    mode,
+    shape,
+    lat: null,
+    lng: null,
+    radiusNm: 25,
+    polygon: null,
+    airspaceName: null,
+    airspaceLabel: null,
+    startTimeFrom: "",
+    startTimeTo: "",
+    endTimeFrom: "",
+    endTimeTo: "",
+    ...overrides,
+  };
+}
+
 // ---- isPredValid ------------------------------------------------------------
 
 describe("isPredValid", () => {
   describe("aircraft", () => {
     it("invalid when both lists empty", () => {
-      expect(isPredValid({ id: "1", kind: "aircraft", icaoTypes: [], emitters: [] })).toBe(false);
+      expect(
+        isPredValid({ id: "1", kind: "aircraft", icaoTypes: [], emitters: [] }),
+      ).toBe(false);
     });
     it("valid with icao types", () => {
-      expect(isPredValid({ id: "1", kind: "aircraft", icaoTypes: ["B738"], emitters: [] })).toBe(
-        true,
-      );
+      expect(
+        isPredValid({
+          id: "1",
+          kind: "aircraft",
+          icaoTypes: ["B738"],
+          emitters: [],
+        }),
+      ).toBe(true);
     });
     it("valid with emitters", () => {
-      expect(isPredValid({ id: "1", kind: "aircraft", icaoTypes: [], emitters: ["A3"] })).toBe(
-        true,
-      );
+      expect(
+        isPredValid({
+          id: "1",
+          kind: "aircraft",
+          icaoTypes: [],
+          emitters: ["A3"],
+        }),
+      ).toBe(true);
     });
   });
 
   describe("callsign", () => {
     it("invalid when blank", () => {
-      expect(isPredValid({ id: "1", kind: "callsign", pattern: "" })).toBe(false);
+      expect(isPredValid({ id: "1", kind: "callsign", pattern: "" })).toBe(
+        false,
+      );
     });
     it("invalid when whitespace only", () => {
-      expect(isPredValid({ id: "1", kind: "callsign", pattern: "  " })).toBe(false);
+      expect(isPredValid({ id: "1", kind: "callsign", pattern: "  " })).toBe(
+        false,
+      );
     });
     it("valid with a pattern", () => {
-      expect(isPredValid({ id: "1", kind: "callsign", pattern: "^BAW" })).toBe(true);
+      expect(isPredValid({ id: "1", kind: "callsign", pattern: "^BAW" })).toBe(
+        true,
+      );
     });
   });
 
-  describe("starts_within / ends_within", () => {
+  describe("endpoint_within", () => {
+    function ep(
+      overrides: Partial<{
+        mode: "start" | "end" | "either" | "both";
+        shape: "none" | "circle" | "polygon" | "viewport" | "airspace";
+        lat: number | null;
+        lng: number | null;
+        polygon: [number, number][] | null;
+        startTimeFrom: string;
+        startTimeTo: string;
+        endTimeFrom: string;
+        endTimeTo: string;
+      }> = {},
+    ) {
+      return {
+        id: "1",
+        kind: "endpoint_within" as const,
+        mode: "start" as const,
+        shape: "circle" as const,
+        lat: null,
+        lng: null,
+        radiusNm: 25,
+        polygon: null,
+        airspaceName: null,
+        airspaceLabel: null,
+        startTimeFrom: "",
+        startTimeTo: "",
+        endTimeFrom: "",
+        endTimeTo: "",
+        ...overrides,
+      };
+    }
     it("none shape invalid without time", () => {
-      expect(
-        isPredValid({
-          id: "1",
-          kind: "starts_within",
-          shape: "none",
-          lat: null,
-          lng: null,
-          radiusNm: 25,
-          polygon: null,
-          timeFrom: "",
-          timeTo: "",
-        }),
-      ).toBe(false);
+      expect(isPredValid(ep({ shape: "none" }))).toBe(false);
     });
-    it("none shape valid with timeFrom", () => {
+    it("none shape valid with startTimeFrom", () => {
       expect(
-        isPredValid({
-          id: "1",
-          kind: "starts_within",
-          shape: "none",
-          lat: null,
-          lng: null,
-          radiusNm: 25,
-          polygon: null,
-          timeFrom: "2025-01-01T00:00",
-          timeTo: "",
-        }),
+        isPredValid(ep({ shape: "none", startTimeFrom: "2025-01-01T00:00" })),
       ).toBe(true);
     });
-    it("none shape valid with timeTo", () => {
+    it("none shape valid with endTimeTo", () => {
       expect(
-        isPredValid({
-          id: "1",
-          kind: "ends_within",
-          shape: "none",
-          lat: null,
-          lng: null,
-          radiusNm: 25,
-          polygon: null,
-          timeFrom: "",
-          timeTo: "2025-01-02T00:00",
-        }),
+        isPredValid(
+          ep({ mode: "end", shape: "none", endTimeTo: "2025-01-02T00:00" }),
+        ),
       ).toBe(true);
     });
     it("viewport always valid", () => {
-      expect(
-        isPredValid({
-          id: "1",
-          kind: "starts_within",
-          shape: "viewport",
-          lat: null,
-          lng: null,
-          radiusNm: 25,
-          polygon: null,
-          timeFrom: "",
-          timeTo: "",
-        }),
-      ).toBe(true);
+      expect(isPredValid(ep({ shape: "viewport" }))).toBe(true);
     });
     it("circle invalid without coordinates", () => {
-      expect(
-        isPredValid({
-          id: "1",
-          kind: "starts_within",
-          shape: "circle",
-          lat: null,
-          lng: null,
-          radiusNm: 25,
-          polygon: null,
-          timeFrom: "",
-          timeTo: "",
-        }),
-      ).toBe(false);
+      expect(isPredValid(ep({ shape: "circle" }))).toBe(false);
     });
     it("circle valid with coordinates", () => {
-      expect(
-        isPredValid({
-          id: "1",
-          kind: "starts_within",
-          shape: "circle",
-          lat: 51.5,
-          lng: -0.1,
-          radiusNm: 25,
-          polygon: null,
-          timeFrom: "",
-          timeTo: "",
-        }),
-      ).toBe(true);
+      expect(isPredValid(ep({ shape: "circle", lat: 51.5, lng: -0.1 }))).toBe(
+        true,
+      );
     });
     it("polygon invalid without polygon", () => {
-      expect(
-        isPredValid({
-          id: "1",
-          kind: "ends_within",
-          shape: "polygon",
-          lat: null,
-          lng: null,
-          radiusNm: 25,
-          polygon: null,
-          timeFrom: "",
-          timeTo: "",
-        }),
-      ).toBe(false);
+      expect(isPredValid(ep({ shape: "polygon", polygon: null }))).toBe(false);
     });
     it("polygon invalid with fewer than 3 points", () => {
       expect(
-        isPredValid({
-          id: "1",
-          kind: "ends_within",
-          shape: "polygon",
-          lat: null,
-          lng: null,
-          radiusNm: 25,
-          polygon: [
-            [-2, 50],
-            [2, 50],
-          ],
-          timeFrom: "",
-          timeTo: "",
-        }),
+        isPredValid(
+          ep({
+            shape: "polygon",
+            polygon: [[-2, 50] as [number, number], [2, 50]],
+          }),
+        ),
       ).toBe(false);
     });
     it("polygon valid with 3+ points", () => {
-      expect(
-        isPredValid({
-          id: "1",
-          kind: "ends_within",
-          shape: "polygon",
-          lat: null,
-          lng: null,
-          radiusNm: 25,
-          polygon: POLYGON,
-          timeFrom: "",
-          timeTo: "",
-        }),
-      ).toBe(true);
+      expect(isPredValid(ep({ shape: "polygon", polygon: POLYGON }))).toBe(
+        true,
+      );
     });
   });
 
@@ -428,7 +419,14 @@ describe("isGroupValid", () => {
   it("nested group: all valid", () => {
     const inner = group({ id: "1", kind: "callsign", pattern: "^EZY" });
     expect(
-      isGroupValid(group(inner, { id: "2", kind: "aircraft", icaoTypes: ["A320"], emitters: [] })),
+      isGroupValid(
+        group(inner, {
+          id: "2",
+          kind: "aircraft",
+          icaoTypes: ["A320"],
+          emitters: [],
+        }),
+      ),
     ).toBe(true);
   });
 });
@@ -448,39 +446,9 @@ describe("computeLabels", () => {
 
   it("circle preds are numbered per type", () => {
     const g = group(
-      {
-        id: "s1",
-        kind: "starts_within",
-        shape: "circle",
-        lat: 51,
-        lng: 0,
-        radiusNm: 10,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
-      {
-        id: "s2",
-        kind: "starts_within",
-        shape: "circle",
-        lat: 52,
-        lng: 1,
-        radiusNm: 10,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
-      {
-        id: "e1",
-        kind: "ends_within",
-        shape: "circle",
-        lat: 53,
-        lng: 2,
-        radiusNm: 10,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
+      epw("s1", "start", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
+      epw("s2", "start", "circle", { lat: 52, lng: 1, radiusNm: 10 }),
+      epw("e1", "end", "circle", { lat: 53, lng: 2, radiusNm: 10 }),
     );
     const labels = computeLabels(g);
     expect(labels.get("s1")).toBe("Starts Within 1");
@@ -490,28 +458,8 @@ describe("computeLabels", () => {
 
   it("viewport preds get base name only, not counted", () => {
     const g = group(
-      {
-        id: "v1",
-        kind: "starts_within",
-        shape: "viewport",
-        lat: null,
-        lng: null,
-        radiusNm: 25,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
-      {
-        id: "c1",
-        kind: "starts_within",
-        shape: "circle",
-        lat: 51,
-        lng: 0,
-        radiusNm: 10,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
+      epw("v1", "start", "viewport"),
+      epw("c1", "start", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
     );
     const labels = computeLabels(g);
     expect(labels.get("v1")).toBe("Starts Within");
@@ -520,28 +468,8 @@ describe("computeLabels", () => {
 
   it("none preds get base name only, not counted", () => {
     const g = group(
-      {
-        id: "n1",
-        kind: "starts_within",
-        shape: "none",
-        lat: null,
-        lng: null,
-        radiusNm: 25,
-        polygon: null,
-        timeFrom: "2025-01-01T00:00",
-        timeTo: "",
-      },
-      {
-        id: "c1",
-        kind: "starts_within",
-        shape: "circle",
-        lat: 51,
-        lng: 0,
-        radiusNm: 10,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
+      epw("n1", "start", "none", { startTimeFrom: "2025-01-01T00:00" }),
+      epw("c1", "start", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
     );
     const labels = computeLabels(g);
     expect(labels.get("n1")).toBe("Starts Within");
@@ -625,14 +553,19 @@ describe("computeLabels", () => {
       },
       {
         id: "s1",
-        kind: "starts_within",
+        kind: "endpoint_within",
+        mode: "start",
         shape: "circle",
         lat: 51,
         lng: 0,
         radiusNm: 10,
         polygon: null,
-        timeFrom: "",
-        timeTo: "",
+        airspaceName: null,
+        airspaceLabel: null,
+        startTimeFrom: "",
+        startTimeTo: "",
+        endTimeFrom: "",
+        endTimeTo: "",
       },
     );
     const labels = computeLabels(g);
@@ -641,28 +574,13 @@ describe("computeLabels", () => {
   });
 
   it("walks nested groups", () => {
-    const inner = group({
-      id: "s1",
-      kind: "starts_within",
-      shape: "circle",
-      lat: 51,
-      lng: 0,
-      radiusNm: 10,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    });
-    const outer = group(inner, {
-      id: "s2",
-      kind: "starts_within",
-      shape: "circle",
-      lat: 52,
-      lng: 1,
-      radiusNm: 10,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    });
+    const inner = group(
+      epw("s1", "start", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
+    );
+    const outer = group(
+      inner,
+      epw("s2", "start", "circle", { lat: 52, lng: 1, radiusNm: 10 }),
+    );
     const labels = computeLabels(outer);
     expect(labels.get("s1")).toBe("Starts Within 1");
     expect(labels.get("s2")).toBe("Starts Within 2");
@@ -686,44 +604,16 @@ describe("collectGeometries", () => {
 
   it("skips viewport and none shapes", () => {
     const g = group(
-      {
-        id: "1",
-        kind: "starts_within",
-        shape: "viewport",
-        lat: null,
-        lng: null,
-        radiusNm: 25,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
-      {
-        id: "2",
-        kind: "starts_within",
-        shape: "none",
-        lat: null,
-        lng: null,
-        radiusNm: 25,
-        polygon: null,
-        timeFrom: "2025-01-01T00:00",
-        timeTo: "",
-      },
+      epw("1", "start", "viewport"),
+      epw("2", "start", "none", { startTimeFrom: "2025-01-01T00:00" }),
     );
     expect(collectGeometries(g)).toEqual([]);
   });
 
   it("includes circle geometry", () => {
-    const g = group({
-      id: "c1",
-      kind: "starts_within",
-      shape: "circle",
-      lat: 51.5,
-      lng: -0.1,
-      radiusNm: 10,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    });
+    const g = group(
+      epw("c1", "start", "circle", { lat: 51.5, lng: -0.1, radiusNm: 10 }),
+    );
     const [geom] = collectGeometries(g);
     expect(geom.kind).toBe("circle");
     expect(geom.lat).toBe(51.5);
@@ -733,17 +623,7 @@ describe("collectGeometries", () => {
   });
 
   it("includes polygon geometry", () => {
-    const g = group({
-      id: "p1",
-      kind: "ends_within",
-      shape: "polygon",
-      lat: null,
-      lng: null,
-      radiusNm: 25,
-      polygon: POLYGON,
-      timeFrom: "",
-      timeTo: "",
-    });
+    const g = group(epw("p1", "end", "polygon", { polygon: POLYGON }));
     const [geom] = collectGeometries(g);
     expect(geom.kind).toBe("polygon");
     expect(geom.polygon).toEqual(POLYGON);
@@ -752,39 +632,9 @@ describe("collectGeometries", () => {
 
   it("labels are numbered per type, matching computeLabels", () => {
     const g = group(
-      {
-        id: "s1",
-        kind: "starts_within",
-        shape: "circle",
-        lat: 51,
-        lng: 0,
-        radiusNm: 10,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
-      {
-        id: "s2",
-        kind: "starts_within",
-        shape: "circle",
-        lat: 52,
-        lng: 1,
-        radiusNm: 10,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
-      {
-        id: "e1",
-        kind: "ends_within",
-        shape: "polygon",
-        lat: null,
-        lng: null,
-        radiusNm: 25,
-        polygon: POLYGON,
-        timeFrom: "",
-        timeTo: "",
-      },
+      epw("s1", "start", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
+      epw("s2", "start", "circle", { lat: 52, lng: 1, radiusNm: 10 }),
+      epw("e1", "end", "polygon", { polygon: POLYGON }),
     );
     const geoms = collectGeometries(g);
     expect(geoms).toHaveLength(3);
@@ -794,47 +644,89 @@ describe("collectGeometries", () => {
   });
 
   it("assigns distinct colours cycling through palette", () => {
-    const items = Array.from({ length: 7 }, (_, i) => ({
-      id: String(i),
-      kind: "starts_within" as const,
-      shape: "circle" as const,
-      lat: 51,
-      lng: 0,
-      radiusNm: 10,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    }));
+    const items = Array.from({ length: 7 }, (_, i) =>
+      epw(String(i), "start", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
+    );
     const geoms = collectGeometries(group(...items));
     expect(geoms[0].color).toBe(geoms[6].color); // palette wraps at 6
     expect(geoms[0].color).not.toBe(geoms[1].color);
   });
 
   it("walks nested groups", () => {
-    const inner = group({
-      id: "s1",
-      kind: "starts_within",
+    const inner = group(
+      epw("s1", "start", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
+    );
+    const g = group(inner, epw("e1", "end", "polygon", { polygon: POLYGON }));
+    const geoms = collectGeometries(g);
+    expect(geoms).toHaveLength(2);
+  });
+
+  it("mode both uses 'Endpoint' base name", () => {
+    const g = group(
+      epw("b1", "both", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
+    );
+    const [geom] = collectGeometries(g);
+    expect(geom.label).toBe("Endpoint 1");
+  });
+
+  it("mode either uses 'Endpoint' base name", () => {
+    const g = group(
+      epw("e1", "either", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
+    );
+    const [geom] = collectGeometries(g);
+    expect(geom.label).toBe("Endpoint 1");
+  });
+
+  it("region uses 'Ever' base name", () => {
+    const g = group({
+      id: "r1",
+      kind: "region",
+      regionName: "R",
       shape: "circle",
       lat: 51,
       lng: 0,
       radiusNm: 10,
       polygon: null,
+      altMin: null,
+      altMax: null,
+      altMinRef: "ft" as const,
+      altMaxRef: "ft" as const,
       timeFrom: "",
       timeTo: "",
+      squawkCodes: [],
+      dwellMinMin: null,
+      dwellMaxMin: null,
+      distanceMinNm: null,
+      distanceMaxNm: null,
     });
-    const g = group(inner, {
-      id: "e1",
-      kind: "ends_within",
-      shape: "polygon",
-      lat: null,
-      lng: null,
-      radiusNm: 25,
-      polygon: POLYGON,
+    const [geom] = collectGeometries(g);
+    expect(geom.label).toBe("Ever 1");
+  });
+
+  it("always_within uses 'Always' base name", () => {
+    const g = group({
+      id: "a1",
+      kind: "always_within",
+      regionName: "R",
+      shape: "circle",
+      lat: 51,
+      lng: 0,
+      radiusNm: 10,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      altMinRef: "ft" as const,
+      altMaxRef: "ft" as const,
       timeFrom: "",
       timeTo: "",
+      squawkCodes: [],
+      dwellMinMin: null,
+      dwellMaxMin: null,
+      distanceMinNm: null,
+      distanceMaxNm: null,
     });
-    const geoms = collectGeometries(g);
-    expect(geoms).toHaveLength(2);
+    const [geom] = collectGeometries(g);
+    expect(geom.label).toBe("Always 1");
   });
 });
 
@@ -846,44 +738,16 @@ describe("anyViewportFilter", () => {
   });
 
   it("false when no viewport shapes", () => {
-    const g = group({
-      id: "1",
-      kind: "starts_within",
-      shape: "circle",
-      lat: 51,
-      lng: 0,
-      radiusNm: 10,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    });
+    const g = group(
+      epw("1", "start", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
+    );
     expect(anyViewportFilter(g)).toBe(false);
   });
 
   it("true when any pred has viewport shape", () => {
     const g = group(
-      {
-        id: "1",
-        kind: "starts_within",
-        shape: "circle",
-        lat: 51,
-        lng: 0,
-        radiusNm: 10,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
-      {
-        id: "2",
-        kind: "ends_within",
-        shape: "viewport",
-        lat: null,
-        lng: null,
-        radiusNm: 25,
-        polygon: null,
-        timeFrom: "",
-        timeTo: "",
-      },
+      epw("1", "start", "circle", { lat: 51, lng: 0, radiusNm: 10 }),
+      epw("2", "end", "viewport"),
     );
     expect(anyViewportFilter(g)).toBe(true);
   });
@@ -900,11 +764,52 @@ describe("anyViewportFilter", () => {
       polygon: null,
       altMin: null,
       altMax: null,
+      altMinRef: "ft" as const,
+      altMaxRef: "ft" as const,
       timeFrom: "",
       timeTo: "",
       squawkCodes: [],
+      dwellMinMin: null,
+      dwellMaxMin: null,
+      distanceMinNm: null,
+      distanceMaxNm: null,
     });
     expect(anyViewportFilter(group(inner))).toBe(true);
+  });
+
+  it("true when always_within has viewport shape", () => {
+    const g = group({
+      id: "1",
+      kind: "always_within",
+      regionName: "R",
+      shape: "viewport",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      altMinRef: "ft" as const,
+      altMaxRef: "ft" as const,
+      timeFrom: "",
+      timeTo: "",
+      squawkCodes: [],
+      dwellMinMin: null,
+      dwellMaxMin: null,
+      distanceMinNm: null,
+      distanceMaxNm: null,
+    });
+    expect(anyViewportFilter(g)).toBe(true);
+  });
+
+  it("false for group containing only aircraft preds", () => {
+    const g = group({
+      id: "1",
+      kind: "aircraft",
+      icaoTypes: ["B738"],
+      emitters: [],
+    });
+    expect(anyViewportFilter(g)).toBe(false);
   });
 });
 
@@ -918,16 +823,24 @@ describe("isDateRangeValid", () => {
     expect(isDateRangeValid({ to: "2025-01-07" })).toBe(true);
   });
   it("true when from and to are valid and from <= to", () => {
-    expect(isDateRangeValid({ from: "2025-01-01", to: "2025-01-07" })).toBe(true);
+    expect(isDateRangeValid({ from: "2025-01-01", to: "2025-01-07" })).toBe(
+      true,
+    );
   });
   it("true for a single-day range (from === to)", () => {
-    expect(isDateRangeValid({ from: "2025-06-15", to: "2025-06-15" })).toBe(true);
+    expect(isDateRangeValid({ from: "2025-06-15", to: "2025-06-15" })).toBe(
+      true,
+    );
   });
   it("false when to is before from", () => {
-    expect(isDateRangeValid({ from: "2025-01-07", to: "2025-01-01" })).toBe(false);
+    expect(isDateRangeValid({ from: "2025-01-07", to: "2025-01-01" })).toBe(
+      false,
+    );
   });
   it("false for an invalid date string (triggers catch branch)", () => {
-    expect(isDateRangeValid({ from: "not-a-date", to: "2025-01-07" })).toBe(false);
+    expect(isDateRangeValid({ from: "not-a-date", to: "2025-01-07" })).toBe(
+      false,
+    );
   });
 });
 
@@ -935,12 +848,18 @@ describe("isDateRangeValid", () => {
 
 describe("dateRangeToApiParams", () => {
   it("converts inclusive end date to exclusive ISO string", () => {
-    const params = dateRangeToApiParams({ from: "2025-01-01", to: "2025-01-07" });
+    const params = dateRangeToApiParams({
+      from: "2025-01-01",
+      to: "2025-01-07",
+    });
     expect(params.endDate).toBe("2025-01-08T00:00:00Z");
     expect(params.startFrom).toBe("2025-01-01T00:00:00Z");
   });
   it("adds exactly one day to the to date", () => {
-    const params = dateRangeToApiParams({ from: "2025-12-31", to: "2025-12-31" });
+    const params = dateRangeToApiParams({
+      from: "2025-12-31",
+      to: "2025-12-31",
+    });
     expect(params.endDate).toBe("2026-01-01T00:00:00Z");
     expect(params.startFrom).toBe("2025-12-31T00:00:00Z");
   });
@@ -971,5 +890,50 @@ describe("countPredicates", () => {
     );
     const outer = group(inner, { id: "3", kind: "callsign", pattern: "EZY" });
     expect(countPredicates(outer)).toBe(3);
+  });
+});
+
+// ---- updatePredInGroup -------------------------------------------------------
+
+describe("updatePredInGroup", () => {
+  it("updates a direct child predicate by id", () => {
+    const pred: UIPredicate = { id: "p1", kind: "callsign", pattern: "^BAW" };
+    const g = group(pred);
+    const result = updatePredInGroup(g, "p1", () => ({
+      ...pred,
+      pattern: "^EZY",
+    }));
+    const updated = result.items[0];
+    expect(updated.kind === "callsign" && updated.pattern).toBe("^EZY");
+  });
+
+  it("leaves non-matching items unchanged", () => {
+    const pred1: UIPredicate = { id: "p1", kind: "callsign", pattern: "^BAW" };
+    const pred2: UIPredicate = { id: "p2", kind: "callsign", pattern: "^EZY" };
+    const g = group(pred1, pred2);
+    const result = updatePredInGroup(g, "p1", (p) => ({
+      ...p,
+      kind: "callsign" as const,
+      pattern: "^DLH",
+    }));
+    const second = result.items[1];
+    expect(second.kind === "callsign" && second.pattern).toBe("^EZY");
+  });
+
+  it("recurses into nested groups to find the target", () => {
+    const pred: UIPredicate = {
+      id: "inner",
+      kind: "callsign",
+      pattern: "^BAW",
+    };
+    const inner = group(pred);
+    const outer = group(inner);
+    const result = updatePredInGroup(outer, "inner", () => ({
+      ...pred,
+      pattern: "^DLH",
+    }));
+    const innerGroup = result.items[0];
+    const updated = innerGroup.kind === "group" ? innerGroup.items[0] : null;
+    expect(updated?.kind === "callsign" && updated.pattern).toBe("^DLH");
   });
 });

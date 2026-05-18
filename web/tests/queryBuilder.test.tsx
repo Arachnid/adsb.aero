@@ -47,39 +47,85 @@ function bodyProps(group: FilterGroup, onChange = vi.fn()) {
 
 describe("QueryBuilderFooter", () => {
   it("is disabled when rootGroup has no items", () => {
-    render(<QueryBuilderFooter rootGroup={emptyGroup()} dateRangeValid={true} onRun={noop} />);
+    render(
+      <QueryBuilderFooter
+        rootGroup={emptyGroup()}
+        dateRangeValid={true}
+        onRun={noop}
+      />,
+    );
     expect(screen.getByRole("button", { name: /run query/i })).toBeDisabled();
   });
 
   it("is disabled when group contains an invalid predicate", () => {
-    const group = makeGroup([{ id: makeId(), kind: "aircraft", icaoTypes: [], emitters: [] }]);
-    render(<QueryBuilderFooter rootGroup={group} dateRangeValid={true} onRun={noop} />);
+    const group = makeGroup([
+      { id: makeId(), kind: "aircraft", icaoTypes: [], emitters: [] },
+    ]);
+    render(
+      <QueryBuilderFooter
+        rootGroup={group}
+        dateRangeValid={true}
+        onRun={noop}
+      />,
+    );
     expect(screen.getByRole("button", { name: /run query/i })).toBeDisabled();
   });
 
   it("is disabled when dateRangeValid is false", () => {
-    const group = makeGroup([{ id: makeId(), kind: "callsign", pattern: "^BAW" }]);
-    render(<QueryBuilderFooter rootGroup={group} dateRangeValid={false} onRun={noop} />);
+    const group = makeGroup([
+      { id: makeId(), kind: "callsign", pattern: "^BAW" },
+    ]);
+    render(
+      <QueryBuilderFooter
+        rootGroup={group}
+        dateRangeValid={false}
+        onRun={noop}
+      />,
+    );
     expect(screen.getByRole("button", { name: /run query/i })).toBeDisabled();
   });
 
   it("is enabled when group contains a valid predicate and date range is valid", () => {
-    const group = makeGroup([{ id: makeId(), kind: "callsign", pattern: "^BAW" }]);
-    render(<QueryBuilderFooter rootGroup={group} dateRangeValid={true} onRun={noop} />);
-    expect(screen.getByRole("button", { name: /run query/i })).not.toBeDisabled();
+    const group = makeGroup([
+      { id: makeId(), kind: "callsign", pattern: "^BAW" },
+    ]);
+    render(
+      <QueryBuilderFooter
+        rootGroup={group}
+        dateRangeValid={true}
+        onRun={noop}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /run query/i }),
+    ).not.toBeDisabled();
   });
 
   it("calls onRun when clicked while enabled", () => {
     const onRun = vi.fn();
-    const group = makeGroup([{ id: makeId(), kind: "callsign", pattern: "^BAW" }]);
-    render(<QueryBuilderFooter rootGroup={group} dateRangeValid={true} onRun={onRun} />);
+    const group = makeGroup([
+      { id: makeId(), kind: "callsign", pattern: "^BAW" },
+    ]);
+    render(
+      <QueryBuilderFooter
+        rootGroup={group}
+        dateRangeValid={true}
+        onRun={onRun}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /run query/i }));
     expect(onRun).toHaveBeenCalledOnce();
   });
 
   it("does not call onRun when button is disabled", () => {
     const onRun = vi.fn();
-    render(<QueryBuilderFooter rootGroup={emptyGroup()} dateRangeValid={true} onRun={onRun} />);
+    render(
+      <QueryBuilderFooter
+        rootGroup={emptyGroup()}
+        dateRangeValid={true}
+        onRun={onRun}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /run query/i }));
     expect(onRun).not.toHaveBeenCalled();
   });
@@ -89,12 +135,16 @@ describe("QueryBuilderFooter", () => {
 
 describe("QueryBuilderAddMenu", () => {
   it("does not show filter options initially", () => {
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={noop} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={noop} />,
+    );
     expect(screen.queryByText("Callsign")).toBeNull();
   });
 
   it("shows filter options after clicking Add filter", () => {
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={noop} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={noop} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     expect(screen.getByText("Aircraft")).toBeDefined();
     expect(screen.getByText("Callsign")).toBeDefined();
@@ -116,22 +166,32 @@ describe("QueryBuilderAddMenu", () => {
 
   it("appends an aircraft predicate when Aircraft is clicked", () => {
     const onChange = vi.fn();
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     fireEvent.click(screen.getByText("Aircraft"));
     const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
-    expect(updated.items[0]).toMatchObject({ kind: "aircraft", icaoTypes: [], emitters: [] });
+    expect(updated.items[0]).toMatchObject({
+      kind: "aircraft",
+      icaoTypes: [],
+      emitters: [],
+    });
   });
 
   it("closes the menu after an option is selected", () => {
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={noop} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={noop} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     fireEvent.click(screen.getByText("Callsign"));
     expect(screen.queryByText("Aircraft")).toBeNull();
   });
 
   it("toggles the menu closed when Add filter is clicked again", () => {
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={noop} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={noop} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     expect(screen.queryByText("Callsign")).toBeNull();
@@ -150,26 +210,34 @@ describe("QueryBuilderBody", () => {
 
   describe("AircraftCard", () => {
     it("renders with invalid style when both lists are empty", () => {
-      const group = makeGroup([{ id: "a1", kind: "aircraft", icaoTypes: [], emitters: [] }]);
+      const group = makeGroup([
+        { id: "a1", kind: "aircraft", icaoTypes: [], emitters: [] },
+      ]);
       const { container } = render(<QueryBuilderBody {...bodyProps(group)} />);
       expect(container.querySelector(".pred--invalid")).not.toBeNull();
     });
 
     it("renders without invalid style when icaoTypes is populated", () => {
-      const group = makeGroup([{ id: "a1", kind: "aircraft", icaoTypes: ["B738"], emitters: [] }]);
+      const group = makeGroup([
+        { id: "a1", kind: "aircraft", icaoTypes: ["B738"], emitters: [] },
+      ]);
       const { container } = render(<QueryBuilderBody {...bodyProps(group)} />);
       expect(container.querySelector(".pred--invalid")).toBeNull();
     });
 
     it("shows aircraft name in header", () => {
-      const group = makeGroup([{ id: "a1", kind: "aircraft", icaoTypes: [], emitters: [] }]);
+      const group = makeGroup([
+        { id: "a1", kind: "aircraft", icaoTypes: [], emitters: [] },
+      ]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
       expect(screen.getByText("Aircraft")).toBeDefined();
     });
 
     it("calls onGroupChange with updated icaoTypes when a chip is toggled", async () => {
       const onChange = vi.fn();
-      const group = makeGroup([{ id: "a1", kind: "aircraft", icaoTypes: [], emitters: [] }]);
+      const group = makeGroup([
+        { id: "a1", kind: "aircraft", icaoTypes: [], emitters: [] },
+      ]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
       // open the ICAO types dropdown (first "+ choose" button)
       fireEvent.click(screen.getAllByText("+ choose")[0]);
@@ -195,19 +263,22 @@ describe("QueryBuilderBody", () => {
       const onChange = vi.fn();
       const group = makeGroup([{ id: "c1", kind: "callsign", pattern: "" }]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
-      fireEvent.change(screen.getByPlaceholderText("^BAW.*"), { target: { value: "^DLH" } });
+      fireEvent.change(screen.getByPlaceholderText("^BAW.*"), {
+        target: { value: "^DLH" },
+      });
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
       const pred = updated.items[0];
       expect(pred.kind === "callsign" && pred.pattern).toBe("^DLH");
     });
   });
 
-  // ---- PointRadiusCard (starts_within / ends_within) -----------------------
+  // ---- PointRadiusCard (endpoint_within) -------------------------------------
 
   describe("PointRadiusCard", () => {
     const basePred = {
       id: "p1",
-      kind: "starts_within" as const,
+      kind: "endpoint_within" as const,
+      mode: "start" as const,
       shape: "none" as const,
       lat: null,
       lng: null,
@@ -215,8 +286,10 @@ describe("QueryBuilderBody", () => {
       polygon: null,
       airspaceName: null,
       airspaceLabel: null,
-      timeFrom: "",
-      timeTo: "",
+      startTimeFrom: "",
+      startTimeTo: "",
+      endTimeFrom: "",
+      endTimeTo: "",
     };
 
     it("shows From and To inputs regardless of shape", () => {
@@ -250,7 +323,7 @@ describe("QueryBuilderBody", () => {
       expect(screen.getByText("Uses current map viewport")).toBeDefined();
     });
 
-    it("updates timeFrom via From datetime input", () => {
+    it("updates startTimeFrom via From datetime input", () => {
       const onChange = vi.fn();
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
@@ -259,7 +332,9 @@ describe("QueryBuilderBody", () => {
       });
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
       const pred = updated.items[0];
-      expect(pred.kind === "starts_within" && pred.timeFrom).toBe("2024-01-01T00:00");
+      expect(pred.kind === "endpoint_within" && pred.startTimeFrom).toBe(
+        "2024-01-01T00:00",
+      );
     });
 
     it("is invalid with shape=none and no time", () => {
@@ -268,10 +343,29 @@ describe("QueryBuilderBody", () => {
       expect(container.querySelector(".pred--invalid")).not.toBeNull();
     });
 
-    it("is valid with shape=none and timeFrom set", () => {
-      const group = makeGroup([{ ...basePred, timeFrom: "2024-01-01T00:00" }]);
+    it("is valid with shape=none and startTimeFrom set", () => {
+      const group = makeGroup([
+        { ...basePred, startTimeFrom: "2024-01-01T00:00" },
+      ]);
       const { container } = render(<QueryBuilderBody {...bodyProps(group)} />);
       expect(container.querySelector(".pred--invalid")).toBeNull();
+    });
+
+    it("clicking 'End' mode button changes mode to end", () => {
+      const onChange = vi.fn();
+      const group = makeGroup([basePred]);
+      render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
+      fireEvent.click(screen.getByText("End"));
+      const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+      const pred = updated.items[0];
+      expect(pred.kind === "endpoint_within" && pred.mode).toBe("end");
+    });
+
+    it("shows 'Departure time' and 'Arrival time' labels in both mode", () => {
+      const group = makeGroup([{ ...basePred, mode: "both" as const }]);
+      render(<QueryBuilderBody {...bodyProps(group)} />);
+      expect(screen.getByText("Departure time")).toBeDefined();
+      expect(screen.getByText("Arrival time")).toBeDefined();
     });
   });
 
@@ -351,7 +445,9 @@ describe("QueryBuilderBody", () => {
     });
 
     it("shows altitude inputs when altMin is pre-set (e.g. from airspace selection)", () => {
-      const group = makeGroup([{ ...basePred, altMin: 5000, altMinRef: "ft" as const }]);
+      const group = makeGroup([
+        { ...basePred, altMin: 5000, altMinRef: "ft" as const },
+      ]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
       // Section must be visible even though the user never clicked the checkbox
       expect(screen.getByText("Alt min")).toBeDefined();
@@ -366,7 +462,9 @@ describe("QueryBuilderBody", () => {
 
     it("unchecking altitude checkbox clears the values", () => {
       const onChange = vi.fn();
-      const group = makeGroup([{ ...basePred, altMin: 5000, altMinRef: "ft" as const }]);
+      const group = makeGroup([
+        { ...basePred, altMin: 5000, altMinRef: "ft" as const },
+      ]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
       fireEvent.click(screen.getByLabelText("Altitude range"));
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
@@ -381,7 +479,9 @@ describe("QueryBuilderBody", () => {
   describe("remove button", () => {
     it("removes the predicate from the group", () => {
       const onChange = vi.fn();
-      const group = makeGroup([{ id: "c1", kind: "callsign", pattern: "^BAW" }]);
+      const group = makeGroup([
+        { id: "c1", kind: "callsign", pattern: "^BAW" },
+      ]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
       fireEvent.click(screen.getByTitle("Remove filter"));
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
@@ -408,7 +508,8 @@ describe("QueryBuilderBody", () => {
   describe("ShapeToggle", () => {
     const basePred = {
       id: "p1",
-      kind: "starts_within" as const,
+      kind: "endpoint_within" as const,
+      mode: "start" as const,
       shape: "none" as const,
       lat: null,
       lng: null,
@@ -416,8 +517,10 @@ describe("QueryBuilderBody", () => {
       polygon: null,
       airspaceName: null,
       airspaceLabel: null,
-      timeFrom: "",
-      timeTo: "",
+      startTimeFrom: "",
+      startTimeTo: "",
+      endTimeFrom: "",
+      endTimeTo: "",
     };
 
     it("calls onGroupChange with shape=circle when Circle is clicked", () => {
@@ -427,7 +530,7 @@ describe("QueryBuilderBody", () => {
       fireEvent.click(screen.getByText("Circle"));
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
       const pred = updated.items[0];
-      expect(pred.kind === "starts_within" && pred.shape).toBe("circle");
+      expect(pred.kind === "endpoint_within" && pred.shape).toBe("circle");
     });
 
     it("calls onGroupChange with shape=viewport when Viewport is clicked", () => {
@@ -437,7 +540,7 @@ describe("QueryBuilderBody", () => {
       fireEvent.click(screen.getByText("View"));
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
       const pred = updated.items[0];
-      expect(pred.kind === "starts_within" && pred.shape).toBe("viewport");
+      expect(pred.kind === "endpoint_within" && pred.shape).toBe("viewport");
     });
   });
 });
@@ -445,32 +548,28 @@ describe("QueryBuilderBody", () => {
 // ---- QueryBuilderAddMenu: remaining predicate types -------------------------
 
 describe("QueryBuilderAddMenu additional filter types", () => {
-  it("appends a starts_within predicate when Starts within is clicked", () => {
+  it("appends an endpoint_within predicate when Endpoint is clicked", () => {
     const onChange = vi.fn();
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
-    fireEvent.click(screen.getByText("Starts within"));
+    fireEvent.click(screen.getByText("Endpoint"));
     const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
     expect(updated.items[0]).toMatchObject({
-      kind: "starts_within",
+      kind: "endpoint_within",
+      mode: "either",
       shape: "circle",
       lat: null,
       lng: null,
     });
   });
 
-  it("appends an ends_within predicate when Ends within is clicked", () => {
-    const onChange = vi.fn();
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
-    fireEvent.click(screen.getByText("Ends within"));
-    const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
-    expect(updated.items[0]).toMatchObject({ kind: "ends_within", shape: "circle", lat: null });
-  });
-
   it("appends a region predicate when Ever is clicked", () => {
     const onChange = vi.fn();
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     fireEvent.click(screen.getByText("Ever"));
     const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
@@ -483,29 +582,46 @@ describe("QueryBuilderAddMenu additional filter types", () => {
 
   it("appends an always_within predicate when Always is clicked", () => {
     const onChange = vi.fn();
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     fireEvent.click(screen.getByText("Always"));
     const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
-    expect(updated.items[0]).toMatchObject({ kind: "always_within", shape: "polygon" });
+    expect(updated.items[0]).toMatchObject({
+      kind: "always_within",
+      shape: "polygon",
+    });
   });
 
   it("appends a group_all predicate when All of is clicked", () => {
     const onChange = vi.fn();
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     fireEvent.click(screen.getByText("All of"));
     const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
-    expect(updated.items[0]).toMatchObject({ kind: "group", mode: "all", items: [] });
+    expect(updated.items[0]).toMatchObject({
+      kind: "group",
+      mode: "all",
+      items: [],
+    });
   });
 
   it("appends a group_any predicate when Any of is clicked", () => {
     const onChange = vi.fn();
-    render(<QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />);
+    render(
+      <QueryBuilderAddMenu rootGroup={emptyGroup()} onGroupChange={onChange} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /add filter/i }));
     fireEvent.click(screen.getByText("Any of"));
     const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
-    expect(updated.items[0]).toMatchObject({ kind: "group", mode: "any", items: [] });
+    expect(updated.items[0]).toMatchObject({
+      kind: "group",
+      mode: "any",
+      items: [],
+    });
   });
 
   it("numbers region predicates using existing region count", () => {
@@ -547,8 +663,16 @@ describe("QueryBuilderAddMenu additional filter types", () => {
 // ---- GroupBlock (nested group) -----------------------------------------------
 
 describe("GroupBlock (nested group in QueryBuilderBody)", () => {
-  function nestedGroupProps(innerItems: FilterGroup["items"] = [], mode: "all" | "any" = "all") {
-    const inner: FilterGroup = { id: makeId(), kind: "group", mode, items: innerItems };
+  function nestedGroupProps(
+    innerItems: FilterGroup["items"] = [],
+    mode: "all" | "any" = "all",
+  ) {
+    const inner: FilterGroup = {
+      id: makeId(),
+      kind: "group",
+      mode,
+      items: innerItems,
+    };
     const root = makeGroup([inner]);
     return { root, inner };
   }
@@ -608,7 +732,9 @@ describe("GroupBlock (nested group in QueryBuilderBody)", () => {
   });
 
   it("renders a callsign predicate inside a nested group", () => {
-    const innerItems: FilterGroup["items"] = [{ id: makeId(), kind: "callsign", pattern: "BAW" }];
+    const innerItems: FilterGroup["items"] = [
+      { id: makeId(), kind: "callsign", pattern: "BAW" },
+    ];
     const { root } = nestedGroupProps(innerItems);
     render(<QueryBuilderBody {...bodyProps(root)} />);
     expect(screen.getByDisplayValue("BAW")).toBeInTheDocument();

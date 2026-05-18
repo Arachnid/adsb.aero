@@ -159,7 +159,16 @@ function LegendTitle({
 }
 
 function GradientBar({ gradient }: { gradient: string }): React.ReactElement {
-  return <div style={{ height: 8, borderRadius: 2, background: gradient, marginBottom: 4 }} />;
+  return (
+    <div
+      style={{
+        height: 8,
+        borderRadius: 2,
+        background: gradient,
+        marginBottom: 4,
+      }}
+    />
+  );
 }
 
 function GradientLabels({
@@ -189,7 +198,13 @@ function GradientLabels({
   );
 }
 
-function LegendRow({ swatch, children }: { swatch: string; children: string }): React.ReactElement {
+function LegendRow({
+  swatch,
+  children,
+}: {
+  swatch: string;
+  children: string;
+}): React.ReactElement {
   return (
     <div
       style={{
@@ -202,7 +217,15 @@ function LegendRow({ swatch, children }: { swatch: string; children: string }): 
         marginTop: 3,
       }}
     >
-      <span style={{ width: 10, height: 10, borderRadius: 2, background: swatch, flexShrink: 0 }} />
+      <span
+        style={{
+          width: 10,
+          height: 10,
+          borderRadius: 2,
+          background: swatch,
+          flexShrink: 0,
+        }}
+      />
       {children}
     </div>
   );

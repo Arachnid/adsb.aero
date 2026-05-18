@@ -317,10 +317,7 @@
                   "$ref": "#/components/schemas/TrajectoryWithin"
                 },
                 {
-                  "$ref": "#/components/schemas/StartsWithin"
-                },
-                {
-                  "$ref": "#/components/schemas/EndsWithin"
+                  "$ref": "#/components/schemas/EndpointWithin"
                 },
                 {
                   "$ref": "#/components/schemas/IcaoType"
@@ -517,19 +514,142 @@
         "title": "EmitterCategory",
         "description": "Flights matching one or more ADS-B emitter category codes."
       },
-      "EndsWithin": {
+      "EndpointWithin": {
         "properties": {
-          "ends_within": {
-            "$ref": "#/components/schemas/SpatioTemporalValue",
-            "description": "Spatial and/or temporal constraints on the arrival point and time."
+          "endpoint_within": {
+            "$ref": "#/components/schemas/EndpointWithinValue",
+            "description": "Spatial and/or temporal constraints on the departure and/or arrival point."
           }
         },
         "type": "object",
         "required": [
-          "ends_within"
+          "endpoint_within"
         ],
-        "title": "EndsWithin",
-        "description": "Flights whose arrival point falls within the given geometry and/or arrives within the given time window."
+        "title": "EndpointWithin",
+        "description": "Flights whose departure and/or arrival point falls within the given geometry and/or time window."
+      },
+      "EndpointWithinValue": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "start",
+              "end",
+              "either",
+              "both"
+            ],
+            "title": "Mode",
+            "description": "Which endpoint(s) to constrain: 'start' (departure only), 'end' (arrival only), 'either' (departure OR arrival), or 'both' (departure AND arrival must satisfy their respective constraints)."
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/GeoJSONPoint"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONMultiPoint"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONLineString"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONMultiLineString"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONPolygon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONMultiPolygon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GeoJSONGeometryCollection"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CircleGeometry"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "type",
+                  "mapping": {
+                    "Circle": "#/components/schemas/CircleGeometry",
+                    "GeometryCollection": "#/components/schemas/GeoJSONGeometryCollection",
+                    "LineString": "#/components/schemas/GeoJSONLineString",
+                    "MultiLineString": "#/components/schemas/GeoJSONMultiLineString",
+                    "MultiPoint": "#/components/schemas/GeoJSONMultiPoint",
+                    "MultiPolygon": "#/components/schemas/GeoJSONMultiPolygon",
+                    "Point": "#/components/schemas/GeoJSONPoint",
+                    "Polygon": "#/components/schemas/GeoJSONPolygon"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry",
+            "description": "GeoJSON geometry or Circle to test the constrained endpoint(s) against. In 'both'/'either' mode the same geometry is applied to both departure and arrival points."
+          },
+          "start_time_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time From",
+            "description": "Inclusive lower bound on start_ts. Applied when mode is 'start', 'either', or 'both'."
+          },
+          "start_time_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time To",
+            "description": "Exclusive upper bound on start_ts. Applied when mode is 'start', 'either', or 'both'."
+          },
+          "end_time_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time From",
+            "description": "Inclusive lower bound on end_ts. Applied when mode is 'end', 'either', or 'both'."
+          },
+          "end_time_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time To",
+            "description": "Exclusive upper bound on end_ts. Applied when mode is 'end', 'either', or 'both'."
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "EndpointWithinValue",
+        "description": "Spatial and/or temporal filter on departure and/or arrival point.\n\nAt least one constraint must be provided."
       },
       "FlightDetail": {
         "properties": {
@@ -1419,10 +1539,7 @@
                 "$ref": "#/components/schemas/TrajectoryWithin"
               },
               {
-                "$ref": "#/components/schemas/StartsWithin"
-              },
-              {
-                "$ref": "#/components/schemas/EndsWithin"
+                "$ref": "#/components/schemas/EndpointWithin"
               },
               {
                 "$ref": "#/components/schemas/IcaoType"
@@ -1469,10 +1586,7 @@
                   "$ref": "#/components/schemas/TrajectoryWithin"
                 },
                 {
-                  "$ref": "#/components/schemas/StartsWithin"
-                },
-                {
-                  "$ref": "#/components/schemas/EndsWithin"
+                  "$ref": "#/components/schemas/EndpointWithin"
                 },
                 {
                   "$ref": "#/components/schemas/IcaoType"
@@ -1553,10 +1667,7 @@
                 "$ref": "#/components/schemas/TrajectoryWithin"
               },
               {
-                "$ref": "#/components/schemas/StartsWithin"
-              },
-              {
-                "$ref": "#/components/schemas/EndsWithin"
+                "$ref": "#/components/schemas/EndpointWithin"
               },
               {
                 "$ref": "#/components/schemas/IcaoType"
@@ -1853,103 +1964,6 @@
         "type": "object",
         "title": "SpatioTemporalAltitudeValue",
         "description": "Spatial, altitude, and/or temporal filter for trajectory predicates.\n\nAt least one constraint must be provided."
-      },
-      "SpatioTemporalValue": {
-        "properties": {
-          "geometry": {
-            "anyOf": [
-              {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/GeoJSONPoint"
-                  },
-                  {
-                    "$ref": "#/components/schemas/GeoJSONMultiPoint"
-                  },
-                  {
-                    "$ref": "#/components/schemas/GeoJSONLineString"
-                  },
-                  {
-                    "$ref": "#/components/schemas/GeoJSONMultiLineString"
-                  },
-                  {
-                    "$ref": "#/components/schemas/GeoJSONPolygon"
-                  },
-                  {
-                    "$ref": "#/components/schemas/GeoJSONMultiPolygon"
-                  },
-                  {
-                    "$ref": "#/components/schemas/GeoJSONGeometryCollection"
-                  },
-                  {
-                    "$ref": "#/components/schemas/CircleGeometry"
-                  }
-                ],
-                "discriminator": {
-                  "propertyName": "type",
-                  "mapping": {
-                    "Circle": "#/components/schemas/CircleGeometry",
-                    "GeometryCollection": "#/components/schemas/GeoJSONGeometryCollection",
-                    "LineString": "#/components/schemas/GeoJSONLineString",
-                    "MultiLineString": "#/components/schemas/GeoJSONMultiLineString",
-                    "MultiPoint": "#/components/schemas/GeoJSONMultiPoint",
-                    "MultiPolygon": "#/components/schemas/GeoJSONMultiPolygon",
-                    "Point": "#/components/schemas/GeoJSONPoint",
-                    "Polygon": "#/components/schemas/GeoJSONPolygon"
-                  }
-                }
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Geometry",
-            "description": "GeoJSON geometry or Circle to test the departure/arrival point against. Omit for a time-only filter."
-          },
-          "time_from": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Time From",
-            "description": "Inclusive lower bound on start_ts (starts_within) or end_ts (ends_within)."
-          },
-          "time_to": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Time To",
-            "description": "Exclusive upper bound on start_ts or end_ts."
-          }
-        },
-        "type": "object",
-        "title": "SpatioTemporalValue",
-        "description": "Spatial and/or temporal filter without altitude \u2014 used by starts_within / ends_within.\n\nAt least one of geometry, time_from, or time_to must be provided."
-      },
-      "StartsWithin": {
-        "properties": {
-          "starts_within": {
-            "$ref": "#/components/schemas/SpatioTemporalValue",
-            "description": "Spatial and/or temporal constraints on the departure point and time."
-          }
-        },
-        "type": "object",
-        "required": [
-          "starts_within"
-        ],
-        "title": "StartsWithin",
-        "description": "Flights whose departure point falls within the given geometry and/or departs within the given time window."
       },
       "TrajectoryIntersects": {
         "properties": {

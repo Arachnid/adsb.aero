@@ -76,12 +76,23 @@ export function Sidebar({
         )}
       </div>
 
-      <div className="sb-scroll" style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}>
+      <div
+        className="sb-scroll"
+        style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}
+      >
         {children}
       </div>
 
       {toolbar !== undefined && (
-        <div style={{ flexShrink: 0, padding: "0 12px 10px", position: "relative" }}>{toolbar}</div>
+        <div
+          style={{
+            flexShrink: 0,
+            padding: "0 12px 10px",
+            position: "relative",
+          }}
+        >
+          {toolbar}
+        </div>
       )}
 
       {footer !== undefined && (

@@ -7,7 +7,10 @@ function icon(
   path: string,
   viewBox = "0 0 24 24",
 ): ({ size, className }: IconProps) => React.ReactElement {
-  return function SvgIcon({ size = 16, className }: IconProps): React.ReactElement {
+  return function SvgIcon({
+    size = 16,
+    className,
+  }: IconProps): React.ReactElement {
     return (
       <svg
         width={size}
@@ -33,7 +36,9 @@ export const Moon = icon("M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z");
 export const Sun = icon(
   "M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42",
 );
-export const Layers = icon("M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5");
+export const Layers = icon(
+  "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
+);
 export const Plane = icon(
   "M21 16v-2l-8-5V3.5a1.5 1.5 0 00-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z",
 );
@@ -57,8 +62,13 @@ export const Braces = icon(
   "M8 3H7a2 2 0 00-2 2v5a2 2 0 01-2 2 2 2 0 012 2v5a2 2 0 002 2h1M16 3h1a2 2 0 012 2v5a2 2 0 002 2 2 2 0 00-2 2v5a2 2 0 01-2 2h-1",
 );
 export const Viewport = icon("M6 2H2v4M22 6V2h-4M6 22H2v-4M22 18v4h-4");
-export const Zone = icon("M12 2a8 8 0 100 16A8 8 0 0012 2zM2 12h3M19 12h3M12 2v3M12 19v3");
-export const Satellite = ({ size = 16, className }: IconProps): React.ReactElement => (
+export const Zone = icon(
+  "M12 2a8 8 0 100 16A8 8 0 0012 2zM2 12h3M19 12h3M12 2v3M12 19v3",
+);
+export const Satellite = ({
+  size = 16,
+  className,
+}: IconProps): React.ReactElement => (
   <svg
     width={size}
     height={size}

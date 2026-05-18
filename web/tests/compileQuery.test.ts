@@ -62,17 +62,32 @@ describe("callsign", () => {
 
 describe("aircraft", () => {
   it("compiles icao_type only", () => {
-    const g = group({ id: "1", kind: "aircraft", icaoTypes: ["B738"], emitters: [] });
+    const g = group({
+      id: "1",
+      kind: "aircraft",
+      icaoTypes: ["B738"],
+      emitters: [],
+    });
     expect(compileGroup(g, null)).toEqual({ icao_type: ["B738"] });
   });
 
   it("compiles emitter_category only", () => {
-    const g = group({ id: "1", kind: "aircraft", icaoTypes: [], emitters: ["A3"] });
+    const g = group({
+      id: "1",
+      kind: "aircraft",
+      icaoTypes: [],
+      emitters: ["A3"],
+    });
     expect(compileGroup(g, null)).toEqual({ emitter_category: ["A3"] });
   });
 
   it("combines both with and", () => {
-    const g = group({ id: "1", kind: "aircraft", icaoTypes: ["B738"], emitters: ["A3"] });
+    const g = group({
+      id: "1",
+      kind: "aircraft",
+      icaoTypes: ["B738"],
+      emitters: ["A3"],
+    });
     expect(compileGroup(g, null)).toEqual({
       and: [{ icao_type: ["B738"] }, { emitter_category: ["A3"] }],
     });
@@ -84,42 +99,81 @@ describe("aircraft", () => {
   });
 });
 
-// ---- starts_within ---------------------------------------------------------
+// ---- endpoint_within -------------------------------------------------------
 
-describe("starts_within", () => {
-  it("circle geometry", () => {
-    const g = group({
-      id: "1",
-      kind: "starts_within",
-      shape: "circle",
-      lat: 51.5,
-      lng: -0.1,
-      radiusNm: 10,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    });
+function epPred(
+  overrides: Partial<{
+    mode: "start" | "end" | "either" | "both";
+    shape: "none" | "circle" | "polygon" | "viewport" | "airspace";
+    lat: number | null;
+    lng: number | null;
+    radiusNm: number;
+    polygon: [number, number][] | null;
+    startTimeFrom: string;
+    startTimeTo: string;
+    endTimeFrom: string;
+    endTimeTo: string;
+  }> = {},
+) {
+  return {
+    id: "1",
+    kind: "endpoint_within" as const,
+    mode: "start" as const,
+    shape: "circle" as const,
+    lat: null,
+    lng: null,
+    radiusNm: 25,
+    polygon: null,
+    airspaceName: null,
+    airspaceLabel: null,
+    startTimeFrom: "",
+    startTimeTo: "",
+    endTimeFrom: "",
+    endTimeTo: "",
+    ...overrides,
+  };
+}
+
+describe("endpoint_within", () => {
+  it("start mode — circle geometry", () => {
+    const g = group(
+      epPred({ mode: "start", lat: 51.5, lng: -0.1, radiusNm: 10 }),
+    );
     expect(compileGroup(g, null)).toEqual({
-      starts_within: {
-        geometry: { type: "Circle", coordinates: [-0.1, 51.5], radius: 10 * 1852 },
+      endpoint_within: {
+        mode: "start",
+        geometry: {
+          type: "Circle",
+          coordinates: [-0.1, 51.5],
+          radius: 10 * 1852,
+        },
+      },
+    });
+  });
+
+  it("end mode — circle geometry", () => {
+    const g = group(epPred({ mode: "end", lat: 53.0, lng: -1.0, radiusNm: 5 }));
+    expect(compileGroup(g, null)).toEqual({
+      endpoint_within: {
+        mode: "end",
+        geometry: {
+          type: "Circle",
+          coordinates: [-1.0, 53.0],
+          radius: 5 * 1852,
+        },
       },
     });
   });
 
   it("polygon geometry (ring closed)", () => {
-    const g = group({
-      id: "1",
-      kind: "starts_within",
-      shape: "polygon",
-      lat: null,
-      lng: null,
-      radiusNm: 25,
-      polygon: POLYGON,
-      timeFrom: "",
-      timeTo: "",
-    });
-    const result = compileGroup(g, null) as { starts_within: { geometry: unknown } };
-    const geom = result.starts_within.geometry as { type: string; coordinates: unknown[][] };
+    const g = group(epPred({ shape: "polygon", polygon: POLYGON }));
+    const result = compileGroup(g, null) as {
+      endpoint_within: { geometry: unknown };
+    };
+    const geom = result.endpoint_within.geometry as {
+      type: string;
+      coordinates: unknown[][];
+    };
     expect(geom.type).toBe("Polygon");
     const ring = geom.coordinates[0] as [number, number][];
     expect(ring[0]).toEqual(ring[ring.length - 1]);
@@ -127,19 +181,10 @@ describe("starts_within", () => {
   });
 
   it("viewport geometry from bounds", () => {
-    const g = group({
-      id: "1",
-      kind: "starts_within",
-      shape: "viewport",
-      lat: null,
-      lng: null,
-      radiusNm: 25,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    });
+    const g = group(epPred({ shape: "viewport" }));
     expect(compileGroup(g, BOUNDS)).toEqual({
-      starts_within: {
+      endpoint_within: {
+        mode: "start",
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -157,88 +202,75 @@ describe("starts_within", () => {
   });
 
   it("viewport with no bounds returns null", () => {
-    const g = group({
-      id: "1",
-      kind: "starts_within",
-      shape: "viewport",
-      lat: null,
-      lng: null,
-      radiusNm: 25,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    });
+    const g = group(epPred({ shape: "viewport" }));
     expect(compileGroup(g, null)).toBeNull();
   });
 
-  it("includes time fields", () => {
-    const g = group({
-      id: "1",
-      kind: "starts_within",
-      shape: "circle",
-      lat: 51.5,
-      lng: -0.1,
-      radiusNm: 10,
-      polygon: null,
-      timeFrom: "2025-01-01T12:00",
-      timeTo: "2025-01-02T00:00",
-    });
-    const result = compileGroup(g, null) as { starts_within: Record<string, unknown> };
-    expect(result.starts_within.time_from).toBe("2025-01-01T12:00:00Z");
-    expect(result.starts_within.time_to).toBe("2025-01-02T00:00:00Z");
+  it("start mode — includes start_time fields", () => {
+    const g = group(
+      epPred({
+        mode: "start",
+        lat: 51.5,
+        lng: -0.1,
+        radiusNm: 10,
+        startTimeFrom: "2025-01-01T12:00",
+        startTimeTo: "2025-01-02T00:00",
+      }),
+    );
+    const result = compileGroup(g, null) as {
+      endpoint_within: Record<string, unknown>;
+    };
+    expect(result.endpoint_within.start_time_from).toBe("2025-01-01T12:00:00Z");
+    expect(result.endpoint_within.start_time_to).toBe("2025-01-02T00:00:00Z");
   });
 
-  it("none shape with time only", () => {
-    const g = group({
-      id: "1",
-      kind: "starts_within",
-      shape: "none",
-      lat: null,
-      lng: null,
-      radiusNm: 25,
-      polygon: null,
-      timeFrom: "2025-06-01T00:00",
-      timeTo: "",
-    });
+  it("end mode — includes end_time fields", () => {
+    const g = group(
+      epPred({
+        mode: "end",
+        lat: 51.5,
+        lng: -0.1,
+        radiusNm: 10,
+        endTimeFrom: "2025-01-01T12:00",
+        endTimeTo: "2025-01-02T00:00",
+      }),
+    );
+    const result = compileGroup(g, null) as {
+      endpoint_within: Record<string, unknown>;
+    };
+    expect(result.endpoint_within.end_time_from).toBe("2025-01-01T12:00:00Z");
+    expect(result.endpoint_within.end_time_to).toBe("2025-01-02T00:00:00Z");
+  });
+
+  it("none shape with start_time_from only", () => {
+    const g = group(
+      epPred({ shape: "none", startTimeFrom: "2025-06-01T00:00" }),
+    );
     expect(compileGroup(g, null)).toEqual({
-      starts_within: { time_from: "2025-06-01T00:00:00Z" },
+      endpoint_within: {
+        mode: "start",
+        start_time_from: "2025-06-01T00:00:00Z",
+      },
     });
   });
 
   it("none shape without time or geometry returns null", () => {
-    const g = group({
-      id: "1",
-      kind: "starts_within",
-      shape: "none",
-      lat: null,
-      lng: null,
-      radiusNm: 25,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    });
+    const g = group(epPred({ shape: "none" }));
     expect(compileGroup(g, null)).toBeNull();
   });
-});
 
-// ---- ends_within -----------------------------------------------------------
-
-describe("ends_within", () => {
-  it("circle geometry", () => {
-    const g = group({
-      id: "1",
-      kind: "ends_within",
-      shape: "circle",
-      lat: 53.0,
-      lng: -1.0,
-      radiusNm: 5,
-      polygon: null,
-      timeFrom: "",
-      timeTo: "",
-    });
+  it("either mode — passes mode through correctly", () => {
+    const g = group(
+      epPred({ mode: "either", lat: 51.5, lng: -0.1, radiusNm: 10 }),
+    );
     expect(compileGroup(g, null)).toEqual({
-      ends_within: {
-        geometry: { type: "Circle", coordinates: [-1.0, 53.0], radius: 5 * 1852 },
+      endpoint_within: {
+        mode: "either",
+        geometry: {
+          type: "Circle",
+          coordinates: [-0.1, 51.5],
+          radius: 10 * 1852,
+        },
       },
     });
   });
@@ -268,7 +300,11 @@ describe("region", () => {
       trajectory_intersects: {
         altitude_min_ref: "ft",
         altitude_max_ref: "ft",
-        geometry: { type: "Circle", coordinates: [-0.1, 51.5], radius: 20 * 1852 },
+        geometry: {
+          type: "Circle",
+          coordinates: [-0.1, 51.5],
+          radius: 20 * 1852,
+        },
       },
     });
   });
@@ -290,7 +326,9 @@ describe("region", () => {
       squawkCodes: [],
       ...REGION_DEFAULTS,
     });
-    const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
+    const result = compileGroup(g, null) as {
+      trajectory_intersects: Record<string, unknown>;
+    };
     expect(result.trajectory_intersects.altitude_min).toBe(10000);
     expect(result.trajectory_intersects.altitude_max).toBe(40000);
   });
@@ -312,7 +350,9 @@ describe("region", () => {
       squawkCodes: [],
       ...REGION_DEFAULTS,
     });
-    const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
+    const result = compileGroup(g, null) as {
+      trajectory_intersects: Record<string, unknown>;
+    };
     expect("altitude_min" in result.trajectory_intersects).toBe(false);
     expect("altitude_max" in result.trajectory_intersects).toBe(false);
   });
@@ -356,7 +396,9 @@ describe("region", () => {
       squawkCodes: [],
       ...REGION_DEFAULTS,
     });
-    const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
+    const result = compileGroup(g, null) as {
+      trajectory_intersects: Record<string, unknown>;
+    };
     expect(result.trajectory_intersects.time_from).toBe("2025-03-15T06:00:00Z");
     expect(result.trajectory_intersects.time_to).toBe("2025-03-15T18:00:00Z");
   });
@@ -378,7 +420,9 @@ describe("region", () => {
       squawkCodes: ["7700", "7600"],
       ...REGION_DEFAULTS,
     });
-    const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
+    const result = compileGroup(g, null) as {
+      trajectory_intersects: Record<string, unknown>;
+    };
     expect(result.trajectory_intersects.squawk_codes).toEqual(["7700", "7600"]);
   });
 
@@ -399,7 +443,9 @@ describe("region", () => {
       squawkCodes: [],
       ...REGION_DEFAULTS,
     });
-    const result = compileGroup(g, null) as { trajectory_intersects: Record<string, unknown> };
+    const result = compileGroup(g, null) as {
+      trajectory_intersects: Record<string, unknown>;
+    };
     expect("squawk_codes" in result.trajectory_intersects).toBe(false);
   });
 });
@@ -428,7 +474,11 @@ describe("always_within", () => {
       trajectory_within: {
         altitude_min_ref: "ft",
         altitude_max_ref: "ft",
-        geometry: { type: "Circle", coordinates: [-0.1, 51.5], radius: 20 * 1852 },
+        geometry: {
+          type: "Circle",
+          coordinates: [-0.1, 51.5],
+          radius: 20 * 1852,
+        },
       },
     });
   });
@@ -450,7 +500,9 @@ describe("always_within", () => {
       squawkCodes: [],
       ...REGION_DEFAULTS,
     });
-    const result = compileGroup(g, null) as { trajectory_within: Record<string, unknown> };
+    const result = compileGroup(g, null) as {
+      trajectory_within: Record<string, unknown>;
+    };
     expect(result.trajectory_within.altitude_min).toBe(5000);
     expect(result.trajectory_within.altitude_max).toBe(30000);
     expect(result.trajectory_within.time_from).toBe("2025-04-01T00:00:00Z");
@@ -474,7 +526,9 @@ describe("always_within", () => {
       squawkCodes: ["1200"],
       ...REGION_DEFAULTS,
     });
-    const result = compileGroup(g, null) as { trajectory_within: Record<string, unknown> };
+    const result = compileGroup(g, null) as {
+      trajectory_within: Record<string, unknown>;
+    };
     expect(result.trajectory_within.squawk_codes).toEqual(["1200"]);
   });
 });
@@ -530,7 +584,12 @@ describe("group combinators", () => {
       { id: "1", kind: "callsign", pattern: "^BAW" },
       { id: "2", kind: "callsign", pattern: "^EZY" },
     );
-    const outer = group(inner, { id: "3", kind: "aircraft", icaoTypes: ["B738"], emitters: [] });
+    const outer = group(inner, {
+      id: "3",
+      kind: "aircraft",
+      icaoTypes: ["B738"],
+      emitters: [],
+    });
     expect(compileGroup(outer, null)).toEqual({
       and: [
         { or: [{ callsign_matches: "^BAW" }, { callsign_matches: "^EZY" }] },
@@ -545,18 +604,12 @@ describe("group combinators", () => {
 
 describe("toIso (via time fields)", () => {
   it("passes through an already-full ISO string", () => {
-    const g = group({
-      id: "1",
-      kind: "starts_within",
-      shape: "none",
-      lat: null,
-      lng: null,
-      radiusNm: 25,
-      polygon: null,
-      timeFrom: "2025-01-01T12:00:00",
-      timeTo: "",
-    });
-    const result = compileGroup(g, null) as { starts_within: Record<string, unknown> };
-    expect(result.starts_within.time_from).toBe("2025-01-01T12:00:00Z");
+    const g = group(
+      epPred({ shape: "none", startTimeFrom: "2025-01-01T12:00:00" }),
+    );
+    const result = compileGroup(g, null) as {
+      endpoint_within: Record<string, unknown>;
+    };
+    expect(result.endpoint_within.start_time_from).toBe("2025-01-01T12:00:00Z");
   });
 });

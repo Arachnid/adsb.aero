@@ -1,0 +1,3 @@
+# Mark gzip-compressed test fixtures as binary so pre-commit text hooks
+# (end-of-file-fixer, mixed-line-ending) do not corrupt them.
+server/tests/fixtures/traces/*.json binary

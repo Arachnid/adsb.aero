@@ -34,7 +34,11 @@ export function DatePicker({
 }
 
 // Stub structural components used as imports in QueryBuilder.tsx.
-export function Group({ children }: { children?: React.ReactNode }): React.ReactElement {
+export function Group({
+  children,
+}: {
+  children?: React.ReactNode;
+}): React.ReactElement {
   return <div>{children}</div>;
 }
 export function Button({
@@ -47,35 +51,87 @@ export function Button({
 }): React.ReactElement {
   return <button type="button">{children}</button>;
 }
-export function Popover({ children }: { children?: React.ReactNode }): React.ReactElement {
+export function Popover({
+  children,
+}: {
+  children?: React.ReactNode;
+}): React.ReactElement {
   return <>{children}</>;
 }
-export function Dialog({ children }: { children?: React.ReactNode }): React.ReactElement {
+export function Dialog({
+  children,
+}: {
+  children?: React.ReactNode;
+}): React.ReactElement {
   return <div>{children}</div>;
 }
-export function Calendar({ children }: { children?: React.ReactNode }): React.ReactElement {
+export function Calendar({
+  children,
+}: {
+  children?: React.ReactNode;
+}): React.ReactElement {
   return <div>{children}</div>;
 }
-export function CalendarGrid({ children }: { children?: unknown }): React.ReactElement {
-  return <table>{typeof children === "function" ? null : (children as React.ReactNode)}</table>;
+export function CalendarGrid({
+  children,
+}: {
+  children?: unknown;
+}): React.ReactElement {
+  return (
+    <table>
+      {typeof children === "function" ? null : (children as React.ReactNode)}
+    </table>
+  );
 }
-export function CalendarGridHeader({ children }: { children?: unknown }): React.ReactElement {
-  return <thead>{typeof children === "function" ? null : (children as React.ReactNode)}</thead>;
+export function CalendarGridHeader({
+  children,
+}: {
+  children?: unknown;
+}): React.ReactElement {
+  return (
+    <thead>
+      {typeof children === "function" ? null : (children as React.ReactNode)}
+    </thead>
+  );
 }
-export function CalendarGridBody({ children }: { children?: unknown }): React.ReactElement {
-  return <tbody>{typeof children === "function" ? null : (children as React.ReactNode)}</tbody>;
+export function CalendarGridBody({
+  children,
+}: {
+  children?: unknown;
+}): React.ReactElement {
+  return (
+    <tbody>
+      {typeof children === "function" ? null : (children as React.ReactNode)}
+    </tbody>
+  );
 }
-export function CalendarHeaderCell({ children }: { children?: React.ReactNode }): React.ReactElement {
+export function CalendarHeaderCell({
+  children,
+}: {
+  children?: React.ReactNode;
+}): React.ReactElement {
   return <th>{children}</th>;
 }
 export function CalendarCell(): React.ReactElement {
   return <td />;
 }
-export function Heading({ children }: { children?: React.ReactNode }): React.ReactElement {
+export function Heading({
+  children,
+}: {
+  children?: React.ReactNode;
+}): React.ReactElement {
   return <div>{children}</div>;
 }
-export function DateInput({ children }: { children?: unknown }): React.ReactElement {
-  return <span>{typeof children === "function" ? null : (children as React.ReactNode)}</span>;
+export function DateInput({
+  children,
+}: {
+  children?: unknown;
+}): React.ReactElement {
+  return (
+    <span>
+      {typeof children === "function" ? null : (children as React.ReactNode)}
+    </span>
+  );
 }
 export function DateSegment(): React.ReactElement {
   return <span />;

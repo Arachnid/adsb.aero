@@ -130,8 +130,7 @@ export interface components {
       and: (
         | components["schemas"]["TrajectoryIntersects"]
         | components["schemas"]["TrajectoryWithin"]
-        | components["schemas"]["StartsWithin"]
-        | components["schemas"]["EndsWithin"]
+        | components["schemas"]["EndpointWithin"]
         | components["schemas"]["IcaoType"]
         | components["schemas"]["EmitterCategory"]
         | components["schemas"]["CallsignMatches"]
@@ -231,12 +230,62 @@ export interface components {
       emitter_category: string[];
     };
     /**
-     * EndsWithin
-     * @description Flights whose arrival point falls within the given geometry and/or arrives within the given time window.
+     * EndpointWithin
+     * @description Flights whose departure and/or arrival point falls within the given geometry and/or time window.
      */
-    EndsWithin: {
-      /** @description Spatial and/or temporal constraints on the arrival point and time. */
-      ends_within: components["schemas"]["SpatioTemporalValue"];
+    EndpointWithin: {
+      /** @description Spatial and/or temporal constraints on the departure and/or arrival point. */
+      endpoint_within: components["schemas"]["EndpointWithinValue"];
+    };
+    /**
+     * EndpointWithinValue
+     * @description Spatial and/or temporal filter on departure and/or arrival point.
+     *
+     *     At least one constraint must be provided.
+     */
+    EndpointWithinValue: {
+      /**
+       * Mode
+       * @description Which endpoint(s) to constrain: 'start' (departure only), 'end' (arrival only), 'either' (departure OR arrival), or 'both' (departure AND arrival must satisfy their respective constraints).
+       * @enum {string}
+       */
+      mode: "start" | "end" | "either" | "both";
+      /**
+       * Geometry
+       * @description GeoJSON geometry or Circle to test the constrained endpoint(s) against. In 'both'/'either' mode the same geometry is applied to both departure and arrival points.
+       */
+      geometry?:
+        | (
+            | components["schemas"]["GeoJSONPoint"]
+            | components["schemas"]["GeoJSONMultiPoint"]
+            | components["schemas"]["GeoJSONLineString"]
+            | components["schemas"]["GeoJSONMultiLineString"]
+            | components["schemas"]["GeoJSONPolygon"]
+            | components["schemas"]["GeoJSONMultiPolygon"]
+            | components["schemas"]["GeoJSONGeometryCollection"]
+            | components["schemas"]["CircleGeometry"]
+          )
+        | null;
+      /**
+       * Start Time From
+       * @description Inclusive lower bound on start_ts. Applied when mode is 'start', 'either', or 'both'.
+       */
+      start_time_from?: string | null;
+      /**
+       * Start Time To
+       * @description Exclusive upper bound on start_ts. Applied when mode is 'start', 'either', or 'both'.
+       */
+      start_time_to?: string | null;
+      /**
+       * End Time From
+       * @description Inclusive lower bound on end_ts. Applied when mode is 'end', 'either', or 'both'.
+       */
+      end_time_from?: string | null;
+      /**
+       * End Time To
+       * @description Exclusive upper bound on end_ts. Applied when mode is 'end', 'either', or 'both'.
+       */
+      end_time_to?: string | null;
     };
     /**
      * FlightDetail
@@ -710,8 +759,7 @@ export interface components {
       not:
         | components["schemas"]["TrajectoryIntersects"]
         | components["schemas"]["TrajectoryWithin"]
-        | components["schemas"]["StartsWithin"]
-        | components["schemas"]["EndsWithin"]
+        | components["schemas"]["EndpointWithin"]
         | components["schemas"]["IcaoType"]
         | components["schemas"]["EmitterCategory"]
         | components["schemas"]["CallsignMatches"]
@@ -732,8 +780,7 @@ export interface components {
       or: (
         | components["schemas"]["TrajectoryIntersects"]
         | components["schemas"]["TrajectoryWithin"]
-        | components["schemas"]["StartsWithin"]
-        | components["schemas"]["EndsWithin"]
+        | components["schemas"]["EndpointWithin"]
         | components["schemas"]["IcaoType"]
         | components["schemas"]["EmitterCategory"]
         | components["schemas"]["CallsignMatches"]
@@ -774,8 +821,7 @@ export interface components {
       match?:
         | components["schemas"]["TrajectoryIntersects"]
         | components["schemas"]["TrajectoryWithin"]
-        | components["schemas"]["StartsWithin"]
-        | components["schemas"]["EndsWithin"]
+        | components["schemas"]["EndpointWithin"]
         | components["schemas"]["IcaoType"]
         | components["schemas"]["EmitterCategory"]
         | components["schemas"]["CallsignMatches"]
@@ -910,48 +956,6 @@ export interface components {
        * @description Maximum distance the flight may cover inside the geometry (metres, inclusive). Requires `geometry`.
        */
       distance_max_m?: number | null;
-    };
-    /**
-     * SpatioTemporalValue
-     * @description Spatial and/or temporal filter without altitude — used by starts_within / ends_within.
-     *
-     *     At least one of geometry, time_from, or time_to must be provided.
-     */
-    SpatioTemporalValue: {
-      /**
-       * Geometry
-       * @description GeoJSON geometry or Circle to test the departure/arrival point against. Omit for a time-only filter.
-       */
-      geometry?:
-        | (
-            | components["schemas"]["GeoJSONPoint"]
-            | components["schemas"]["GeoJSONMultiPoint"]
-            | components["schemas"]["GeoJSONLineString"]
-            | components["schemas"]["GeoJSONMultiLineString"]
-            | components["schemas"]["GeoJSONPolygon"]
-            | components["schemas"]["GeoJSONMultiPolygon"]
-            | components["schemas"]["GeoJSONGeometryCollection"]
-            | components["schemas"]["CircleGeometry"]
-          )
-        | null;
-      /**
-       * Time From
-       * @description Inclusive lower bound on start_ts (starts_within) or end_ts (ends_within).
-       */
-      time_from?: string | null;
-      /**
-       * Time To
-       * @description Exclusive upper bound on start_ts or end_ts.
-       */
-      time_to?: string | null;
-    };
-    /**
-     * StartsWithin
-     * @description Flights whose departure point falls within the given geometry and/or departs within the given time window.
-     */
-    StartsWithin: {
-      /** @description Spatial and/or temporal constraints on the departure point and time. */
-      starts_within: components["schemas"]["SpatioTemporalValue"];
     };
     /**
      * TrajectoryIntersects

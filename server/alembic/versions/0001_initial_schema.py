@@ -100,14 +100,10 @@ def upgrade() -> None:
 
     # H3 GIN index — drives spatial pre-filtering via path_h3 && $cells::h3index[].
     # Replaces the old MobilityDB GiST index on path.
-    op.execute(
-        sa.text("CREATE INDEX flights_path_h3_gin ON flights USING GIN (path_h3)")
-    )
+    op.execute(sa.text("CREATE INDEX flights_path_h3_gin ON flights USING GIN (path_h3)"))
 
     # Squawk GIN index — pre-filters squawk queries before MobilityDB temporal check.
-    op.execute(
-        sa.text("CREATE INDEX flights_squawk_codes_gin ON flights USING GIN (squawk_codes)")
-    )
+    op.execute(sa.text("CREATE INDEX flights_squawk_codes_gin ON flights USING GIN (squawk_codes)"))
 
     # Expression indexes on the derived start/end points for radius queries.
     # startValue/endValue return the first/last geometry instant of the tgeompoint.

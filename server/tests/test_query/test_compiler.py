@@ -16,13 +16,12 @@ from adsb_server.query.models import (
     Duration,
     DurationValue,
     EmitterCategory,
-    EndsWithin,
+    EndpointWithin,
+    EndpointWithinValue,
     IcaoType,
     NotPredicate,
     OrPredicate,
     SpatioTemporalAltitudeValue,
-    SpatioTemporalValue,
-    StartsWithin,
     TrajectoryIntersects,
     TrajectoryWithin,
 )
@@ -43,9 +42,9 @@ _T2 = datetime.fromisoformat("2025-04-02T00:00:00+00:00")
 
 
 class TestValueValidators:
-    def test_spatio_temporal_value_empty_raises(self) -> None:
+    def test_endpoint_within_value_empty_raises(self) -> None:
         with pytest.raises(ValueError, match="at least one"):
-            SpatioTemporalValue()
+            EndpointWithinValue(mode="start")
 
     def test_spatio_temporal_altitude_value_empty_raises(self) -> None:
         with pytest.raises(ValueError, match="at least one"):
@@ -781,20 +780,20 @@ class TestSquawkFilter:
 class TestPointWithin:
     def test_starts_within_polygon_uses_startvalue(self) -> None:
         params: list = []
-        pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_POLYGON))
+        pred = EndpointWithin(endpoint_within=EndpointWithinValue(mode="start", geometry=_POLYGON))
         sql = compile_predicate(pred, params)
         assert "ST_Within(startValue(path)::geometry," in sql
         assert "ST_GeomFromGeoJSON" in sql
 
     def test_ends_within_polygon_uses_endvalue(self) -> None:
         params: list = []
-        pred = EndsWithin(ends_within=SpatioTemporalValue(geometry=_POLYGON))
+        pred = EndpointWithin(endpoint_within=EndpointWithinValue(mode="end", geometry=_POLYGON))
         sql = compile_predicate(pred, params)
         assert "ST_Within(endValue(path)::geometry," in sql
 
     def test_starts_within_circle_uses_st_dwithin_geometry_degrees(self) -> None:
         params: list = []
-        pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_CIRCLE))
+        pred = EndpointWithin(endpoint_within=EndpointWithinValue(mode="start", geometry=_CIRCLE))
         sql = compile_predicate(pred, params)
         # geometry DWithin with radius converted to degrees (radius / 111_320 m/°)
         assert "ST_DWithin(startValue(path)::geometry, ST_SetSRID(ST_MakePoint(" in sql
@@ -803,10 +802,28 @@ class TestPointWithin:
 
     def test_ends_within_circle_uses_st_dwithin_geometry_degrees(self) -> None:
         params: list = []
-        pred = EndsWithin(ends_within=SpatioTemporalValue(geometry=_CIRCLE))
+        pred = EndpointWithin(endpoint_within=EndpointWithinValue(mode="end", geometry=_CIRCLE))
         sql = compile_predicate(pred, params)
         assert "ST_DWithin(endValue(path)::geometry, ST_SetSRID(ST_MakePoint(" in sql
         assert "::geometry::geography" not in sql
+
+    def test_either_mode_polygon_generates_or_branches(self) -> None:
+        params: list = []
+        pred = EndpointWithin(endpoint_within=EndpointWithinValue(mode="either", geometry=_POLYGON))
+        sql = compile_predicate(pred, params)
+        assert "startValue(path)::geometry" in sql
+        assert "endValue(path)::geometry" in sql
+        assert " OR " in sql
+
+    def test_either_mode_time_only_generates_or_branches(self) -> None:
+        params: list = []
+        pred = EndpointWithin(
+            endpoint_within=EndpointWithinValue(mode="either", start_time_from=_T1, end_time_to=_T2)
+        )
+        sql = compile_predicate(pred, params)
+        assert "start_ts >=" in sql
+        assert "end_ts <" in sql
+        assert " OR " in sql
 
 
 # ---------------------------------------------------------------------------
@@ -817,7 +834,9 @@ class TestPointWithin:
 class TestTimeFields:
     def test_starts_within_time_from_filters_start_ts(self) -> None:
         params: list = []
-        pred = StartsWithin(starts_within=SpatioTemporalValue(time_from=_T1))
+        pred = EndpointWithin(
+            endpoint_within=EndpointWithinValue(mode="start", start_time_from=_T1)
+        )
         sql = compile_predicate(pred, params)
         assert "start_ts >=" in sql
         assert "start_ts <" not in sql
@@ -825,7 +844,7 @@ class TestTimeFields:
 
     def test_starts_within_time_to_filters_start_ts(self) -> None:
         params: list = []
-        pred = StartsWithin(starts_within=SpatioTemporalValue(time_to=_T2))
+        pred = EndpointWithin(endpoint_within=EndpointWithinValue(mode="start", start_time_to=_T2))
         sql = compile_predicate(pred, params)
         assert "start_ts <" in sql
         assert "start_ts >=" not in sql
@@ -833,7 +852,11 @@ class TestTimeFields:
 
     def test_starts_within_time_window(self) -> None:
         params: list = []
-        pred = StartsWithin(starts_within=SpatioTemporalValue(time_from=_T1, time_to=_T2))
+        pred = EndpointWithin(
+            endpoint_within=EndpointWithinValue(
+                mode="start", start_time_from=_T1, start_time_to=_T2
+            )
+        )
         sql = compile_predicate(pred, params)
         assert "start_ts >=" in sql
         assert "start_ts <" in sql
@@ -841,7 +864,7 @@ class TestTimeFields:
 
     def test_ends_within_time_filters_end_ts(self) -> None:
         params: list = []
-        pred = EndsWithin(ends_within=SpatioTemporalValue(time_to=_T1))
+        pred = EndpointWithin(endpoint_within=EndpointWithinValue(mode="end", end_time_to=_T1))
         sql = compile_predicate(pred, params)
         assert "end_ts <" in sql
         assert "start_ts" not in sql
@@ -860,7 +883,7 @@ class TestTimeFields:
 
     def test_ends_within_time_from_filters_end_ts(self) -> None:
         params: list = []
-        pred = EndsWithin(ends_within=SpatioTemporalValue(time_from=_T1))
+        pred = EndpointWithin(endpoint_within=EndpointWithinValue(mode="end", end_time_from=_T1))
         sql = compile_predicate(pred, params)
         assert "end_ts >=" in sql
         assert "end_ts <" not in sql
@@ -876,15 +899,21 @@ class TestTimeFields:
 
     def test_starts_within_geometry_and_time(self) -> None:
         params: list = []
-        pred = StartsWithin(starts_within=SpatioTemporalValue(geometry=_POLYGON, time_from=_T1))
+        pred = EndpointWithin(
+            endpoint_within=EndpointWithinValue(
+                mode="start", geometry=_POLYGON, start_time_from=_T1
+            )
+        )
         sql = compile_predicate(pred, params)
         assert "ST_Within(startValue(path)::geometry," in sql
         assert "start_ts >=" in sql
 
     def test_starts_within_all_fields(self) -> None:
         params: list = []
-        pred = StartsWithin(
-            starts_within=SpatioTemporalValue(geometry=_POLYGON, time_from=_T1, time_to=_T2)
+        pred = EndpointWithin(
+            endpoint_within=EndpointWithinValue(
+                mode="start", geometry=_POLYGON, start_time_from=_T1, start_time_to=_T2
+            )
         )
         sql = compile_predicate(pred, params)
         assert "ST_Within(startValue(path)::geometry," in sql

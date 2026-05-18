@@ -19,6 +19,8 @@ node_modules/
 dist/
 .pnpm-store/
 coverage/
+web/playwright-report/
+web/test-results/
 
 # Editor
 .vscode/

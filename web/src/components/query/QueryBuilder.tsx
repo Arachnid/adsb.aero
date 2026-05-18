@@ -17,7 +17,19 @@ import {
 } from "react-aria-components";
 import { parseDate, parseDateTime } from "@internationalized/date";
 import type { CalendarDate, CalendarDateTime } from "@internationalized/date";
-import { Braces, Circle, Pin, Plane, Play, Plus, Polygon, Text, Viewport, X, Zone } from "../Icons";
+import {
+  Braces,
+  Circle,
+  Pin,
+  Plane,
+  Play,
+  Plus,
+  Polygon,
+  Text,
+  Viewport,
+  X,
+  Zone,
+} from "../Icons";
 import { getIcaoTypes } from "../../lib/api";
 import type { DataRange } from "../../lib/api";
 
@@ -33,8 +45,9 @@ interface AircraftPred extends BasePred {
   icaoTypes: string[];
   emitters: string[];
 }
-interface StartsWithinPred extends BasePred {
-  kind: "starts_within";
+interface EndpointWithinPred extends BasePred {
+  kind: "endpoint_within";
+  mode: "start" | "end" | "either" | "both";
   shape: "none" | "circle" | "polygon" | "viewport" | "airspace";
   lat: number | null;
   lng: number | null;
@@ -42,20 +55,10 @@ interface StartsWithinPred extends BasePred {
   polygon: [number, number][] | null;
   airspaceName: string | null;
   airspaceLabel: string | null;
-  timeFrom: string;
-  timeTo: string;
-}
-interface EndsWithinPred extends BasePred {
-  kind: "ends_within";
-  shape: "none" | "circle" | "polygon" | "viewport" | "airspace";
-  lat: number | null;
-  lng: number | null;
-  radiusNm: number;
-  polygon: [number, number][] | null;
-  airspaceName: string | null;
-  airspaceLabel: string | null;
-  timeFrom: string;
-  timeTo: string;
+  startTimeFrom: string;
+  startTimeTo: string;
+  endTimeFrom: string;
+  endTimeTo: string;
 }
 interface IntersectsPred extends BasePred {
   kind: "region";
@@ -108,8 +111,7 @@ interface CallsignPred extends BasePred {
 
 export type UIPredicate =
   | AircraftPred
-  | StartsWithinPred
-  | EndsWithinPred
+  | EndpointWithinPred
   | IntersectsPred
   | AlwaysWithinPred
   | CallsignPred;
@@ -132,21 +134,29 @@ type AddKind = UIPredicate["kind"] | "group_all" | "group_any";
 function makeItem(kind: AddKind, regionCount = 0): QueryItem {
   const id = makeId();
   if (kind === "group_all" || kind === "group_any") {
-    return { id, kind: "group", mode: kind === "group_all" ? "all" : "any", items: [] };
+    return {
+      id,
+      kind: "group",
+      mode: kind === "group_all" ? "all" : "any",
+      items: [],
+    };
   }
-  if (kind === "starts_within" || kind === "ends_within") {
+  if (kind === "endpoint_within") {
     return {
       id,
       kind,
-      shape: "circle",
+      mode: "either" as const,
+      shape: "circle" as const,
       lat: null,
       lng: null,
       radiusNm: 1,
       polygon: null,
       airspaceName: null,
       airspaceLabel: null,
-      timeFrom: "",
-      timeTo: "",
+      startTimeFrom: "",
+      startTimeTo: "",
+      endTimeFrom: "",
+      endTimeTo: "",
     };
   }
   if (kind === "region" || kind === "always_within") {
@@ -268,7 +278,11 @@ export function QueryBuilderDateRange({
   const handleReset = (): void => {
     if (!dataRange?.last_date) return;
     const { from } = range;
-    onChange(from !== undefined ? { to: dataRange.last_date, from } : { to: dataRange.last_date });
+    onChange(
+      from !== undefined
+        ? { to: dataRange.last_date, from }
+        : { to: dataRange.last_date },
+    );
   };
 
   let error: string | null = null;
@@ -319,9 +333,13 @@ export function QueryBuilderDateRange({
                     </header>
                     <CalendarGrid>
                       <CalendarGridHeader>
-                        {(day) => <CalendarHeaderCell>{day}</CalendarHeaderCell>}
+                        {(day) => (
+                          <CalendarHeaderCell>{day}</CalendarHeaderCell>
+                        )}
                       </CalendarGridHeader>
-                      <CalendarGridBody>{(date) => <CalendarCell date={date} />}</CalendarGridBody>
+                      <CalendarGridBody>
+                        {(date) => <CalendarCell date={date} />}
+                      </CalendarGridBody>
                     </CalendarGrid>
                   </Calendar>
                 </Dialog>
@@ -375,7 +393,9 @@ export function QueryBuilderDateRange({
                     <CalendarGridHeader>
                       {(day) => <CalendarHeaderCell>{day}</CalendarHeaderCell>}
                     </CalendarGridHeader>
-                    <CalendarGridBody>{(date) => <CalendarCell date={date} />}</CalendarGridBody>
+                    <CalendarGridBody>
+                      {(date) => <CalendarCell date={date} />}
+                    </CalendarGridBody>
                   </CalendarGrid>
                 </Calendar>
               </Dialog>
@@ -396,12 +416,16 @@ export function isPredValid(pred: UIPredicate): boolean {
       return pred.icaoTypes.length > 0 || pred.emitters.length > 0;
     case "callsign":
       return pred.pattern.trim() !== "";
-    case "starts_within":
-    case "ends_within": {
-      const hasTime = pred.timeFrom !== "" || pred.timeTo !== "";
+    case "endpoint_within": {
+      const hasTime =
+        pred.startTimeFrom !== "" ||
+        pred.startTimeTo !== "" ||
+        pred.endTimeFrom !== "" ||
+        pred.endTimeTo !== "";
       if (pred.shape === "none") return hasTime;
       if (pred.shape === "viewport") return true;
-      if (pred.shape === "circle") return pred.lat !== null && pred.lng !== null;
+      if (pred.shape === "circle")
+        return pred.lat !== null && pred.lng !== null;
       // polygon and airspace both require a polygon to be set
       return pred.polygon !== null && pred.polygon.length >= 3;
     }
@@ -421,7 +445,12 @@ export function isPredValid(pred: UIPredicate): boolean {
         // polygon and airspace both require a polygon to be set
         return false;
       }
-      if (pred.altMin !== null && pred.altMax !== null && pred.altMin > pred.altMax) return false;
+      if (
+        pred.altMin !== null &&
+        pred.altMax !== null &&
+        pred.altMin > pred.altMax
+      )
+        return false;
       return true;
     }
   }
@@ -462,7 +491,11 @@ function PredCard({
   );
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }): React.ReactElement {
+function FieldLabel({
+  children,
+}: {
+  children: React.ReactNode;
+}): React.ReactElement {
   return <div className="field-label">{children}</div>;
 }
 
@@ -563,7 +596,9 @@ function DateTimeField({
                 <CalendarGridHeader>
                   {(day) => <CalendarHeaderCell>{day}</CalendarHeaderCell>}
                 </CalendarGridHeader>
-                <CalendarGridBody>{(date) => <CalendarCell date={date} />}</CalendarGridBody>
+                <CalendarGridBody>
+                  {(date) => <CalendarCell date={date} />}
+                </CalendarGridBody>
               </CalendarGrid>
             </Calendar>
           </Dialog>
@@ -657,7 +692,8 @@ function ChipMultiSelect({
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return (): void => {
@@ -666,7 +702,9 @@ function ChipMultiSelect({
   }, [open]);
 
   const filtered = options.filter((o) => {
-    const txt = (typeof o === "string" ? o : o.code + " " + o.label).toLowerCase();
+    const txt = (
+      typeof o === "string" ? o : o.code + " " + o.label
+    ).toLowerCase();
     return txt.includes(filter.toLowerCase());
   });
 
@@ -771,12 +809,17 @@ function AircraftCard({
     const end = globalDateRange.to;
     const start =
       globalDateRange.from ??
-      new Date(Date.parse(end + "T00:00:00Z") - 28 * 86400000).toISOString().slice(0, 10);
+      new Date(Date.parse(end + "T00:00:00Z") - 28 * 86400000)
+        .toISOString()
+        .slice(0, 10);
     const controller = new AbortController();
     getIcaoTypes(start, end, { signal: controller.signal })
       .then((stats) => {
         setIcaoTypeOptions(
-          stats.map((s) => ({ code: s.icao_type, label: s.model ?? s.icao_type })),
+          stats.map((s) => ({
+            code: s.icao_type,
+            label: s.model ?? s.icao_type,
+          })),
         );
       })
       .catch((err: unknown) => {
@@ -788,7 +831,12 @@ function AircraftCard({
   }, [globalDateRange?.from, globalDateRange?.to]);
 
   return (
-    <PredCard icon={<Plane />} name="Aircraft" onRemove={onRemove} invalid={!isPredValid(pred)}>
+    <PredCard
+      icon={<Plane />}
+      name="Aircraft"
+      onRemove={onRemove}
+      invalid={!isPredValid(pred)}
+    >
       <ChipMultiSelect
         label="ICAO type"
         value={pred.icaoTypes}
@@ -822,8 +870,8 @@ function PointRadiusCard({
   name,
   dateRange,
 }: {
-  pred: StartsWithinPred | EndsWithinPred;
-  onChange: (p: StartsWithinPred | EndsWithinPred) => void;
+  pred: EndpointWithinPred;
+  onChange: (p: EndpointWithinPred) => void;
   onRemove: () => void;
   onArmPicker: () => void;
   isPicking: boolean;
@@ -834,8 +882,37 @@ function PointRadiusCard({
   name: string;
   dateRange: DataRange | null;
 }): React.ReactElement {
+  const showStartTime =
+    pred.mode === "start" || pred.mode === "either" || pred.mode === "both";
+  const showEndTime =
+    pred.mode === "end" || pred.mode === "either" || pred.mode === "both";
   return (
-    <PredCard icon={<Pin />} name={name} onRemove={onRemove} invalid={!isPredValid(pred)}>
+    <PredCard
+      icon={<Pin />}
+      name={name}
+      onRemove={onRemove}
+      invalid={!isPredValid(pred)}
+    >
+      <div className="shape-toggle">
+        {(
+          [
+            ["either", "Either"],
+            ["start", "Start"],
+            ["end", "End"],
+            ["both", "Both"],
+          ] as const
+        ).map(([m, label]) => (
+          <button
+            key={m}
+            className={pred.mode === m ? "active" : ""}
+            onClick={() => {
+              onChange({ ...pred, mode: m });
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <ShapeToggle
         shape={pred.shape}
         onChange={(s) => {
@@ -881,7 +958,10 @@ function PointRadiusCard({
             </div>
           )}
           <div className="minimap-buttons">
-            <button className={"btn-secondary" + (isPicking ? " armed" : "")} onClick={onArmPicker}>
+            <button
+              className={"btn-secondary" + (isPicking ? " armed" : "")}
+              onClick={onArmPicker}
+            >
               {isPicking ? "Click on map…" : "Pick on map"}
             </button>
           </div>
@@ -891,7 +971,9 @@ function PointRadiusCard({
           {pred.polygon ? (
             <div className="polygon-summary">
               ◆ Polygon{" "}
-              <span style={{ color: "var(--fg-3)", fontSize: 10 }}>{pred.polygon.length} pts</span>
+              <span style={{ color: "var(--fg-3)", fontSize: 10 }}>
+                {pred.polygon.length} pts
+              </span>
             </div>
           ) : (
             <div
@@ -905,7 +987,10 @@ function PointRadiusCard({
             </div>
           )}
           <div className="minimap-buttons">
-            <button className={"btn-secondary" + (isDrawing ? " armed" : "")} onClick={onArmDraw}>
+            <button
+              className={"btn-secondary" + (isDrawing ? " armed" : "")}
+              onClick={onArmDraw}
+            >
               {isDrawing
                 ? "Drawing… (dbl-click to finish)"
                 : pred.polygon
@@ -916,7 +1001,11 @@ function PointRadiusCard({
         </>
       ) : pred.shape === "viewport" ? (
         <div
-          style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10.5, color: "var(--fg-2)" }}
+          style={{
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: 10.5,
+            color: "var(--fg-2)",
+          }}
         >
           Uses current map viewport
         </div>
@@ -926,7 +1015,9 @@ function PointRadiusCard({
             <>
               <div className="polygon-summary">◆ {pred.airspaceName}</div>
               {pred.airspaceLabel && (
-                <div style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 2 }}>
+                <div
+                  style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 2 }}
+                >
                   {pred.airspaceLabel}
                 </div>
               )}
@@ -947,33 +1038,69 @@ function PointRadiusCard({
               className={"btn-secondary" + (isPickingAirspace ? " armed" : "")}
               onClick={onArmAirspacePicker}
             >
-              {isPickingAirspace ? "Click on map…" : pred.polygon ? "Change" : "Choose from map"}
+              {isPickingAirspace
+                ? "Click on map…"
+                : pred.polygon
+                  ? "Change"
+                  : "Choose from map"}
             </button>
           </div>
         </>
       ) : null}
-      <div style={{ marginTop: 4 }}>
-        <DateTimeField
-          label="From"
-          value={pred.timeFrom}
-          onChange={(v) => {
-            onChange({ ...pred, timeFrom: v });
-          }}
-          minDate={dateRange?.first_date ?? undefined}
-          maxDate={dateRange?.last_date ?? undefined}
-        />
-      </div>
-      <div>
-        <DateTimeField
-          label="To"
-          value={pred.timeTo}
-          onChange={(v) => {
-            onChange({ ...pred, timeTo: v });
-          }}
-          minDate={dateRange?.first_date ?? undefined}
-          maxDate={dateRange?.last_date ?? undefined}
-        />
-      </div>
+      {showStartTime && (
+        <div style={{ marginTop: 4 }}>
+          {(pred.mode === "both" || pred.mode === "either") && (
+            <div className="field-label" style={{ marginBottom: 2 }}>
+              Departure time
+            </div>
+          )}
+          <DateTimeField
+            label="From"
+            value={pred.startTimeFrom}
+            onChange={(v) => {
+              onChange({ ...pred, startTimeFrom: v });
+            }}
+            minDate={dateRange?.first_date ?? undefined}
+            maxDate={dateRange?.last_date ?? undefined}
+          />
+          <DateTimeField
+            label="To"
+            value={pred.startTimeTo}
+            onChange={(v) => {
+              onChange({ ...pred, startTimeTo: v });
+            }}
+            minDate={dateRange?.first_date ?? undefined}
+            maxDate={dateRange?.last_date ?? undefined}
+          />
+        </div>
+      )}
+      {showEndTime && (
+        <div style={{ marginTop: 4 }}>
+          {(pred.mode === "both" || pred.mode === "either") && (
+            <div className="field-label" style={{ marginBottom: 2 }}>
+              Arrival time
+            </div>
+          )}
+          <DateTimeField
+            label="From"
+            value={pred.endTimeFrom}
+            onChange={(v) => {
+              onChange({ ...pred, endTimeFrom: v });
+            }}
+            minDate={dateRange?.first_date ?? undefined}
+            maxDate={dateRange?.last_date ?? undefined}
+          />
+          <DateTimeField
+            label="To"
+            value={pred.endTimeTo}
+            onChange={(v) => {
+              onChange({ ...pred, endTimeTo: v });
+            }}
+            minDate={dateRange?.first_date ?? undefined}
+            maxDate={dateRange?.last_date ?? undefined}
+          />
+        </div>
+      )}
     </PredCard>
   );
 }
@@ -1018,7 +1145,8 @@ function RegionCard({
   const [timeOpenLocal, setTimeOpenLocal] = useState(hasTimeData);
   const [squawkOpenLocal, setSquawkOpenLocal] = useState(hasSquawkData);
   const [squawkInput, setSquawkInput] = useState("");
-  const [dwellDistOpenLocal, setDwellDistOpenLocal] = useState(hasDwellDistData);
+  const [dwellDistOpenLocal, setDwellDistOpenLocal] =
+    useState(hasDwellDistData);
 
   // A section is open if the user has explicitly opened it OR if there is already data in it.
   // This prevents data set externally (e.g. altitude bounds from airspace selection) from
@@ -1034,7 +1162,13 @@ function RegionCard({
 
   const toggleAlt = (checked: boolean): void => {
     if (!checked)
-      onChange({ ...pred, altMin: null, altMinRef: "ft", altMax: null, altMaxRef: "ft" });
+      onChange({
+        ...pred,
+        altMin: null,
+        altMinRef: "ft",
+        altMax: null,
+        altMaxRef: "ft",
+      });
     setAltOpenLocal(checked);
   };
 
@@ -1069,14 +1203,21 @@ function RegionCard({
   };
 
   return (
-    <PredCard icon={<Polygon />} name={name} onRemove={onRemove} invalid={!isPredValid(pred)}>
+    <PredCard
+      icon={<Polygon />}
+      name={name}
+      onRemove={onRemove}
+      invalid={!isPredValid(pred)}
+    >
       <ShapeToggle shape={pred.shape} onChange={handleShapeChange} />
       {pred.shape === "polygon" ? (
         <>
           {pred.polygon ? (
             <div className="polygon-summary">
               ◆ {pred.regionName}{" "}
-              <span style={{ color: "var(--fg-3)", fontSize: 10 }}>{pred.polygon.length} pts</span>
+              <span style={{ color: "var(--fg-3)", fontSize: 10 }}>
+                {pred.polygon.length} pts
+              </span>
             </div>
           ) : (
             <div
@@ -1090,7 +1231,10 @@ function RegionCard({
             </div>
           )}
           <div className="minimap-buttons">
-            <button className={"btn-secondary" + (isDrawing ? " armed" : "")} onClick={onArmDraw}>
+            <button
+              className={"btn-secondary" + (isDrawing ? " armed" : "")}
+              onClick={onArmDraw}
+            >
               {isDrawing
                 ? "Drawing… (dbl-click to finish)"
                 : pred.polygon
@@ -1138,14 +1282,21 @@ function RegionCard({
             </div>
           )}
           <div className="minimap-buttons">
-            <button className={"btn-secondary" + (isPicking ? " armed" : "")} onClick={onArmPicker}>
+            <button
+              className={"btn-secondary" + (isPicking ? " armed" : "")}
+              onClick={onArmPicker}
+            >
               {isPicking ? "Click on map…" : "Pick on map"}
             </button>
           </div>
         </>
       ) : pred.shape === "viewport" ? (
         <div
-          style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10.5, color: "var(--fg-2)" }}
+          style={{
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: 10.5,
+            color: "var(--fg-2)",
+          }}
         >
           Uses current map viewport
         </div>
@@ -1155,7 +1306,9 @@ function RegionCard({
             <>
               <div className="polygon-summary">◆ {pred.airspaceName}</div>
               {pred.airspaceLabel && (
-                <div style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 2 }}>
+                <div
+                  style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 2 }}
+                >
                   {pred.airspaceLabel}
                 </div>
               )}
@@ -1176,7 +1329,11 @@ function RegionCard({
               className={"btn-secondary" + (isPickingAirspace ? " armed" : "")}
               onClick={onArmAirspacePicker}
             >
-              {isPickingAirspace ? "Click on map…" : pred.polygon ? "Change" : "Choose from map"}
+              {isPickingAirspace
+                ? "Click on map…"
+                : pred.polygon
+                  ? "Change"
+                  : "Choose from map"}
             </button>
           </div>
         </>
@@ -1220,7 +1377,10 @@ function RegionCard({
                   placeholder="0"
                   value={pred.altMin ?? ""}
                   onChange={(e) => {
-                    onChange({ ...pred, altMin: e.target.value === "" ? null : +e.target.value });
+                    onChange({
+                      ...pred,
+                      altMin: e.target.value === "" ? null : +e.target.value,
+                    });
                   }}
                 />
               </div>
@@ -1249,7 +1409,10 @@ function RegionCard({
                   placeholder="∞"
                   value={pred.altMax ?? ""}
                   onChange={(e) => {
-                    onChange({ ...pred, altMax: e.target.value === "" ? null : +e.target.value });
+                    onChange({
+                      ...pred,
+                      altMax: e.target.value === "" ? null : +e.target.value,
+                    });
                   }}
                 />
               </div>
@@ -1369,7 +1532,8 @@ function RegionCard({
                     onChange={(e) => {
                       onChange({
                         ...pred,
-                        dwellMinMin: e.target.value === "" ? null : +e.target.value,
+                        dwellMinMin:
+                          e.target.value === "" ? null : +e.target.value,
                       });
                     }}
                   />
@@ -1385,7 +1549,8 @@ function RegionCard({
                     onChange={(e) => {
                       onChange({
                         ...pred,
-                        dwellMaxMin: e.target.value === "" ? null : +e.target.value,
+                        dwellMaxMin:
+                          e.target.value === "" ? null : +e.target.value,
                       });
                     }}
                   />
@@ -1403,7 +1568,8 @@ function RegionCard({
                     onChange={(e) => {
                       onChange({
                         ...pred,
-                        distanceMinNm: e.target.value === "" ? null : +e.target.value,
+                        distanceMinNm:
+                          e.target.value === "" ? null : +e.target.value,
                       });
                     }}
                   />
@@ -1419,7 +1585,8 @@ function RegionCard({
                     onChange={(e) => {
                       onChange({
                         ...pred,
-                        distanceMaxNm: e.target.value === "" ? null : +e.target.value,
+                        distanceMaxNm:
+                          e.target.value === "" ? null : +e.target.value,
                       });
                     }}
                   />
@@ -1443,7 +1610,12 @@ function CallsignCard({
   onRemove: () => void;
 }): React.ReactElement {
   return (
-    <PredCard icon={<Text />} name="Callsign" onRemove={onRemove} invalid={!isPredValid(pred)}>
+    <PredCard
+      icon={<Text />}
+      name="Callsign"
+      onRemove={onRemove}
+      invalid={!isPredValid(pred)}
+    >
       <div>
         <FieldLabel>Regex pattern</FieldLabel>
         <input
@@ -1461,11 +1633,30 @@ function CallsignCard({
 
 // ===== Add filter menu =====
 
-const FILTER_OPTS: { kind: AddKind; icon: React.ReactNode; label: string; desc: string }[] = [
-  { kind: "aircraft", icon: <Plane />, label: "Aircraft", desc: "Type, emitter category" },
-  { kind: "starts_within", icon: <Pin />, label: "Starts within", desc: "Area, time, or both" },
-  { kind: "ends_within", icon: <Pin />, label: "Ends within", desc: "Area, time, or both" },
-  { kind: "region", icon: <Polygon />, label: "Ever", desc: "Ever intersects area/altitude/time" },
+const FILTER_OPTS: {
+  kind: AddKind;
+  icon: React.ReactNode;
+  label: string;
+  desc: string;
+}[] = [
+  {
+    kind: "aircraft",
+    icon: <Plane />,
+    label: "Aircraft",
+    desc: "Type, emitter category",
+  },
+  {
+    kind: "endpoint_within",
+    icon: <Pin />,
+    label: "Endpoint",
+    desc: "Departure/arrival area or time",
+  },
+  {
+    kind: "region",
+    icon: <Polygon />,
+    label: "Ever",
+    desc: "Ever intersects area/altitude/time",
+  },
   {
     kind: "always_within",
     icon: <Polygon />,
@@ -1473,11 +1664,25 @@ const FILTER_OPTS: { kind: AddKind; icon: React.ReactNode; label: string; desc: 
     desc: "Always within area/altitude/time",
   },
   { kind: "callsign", icon: <Text />, label: "Callsign", desc: "Regex match" },
-  { kind: "group_all", icon: <Braces />, label: "All of", desc: "All sub-filters must match" },
-  { kind: "group_any", icon: <Braces />, label: "Any of", desc: "At least one sub-filter matches" },
+  {
+    kind: "group_all",
+    icon: <Braces />,
+    label: "All of",
+    desc: "All sub-filters must match",
+  },
+  {
+    kind: "group_any",
+    icon: <Braces />,
+    label: "Any of",
+    desc: "At least one sub-filter matches",
+  },
 ];
 
-function AddFilterMenu({ onAdd }: { onAdd: (kind: AddKind) => void }): React.ReactElement {
+function AddFilterMenu({
+  onAdd,
+}: {
+  onAdd: (kind: AddKind) => void;
+}): React.ReactElement {
   const [open, setOpen] = useState(false);
   const [dropUp, setDropUp] = useState(true);
   const ref = useRef<HTMLDivElement>(null);
@@ -1485,7 +1690,8 @@ function AddFilterMenu({ onAdd }: { onAdd: (kind: AddKind) => void }): React.Rea
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return (): void => {
@@ -1510,7 +1716,9 @@ function AddFilterMenu({ onAdd }: { onAdd: (kind: AddKind) => void }): React.Rea
         <div
           className="add-filter-menu"
           style={
-            dropUp ? undefined : { bottom: "auto", top: "100%", marginBottom: 0, marginTop: 6 }
+            dropUp
+              ? undefined
+              : { bottom: "auto", top: "100%", marginBottom: 0, marginTop: 6 }
           }
         >
           {FILTER_OPTS.map((o) => (
@@ -1575,8 +1783,7 @@ function PredicateRenderer({
           globalDateRange={globalDateRange}
         />
       );
-    case "starts_within":
-    case "ends_within":
+    case "endpoint_within":
       return (
         <PointRadiusCard
           pred={pred}
@@ -1662,15 +1869,22 @@ function GroupBlock({
   globalDateRange,
 }: GroupBlockProps): React.ReactElement {
   const updateChild = (childId: string, next: QueryItem): void => {
-    onChange({ ...group, items: group.items.map((item) => (item.id === childId ? next : item)) });
+    onChange({
+      ...group,
+      items: group.items.map((item) => (item.id === childId ? next : item)),
+    });
   };
   const removeChild = (childId: string): void => {
-    onChange({ ...group, items: group.items.filter((item) => item.id !== childId) });
+    onChange({
+      ...group,
+      items: group.items.filter((item) => item.id !== childId),
+    });
   };
   const addChild = (kind: AddKind): void => {
     const rc =
-      group.items.filter((i) => i.kind === "region" || i.kind === "always_within").length +
-      regionCount;
+      group.items.filter(
+        (i) => i.kind === "region" || i.kind === "always_within",
+      ).length + regionCount;
     onChange({ ...group, items: [...group.items, makeItem(kind, rc)] });
   };
 
@@ -1699,7 +1913,9 @@ function GroupBlock({
             </button>
           </div>
           <span className="group-mode-label">
-            {group.mode === "all" ? "All filters must match" : "Any filter must match"}
+            {group.mode === "all"
+              ? "All filters must match"
+              : "Any filter must match"}
           </span>
           <button className="pred-x" onClick={onRemove} title="Remove group">
             <X size={12} />
@@ -1710,7 +1926,12 @@ function GroupBlock({
       <div className={isRoot ? "group-root-body" : "filter-group-body"}>
         {group.items.length === 0 && (
           <div
-            style={{ color: "var(--fg-3)", fontSize: 12, textAlign: "center", padding: "20px 0" }}
+            style={{
+              color: "var(--fg-3)",
+              fontSize: 12,
+              textAlign: "center",
+              padding: "20px 0",
+            }}
           >
             {isRoot ? (
               <>
@@ -1730,7 +1951,9 @@ function GroupBlock({
                   </svg>
                 </div>
                 <div>No filters yet.</div>
-                <div style={{ marginTop: 4 }}>Add a filter below to get started.</div>
+                <div style={{ marginTop: 4 }}>
+                  Add a filter below to get started.
+                </div>
               </>
             ) : (
               <div>Empty group</div>
@@ -1781,7 +2004,10 @@ function GroupBlock({
                 onArmAirspacePicker(item.id);
               }}
               isPickingAirspace={airspacePickingId === item.id}
-              name={labels.get(item.id) ?? (item.kind === "aircraft" ? "Aircraft" : "Callsign")}
+              name={
+                labels.get(item.id) ??
+                (item.kind === "aircraft" ? "Aircraft" : "Callsign")
+              }
               dateRange={dateRange}
               globalDateRange={globalDateRange}
             />
@@ -1818,20 +2044,21 @@ export function computeLabels(group: FilterGroup): Map<string, string> {
         continue;
       }
       if (
-        item.kind !== "starts_within" &&
-        item.kind !== "ends_within" &&
+        item.kind !== "endpoint_within" &&
         item.kind !== "region" &&
         item.kind !== "always_within"
       )
         continue;
       const base =
-        item.kind === "starts_within"
-          ? "Starts Within"
-          : item.kind === "ends_within"
-            ? "Ends Within"
-            : item.kind === "region"
-              ? "Ever"
-              : "Always";
+        item.kind === "endpoint_within"
+          ? item.mode === "start"
+            ? "Starts Within"
+            : item.mode === "end"
+              ? "Ends Within"
+              : "Endpoint" // "either" and "both"
+          : item.kind === "region"
+            ? "Ever"
+            : "Always";
       if (item.shape === "none" || item.shape === "viewport") {
         result.set(item.id, base);
       } else {
@@ -1892,7 +2119,10 @@ export function QueryBuilderAddMenu({
 }): React.ReactElement {
   const onAdd = (kind: AddKind): void => {
     const rc = countRegions(rootGroup);
-    onGroupChange({ ...rootGroup, items: [...rootGroup.items, makeItem(kind, rc)] });
+    onGroupChange({
+      ...rootGroup,
+      items: [...rootGroup.items, makeItem(kind, rc)],
+    });
   };
   return <AddFilterMenu onAdd={onAdd} />;
 }
@@ -1908,7 +2138,8 @@ export function QueryBuilderFooter({
   dateRangeValid,
   onRun,
 }: QueryBuilderFooterProps): React.ReactElement {
-  const enabled = dateRangeValid && rootGroup.items.length > 0 && isGroupValid(rootGroup);
+  const enabled =
+    dateRangeValid && rootGroup.items.length > 0 && isGroupValid(rootGroup);
   return (
     <button className="run-btn" onClick={onRun} disabled={!enabled}>
       <Play /> Run query

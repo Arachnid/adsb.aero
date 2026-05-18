@@ -12,7 +12,7 @@ from adsb_server.query.models import (
     CircleGeometry,
     Duration,
     EmitterCategory,
-    EndsWithin,
+    EndpointWithin,
     GeoJSONMultiPolygon,
     GeoJSONPolygon,
     IcaoType,
@@ -20,7 +20,6 @@ from adsb_server.query.models import (
     OrPredicate,
     Predicate,
     SpatioTemporalAltitudeValue,
-    StartsWithin,
     TrajectoryIntersects,
     TrajectoryWithin,
 )
@@ -400,27 +399,82 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> CompiledPredicate:
     if isinstance(pred, TrajectoryWithin):
         return _compile_spatial_path("ST_Within", pred.trajectory_within, params)
 
-    if isinstance(pred, StartsWithin):
-        v = pred.starts_within
-        parts_s: list[str] = []
-        if v.geometry is not None:
-            parts_s.append(_compile_point_within("startValue(path)::geometry", v.geometry, params))
-        if v.time_from is not None:
-            parts_s.append(f"start_ts >= {_p(params, v.time_from)}")
-        if v.time_to is not None:
-            parts_s.append(f"start_ts < {_p(params, v.time_to)}")
-        return CompiledPredicate(" AND ".join(parts_s) if parts_s else "TRUE")
-
-    if isinstance(pred, EndsWithin):
-        v = pred.ends_within
-        parts_e: list[str] = []
-        if v.geometry is not None:
-            parts_e.append(_compile_point_within("endValue(path)::geometry", v.geometry, params))
-        if v.time_from is not None:
-            parts_e.append(f"end_ts >= {_p(params, v.time_from)}")
-        if v.time_to is not None:
-            parts_e.append(f"end_ts < {_p(params, v.time_to)}")
-        return CompiledPredicate(" AND ".join(parts_e) if parts_e else "TRUE")
+    if isinstance(pred, EndpointWithin):
+        v = pred.endpoint_within
+        parts_ep: list[str] = []
+        if v.mode == "either":
+            # OR semantics: start branch OR end branch.
+            start_parts: list[str] = []
+            end_parts: list[str] = []
+            if v.geometry is not None:
+                if isinstance(v.geometry, CircleGeometry):
+                    lon_p = _p(params, v.geometry.coordinates[0])
+                    lat_p = _p(params, v.geometry.coordinates[1])
+                    radius_deg_p = _p(params, v.geometry.radius / 111_320.0)
+                    circle = (
+                        f"ST_DWithin({{col}}, ST_SetSRID(ST_MakePoint({lon_p}, {lat_p}), 4326),"
+                        f" {radius_deg_p})"
+                    )
+                    start_parts.append(circle.format(col="startValue(path)::geometry"))
+                    end_parts.append(circle.format(col="endValue(path)::geometry"))
+                else:
+                    geom_p = _p(params, v.geometry.model_dump_json())
+                    geom_expr = f"ST_SetSRID(ST_GeomFromGeoJSON({geom_p}), 4326)"
+                    start_parts.append(f"ST_Within(startValue(path)::geometry, {geom_expr})")
+                    end_parts.append(f"ST_Within(endValue(path)::geometry, {geom_expr})")
+            if v.start_time_from is not None:
+                start_parts.append(f"start_ts >= {_p(params, v.start_time_from)}")
+            if v.start_time_to is not None:
+                start_parts.append(f"start_ts < {_p(params, v.start_time_to)}")
+            if v.end_time_from is not None:
+                end_parts.append(f"end_ts >= {_p(params, v.end_time_from)}")
+            if v.end_time_to is not None:
+                end_parts.append(f"end_ts < {_p(params, v.end_time_to)}")
+            if start_parts or end_parts:
+                branches: list[str] = []
+                if start_parts:
+                    branches.append(f"({' AND '.join(start_parts)})")
+                if end_parts:
+                    branches.append(f"({' AND '.join(end_parts)})")
+                parts_ep.append(f"({' OR '.join(branches)})")
+        else:
+            if v.geometry is not None:
+                if v.mode == "both":
+                    # Add geometry to params once; reference same index for both endpoints.
+                    if isinstance(v.geometry, CircleGeometry):
+                        lon_p = _p(params, v.geometry.coordinates[0])
+                        lat_p = _p(params, v.geometry.coordinates[1])
+                        radius_deg_p = _p(params, v.geometry.radius / 111_320.0)
+                        circle = (
+                            f"ST_DWithin({{col}}, ST_SetSRID(ST_MakePoint({lon_p}, {lat_p}),"
+                            f" 4326), {radius_deg_p})"
+                        )
+                        parts_ep.append(circle.format(col="startValue(path)::geometry"))
+                        parts_ep.append(circle.format(col="endValue(path)::geometry"))
+                    else:
+                        geom_p = _p(params, v.geometry.model_dump_json())
+                        geom_expr = f"ST_SetSRID(ST_GeomFromGeoJSON({geom_p}), 4326)"
+                        parts_ep.append(f"ST_Within(startValue(path)::geometry, {geom_expr})")
+                        parts_ep.append(f"ST_Within(endValue(path)::geometry, {geom_expr})")
+                elif v.mode == "start":
+                    parts_ep.append(
+                        _compile_point_within("startValue(path)::geometry", v.geometry, params)
+                    )
+                else:
+                    parts_ep.append(
+                        _compile_point_within("endValue(path)::geometry", v.geometry, params)
+                    )
+            if v.mode in ("start", "both"):
+                if v.start_time_from is not None:
+                    parts_ep.append(f"start_ts >= {_p(params, v.start_time_from)}")
+                if v.start_time_to is not None:
+                    parts_ep.append(f"start_ts < {_p(params, v.start_time_to)}")
+            if v.mode in ("end", "both"):
+                if v.end_time_from is not None:
+                    parts_ep.append(f"end_ts >= {_p(params, v.end_time_from)}")
+                if v.end_time_to is not None:
+                    parts_ep.append(f"end_ts < {_p(params, v.end_time_to)}")
+        return CompiledPredicate(" AND ".join(parts_ep) if parts_ep else "TRUE")
 
     if isinstance(pred, IcaoType):
         types = _p(params, pred.icao_type)

@@ -13,11 +13,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import {
-  QueryBuilderPage,
-  MAP_X,
-  MAP_Y_MID,
-} from "./helpers";
+import { QueryBuilderPage, MAP_X, MAP_Y_MID } from "./helpers";
 
 // ---- Map interaction helpers ------------------------------------------------
 
@@ -49,14 +45,18 @@ test.describe("polygon drawing", () => {
     await page.waitForTimeout(800);
   });
 
-  test("three clicks then double-click completes the polygon", async ({ page }) => {
+  test("three clicks then double-click completes the polygon", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
     await qb.addFilter("Starts within");
     await qb.clickShapeToggle("Polygon");
     await page.getByRole("button", { name: "Draw on map" }).click();
 
     // Armed: button text changes
-    await expect(page.getByText("Drawing… (dbl-click to finish)")).toBeVisible();
+    await expect(
+      page.getByText("Drawing… (dbl-click to finish)"),
+    ).toBeVisible();
 
     // Draw a triangle (all coords in safe map area, clear of the sidebar)
     await mapClick(page, MAP_X, 220);
@@ -86,7 +86,9 @@ test.describe("polygon drawing", () => {
     await expect(qb.runButton).toBeEnabled();
   });
 
-  test("filter card label is 'Starts Within 1' after drawing", async ({ page }) => {
+  test("filter card label is 'Starts Within 1' after drawing", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
     await qb.addFilter("Starts within");
     await qb.clickShapeToggle("Polygon");
@@ -98,10 +100,14 @@ test.describe("polygon drawing", () => {
     await mapDblClick(page, MAP_X + 100, 320);
 
     // .pred-name is exactly what MapLibre renders as the callout label
-    await expect(page.locator(".pred-name").first()).toHaveText("Starts Within 1");
+    await expect(page.locator(".pred-name").first()).toHaveText(
+      "Starts Within 1",
+    );
   });
 
-  test("two polygon filters get independent sequential labels", async ({ page }) => {
+  test("two polygon filters get independent sequential labels", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
 
     // First polygon: starts_within
@@ -117,8 +123,16 @@ test.describe("polygon drawing", () => {
     // Second polygon: ends_within (different base label)
     await qb.addFilter("Ends within");
     // Two predicate cards now — scope the shape toggle to the new (last) card
-    await page.locator(".pred").last().getByRole("button", { name: "Polygon" }).click();
-    await page.locator(".pred").last().getByRole("button", { name: "Draw on map" }).click();
+    await page
+      .locator(".pred")
+      .last()
+      .getByRole("button", { name: "Polygon" })
+      .click();
+    await page
+      .locator(".pred")
+      .last()
+      .getByRole("button", { name: "Draw on map" })
+      .click();
     await mapClick(page, MAP_X + 300, 200);
     await mapClick(page, MAP_X + 450, 200);
     await mapClick(page, MAP_X + 375, 380);
@@ -126,16 +140,26 @@ test.describe("polygon drawing", () => {
     await expect(page.getByText(/◆ Polygon \d+ pts/).nth(1)).toBeVisible();
 
     // Labels are independent — each series starts at 1
-    await expect(page.getByText("Starts Within 1", { exact: true })).toBeVisible();
-    await expect(page.getByText("Ends Within 1", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Starts Within 1", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Ends Within 1", { exact: true }),
+    ).toBeVisible();
   });
 
-  test("two polygon filters of the same kind get incrementing numbers", async ({ page }) => {
+  test("two polygon filters of the same kind get incrementing numbers", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
 
     async function drawPoly(xOffset: number): Promise<void> {
       // Target the last card's Draw on map button (avoids Redraw vs Draw ambiguity)
-      await page.locator(".pred").last().getByRole("button", { name: "Draw on map" }).click();
+      await page
+        .locator(".pred")
+        .last()
+        .getByRole("button", { name: "Draw on map" })
+        .click();
       await mapClick(page, MAP_X + xOffset, 200);
       await mapClick(page, MAP_X + xOffset + 130, 200);
       await mapClick(page, MAP_X + xOffset + 65, 360);
@@ -148,12 +172,20 @@ test.describe("polygon drawing", () => {
     await expect(page.getByText(/◆ Polygon \d+ pts/).first()).toBeVisible();
 
     await qb.addFilter("Starts within");
-    await page.locator(".pred").last().getByRole("button", { name: "Polygon" }).click();
+    await page
+      .locator(".pred")
+      .last()
+      .getByRole("button", { name: "Polygon" })
+      .click();
     await drawPoly(200);
     await expect(page.getByText(/◆ Polygon \d+ pts/).nth(1)).toBeVisible();
 
-    await expect(page.locator(".pred-name").nth(0)).toHaveText("Starts Within 1");
-    await expect(page.locator(".pred-name").nth(1)).toHaveText("Starts Within 2");
+    await expect(page.locator(".pred-name").nth(0)).toHaveText(
+      "Starts Within 1",
+    );
+    await expect(page.locator(".pred-name").nth(1)).toHaveText(
+      "Starts Within 2",
+    );
   });
 
   test("drawn polygon changes the map canvas pixels", async ({ page }) => {
@@ -187,7 +219,9 @@ test.describe("circle picking", () => {
     await page.waitForTimeout(800);
   });
 
-  test("picking a point shows coordinates and enables the run button", async ({ page }) => {
+  test("picking a point shows coordinates and enables the run button", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
     await qb.addFilter("Starts within");
     await qb.clickShapeToggle("Circle");
@@ -206,7 +240,9 @@ test.describe("circle picking", () => {
     await expect(qb.runButton).toBeEnabled();
   });
 
-  test("filter card label is 'Starts Within 1' after picking", async ({ page }) => {
+  test("filter card label is 'Starts Within 1' after picking", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
     await qb.addFilter("Starts within");
     await qb.clickShapeToggle("Circle");
@@ -214,7 +250,9 @@ test.describe("circle picking", () => {
     await mapClick(page, MAP_X + 100, MAP_Y_MID);
 
     await expect(qb.runButton).toBeEnabled();
-    await expect(page.locator(".pred-name").first()).toHaveText("Starts Within 1");
+    await expect(page.locator(".pred-name").first()).toHaveText(
+      "Starts Within 1",
+    );
   });
 
   test("picked circle changes the map canvas pixels", async ({ page }) => {
@@ -233,7 +271,9 @@ test.describe("circle picking", () => {
     expect(before).not.toEqual(after);
   });
 
-  test("radius slider changes the circle radius shown in the card", async ({ page }) => {
+  test("radius slider changes the circle radius shown in the card", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
     await qb.addFilter("Starts within");
     await qb.clickShapeToggle("Circle");
@@ -249,7 +289,9 @@ test.describe("circle picking", () => {
     await expect(page.getByText("50 nm")).toBeVisible();
   });
 
-  test("picking a circle center and changing radius still keeps run enabled", async ({ page }) => {
+  test("picking a circle center and changing radius still keeps run enabled", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
     await qb.addFilter("Starts within");
     await qb.clickShapeToggle("Circle");

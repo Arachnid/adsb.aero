@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import { App } from "../src/App";
 import * as api from "../src/lib/api";
 
@@ -22,7 +28,10 @@ const mockPostQuery = vi.mocked(api.postQuery);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetDataRange.mockResolvedValue({ first_date: "2025-01-01", last_date: "2025-01-07" });
+  mockGetDataRange.mockResolvedValue({
+    first_date: "2025-01-01",
+    last_date: "2025-01-07",
+  });
   mockPostQuery.mockResolvedValue({ flights: [], cursor: null });
 });
 
@@ -42,7 +51,9 @@ describe("App", () => {
   it("populates the date range from getDataRange response", async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getAllByDisplayValue("2025-01-07").length).toBeGreaterThan(0);
+      expect(screen.getAllByDisplayValue("2025-01-07").length).toBeGreaterThan(
+        0,
+      );
     });
   });
 
@@ -66,20 +77,34 @@ describe("App", () => {
 
   it("collapses and expands the left panel via toggle button", () => {
     render(<App />);
-    const collapseBtn = screen.getByRole("button", { name: "Collapse left panel" });
+    const collapseBtn = screen.getByRole("button", {
+      name: "Collapse left panel",
+    });
     fireEvent.click(collapseBtn);
-    expect(screen.getByRole("button", { name: "Expand left panel" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Expand left panel" }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Expand left panel" }));
-    expect(screen.getByRole("button", { name: "Collapse left panel" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Collapse left panel" }),
+    ).toBeInTheDocument();
   });
 
   it("expands and collapses the right panel via toggle button", () => {
     render(<App />);
-    const expandBtn = screen.getByRole("button", { name: "Expand right panel" });
+    const expandBtn = screen.getByRole("button", {
+      name: "Expand right panel",
+    });
     fireEvent.click(expandBtn);
-    expect(screen.getByRole("button", { name: "Collapse right panel" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Collapse right panel" }));
-    expect(screen.getByRole("button", { name: "Expand right panel" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Collapse right panel" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse right panel" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Expand right panel" }),
+    ).toBeInTheDocument();
   });
 
   it("shows flight count after a successful query", async () => {

@@ -1,11 +1,15 @@
 import type { components } from "../types/api";
-import type { FilterGroup, UIPredicate } from "../components/query/QueryBuilder";
+import type {
+  FilterGroup,
+  UIPredicate,
+} from "../components/query/QueryBuilder";
 import type { MapBounds } from "../components/map/MapView";
 
 type Predicate = NonNullable<components["schemas"]["QueryRequest"]["match"]>;
-type SpatioTemporalValue = components["schemas"]["SpatioTemporalValue"];
-type SpatioTemporalAltitudeValue = components["schemas"]["SpatioTemporalAltitudeValue"];
-type ApiGeometry = NonNullable<SpatioTemporalValue["geometry"]>;
+type EndpointWithinValue = components["schemas"]["EndpointWithinValue"];
+type SpatioTemporalAltitudeValue =
+  components["schemas"]["SpatioTemporalAltitudeValue"];
+type ApiGeometry = NonNullable<EndpointWithinValue["geometry"]>;
 
 /**
  * Compile a FilterGroup into an API Predicate. Returns null for an empty group
@@ -14,9 +18,16 @@ type ApiGeometry = NonNullable<SpatioTemporalValue["geometry"]>;
  * `bounds` is the current map viewport as [west, south, east, north] and is
  * required to resolve any "viewport" shape predicates.
  */
-export function compileGroup(group: FilterGroup, bounds: MapBounds | null): Predicate | null {
+export function compileGroup(
+  group: FilterGroup,
+  bounds: MapBounds | null,
+): Predicate | null {
   const children = group.items
-    .map((item) => (item.kind === "group" ? compileGroup(item, bounds) : compilePred(item, bounds)))
+    .map((item) =>
+      item.kind === "group"
+        ? compileGroup(item, bounds)
+        : compilePred(item, bounds),
+    )
     .filter((p): p is Predicate => p !== null);
 
   if (children.length === 0) return null;
@@ -27,12 +38,16 @@ export function compileGroup(group: FilterGroup, bounds: MapBounds | null): Pred
   return group.mode === "all" ? { and: children } : { or: children };
 }
 
-function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | null {
+function compilePred(
+  pred: UIPredicate,
+  bounds: MapBounds | null,
+): Predicate | null {
   switch (pred.kind) {
     case "aircraft": {
       const parts: Predicate[] = [];
       if (pred.icaoTypes.length > 0) parts.push({ icao_type: pred.icaoTypes });
-      if (pred.emitters.length > 0) parts.push({ emitter_category: pred.emitters });
+      if (pred.emitters.length > 0)
+        parts.push({ emitter_category: pred.emitters });
       if (parts.length === 0) return null;
       if (parts.length === 1) {
         const only = parts[0];
@@ -42,16 +57,31 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
     }
 
     case "callsign":
-      return pred.pattern.trim() ? { callsign_matches: pred.pattern.trim() } : null;
+      return pred.pattern.trim()
+        ? { callsign_matches: pred.pattern.trim() }
+        : null;
 
-    case "starts_within": {
-      const v = buildSpatioTemporal(pred, bounds);
-      return v ? { starts_within: v } : null;
-    }
-
-    case "ends_within": {
-      const v = buildSpatioTemporal(pred, bounds);
-      return v ? { ends_within: v } : null;
+    case "endpoint_within": {
+      const geom = shapeToGeometry(pred, bounds);
+      const v: EndpointWithinValue = {
+        mode: pred.mode,
+        ...(geom ? { geometry: geom } : {}),
+        ...(pred.startTimeFrom
+          ? { start_time_from: toIso(pred.startTimeFrom) }
+          : {}),
+        ...(pred.startTimeTo ? { start_time_to: toIso(pred.startTimeTo) } : {}),
+        ...(pred.endTimeFrom ? { end_time_from: toIso(pred.endTimeFrom) } : {}),
+        ...(pred.endTimeTo ? { end_time_to: toIso(pred.endTimeTo) } : {}),
+      };
+      if (
+        !geom &&
+        !pred.startTimeFrom &&
+        !pred.startTimeTo &&
+        !pred.endTimeFrom &&
+        !pred.endTimeTo
+      )
+        return null;
+      return { endpoint_within: v };
     }
 
     case "region": {
@@ -64,11 +94,21 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
         ...(pred.altMax !== null ? { altitude_max: pred.altMax } : {}),
         ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
         ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
-        ...(pred.squawkCodes.length > 0 ? { squawk_codes: pred.squawkCodes } : {}),
-        ...(pred.dwellMinMin !== null ? { dwell_min_s: pred.dwellMinMin * 60 } : {}),
-        ...(pred.dwellMaxMin !== null ? { dwell_max_s: pred.dwellMaxMin * 60 } : {}),
-        ...(pred.distanceMinNm !== null ? { distance_min_m: pred.distanceMinNm * 1852 } : {}),
-        ...(pred.distanceMaxNm !== null ? { distance_max_m: pred.distanceMaxNm * 1852 } : {}),
+        ...(pred.squawkCodes.length > 0
+          ? { squawk_codes: pred.squawkCodes }
+          : {}),
+        ...(pred.dwellMinMin !== null
+          ? { dwell_min_s: pred.dwellMinMin * 60 }
+          : {}),
+        ...(pred.dwellMaxMin !== null
+          ? { dwell_max_s: pred.dwellMaxMin * 60 }
+          : {}),
+        ...(pred.distanceMinNm !== null
+          ? { distance_min_m: pred.distanceMinNm * 1852 }
+          : {}),
+        ...(pred.distanceMaxNm !== null
+          ? { distance_max_m: pred.distanceMaxNm * 1852 }
+          : {}),
       };
       return { trajectory_intersects: v };
     }
@@ -83,38 +123,25 @@ function compilePred(pred: UIPredicate, bounds: MapBounds | null): Predicate | n
         ...(pred.altMax !== null ? { altitude_max: pred.altMax } : {}),
         ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
         ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
-        ...(pred.squawkCodes.length > 0 ? { squawk_codes: pred.squawkCodes } : {}),
-        ...(pred.dwellMinMin !== null ? { dwell_min_s: pred.dwellMinMin * 60 } : {}),
-        ...(pred.dwellMaxMin !== null ? { dwell_max_s: pred.dwellMaxMin * 60 } : {}),
-        ...(pred.distanceMinNm !== null ? { distance_min_m: pred.distanceMinNm * 1852 } : {}),
-        ...(pred.distanceMaxNm !== null ? { distance_max_m: pred.distanceMaxNm * 1852 } : {}),
+        ...(pred.squawkCodes.length > 0
+          ? { squawk_codes: pred.squawkCodes }
+          : {}),
+        ...(pred.dwellMinMin !== null
+          ? { dwell_min_s: pred.dwellMinMin * 60 }
+          : {}),
+        ...(pred.dwellMaxMin !== null
+          ? { dwell_max_s: pred.dwellMaxMin * 60 }
+          : {}),
+        ...(pred.distanceMinNm !== null
+          ? { distance_min_m: pred.distanceMinNm * 1852 }
+          : {}),
+        ...(pred.distanceMaxNm !== null
+          ? { distance_max_m: pred.distanceMaxNm * 1852 }
+          : {}),
       };
       return { trajectory_within: v };
     }
   }
-}
-
-function buildSpatioTemporal(
-  pred: {
-    shape: string;
-    lat: number | null;
-    lng: number | null;
-    radiusNm: number;
-    polygon: [number, number][] | null;
-    timeFrom: string;
-    timeTo: string;
-  },
-  bounds: MapBounds | null,
-): SpatioTemporalValue | null {
-  const geom = shapeToGeometry(pred, bounds);
-  const v: SpatioTemporalValue = {
-    ...(geom ? { geometry: geom } : {}),
-    ...(pred.timeFrom ? { time_from: toIso(pred.timeFrom) } : {}),
-    ...(pred.timeTo ? { time_to: toIso(pred.timeTo) } : {}),
-  };
-  // Guard: at least one field must be present (mirrors server-side validator)
-  if (!geom && !pred.timeFrom && !pred.timeTo) return null;
-  return v;
 }
 
 function shapeToGeometry(
@@ -130,7 +157,11 @@ function shapeToGeometry(
   switch (pred.shape) {
     case "circle":
       if (pred.lat === null || pred.lng === null) return null;
-      return { type: "Circle", coordinates: [pred.lng, pred.lat], radius: pred.radiusNm * 1852 };
+      return {
+        type: "Circle",
+        coordinates: [pred.lng, pred.lat],
+        radius: pred.radiusNm * 1852,
+      };
 
     case "polygon":
     case "airspace": {

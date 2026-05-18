@@ -37,7 +37,9 @@ test.describe("app shell", () => {
 });
 
 test.describe("callsign filter", () => {
-  test("add filter enables run button once pattern is typed", async ({ page }) => {
+  test("add filter enables run button once pattern is typed", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
 
     await qb.addFilter("Callsign");
@@ -62,7 +64,9 @@ test.describe("callsign filter", () => {
     await expect(qb.runButton).toBeDisabled();
   });
 
-  test("filter meta in sidebar header updates as filters are added", async ({ page }) => {
+  test("filter meta in sidebar header updates as filters are added", async ({
+    page,
+  }) => {
     await expect(page.getByText("no filters", { exact: true })).toBeVisible();
 
     const qb = new QueryBuilderPage(page);
@@ -150,7 +154,9 @@ test.describe("starts within filter", () => {
     const qb = new QueryBuilderPage(page);
     await qb.addFilter("Starts within");
     await qb.clickShapeToggle("Polygon");
-    await expect(page.getByRole("button", { name: "Draw on map" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Draw on map" }),
+    ).toBeVisible();
   });
 });
 
@@ -183,7 +189,9 @@ test.describe("multiple filters", () => {
     await expect(qb.runButton).toBeEnabled();
   });
 
-  test("one invalid filter among valid ones disables run button", async ({ page }) => {
+  test("one invalid filter among valid ones disables run button", async ({
+    page,
+  }) => {
     const qb = new QueryBuilderPage(page);
 
     await qb.addFilter("Callsign");

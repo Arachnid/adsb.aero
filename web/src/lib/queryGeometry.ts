@@ -11,7 +11,14 @@ export interface MapGeometry {
   radiusNm: number;
 }
 
-const PALETTE = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444", "#ec4899"];
+const PALETTE = [
+  "#3b82f6",
+  "#22c55e",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ef4444",
+  "#ec4899",
+];
 
 export function collectGeometries(group: FilterGroup): MapGeometry[] {
   const result: MapGeometry[] = [];
@@ -21,21 +28,23 @@ export function collectGeometries(group: FilterGroup): MapGeometry[] {
       if (item.kind === "group") {
         walk(item);
       } else if (
-        item.kind === "starts_within" ||
-        item.kind === "ends_within" ||
+        item.kind === "endpoint_within" ||
         item.kind === "region" ||
         item.kind === "always_within"
       ) {
         if (item.shape === "viewport" || item.shape === "none") continue;
-        const color = PALETTE[result.length % PALETTE.length] ?? PALETTE[0] ?? "#3b82f6";
+        const color =
+          PALETTE[result.length % PALETTE.length] ?? PALETTE[0] ?? "#3b82f6";
         const baseName =
-          item.kind === "starts_within"
-            ? "Starts Within"
-            : item.kind === "ends_within"
-              ? "Ends Within"
-              : item.kind === "region"
-                ? "Ever"
-                : "Always";
+          item.kind === "endpoint_within"
+            ? item.mode === "start"
+              ? "Starts Within"
+              : item.mode === "end"
+                ? "Ends Within"
+                : "Endpoint" // "either" and "both"
+            : item.kind === "region"
+              ? "Ever"
+              : "Always";
         const count = (counts[baseName] ?? 0) + 1;
         counts[baseName] = count;
         const label = `${baseName} ${String(count)}`;
@@ -60,8 +69,7 @@ export function anyViewportFilter(group: FilterGroup): boolean {
   return group.items.some((item) => {
     if (item.kind === "group") return anyViewportFilter(item);
     if (
-      item.kind === "starts_within" ||
-      item.kind === "ends_within" ||
+      item.kind === "endpoint_within" ||
       item.kind === "region" ||
       item.kind === "always_within"
     ) {

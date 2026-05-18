@@ -390,30 +390,49 @@ GeoJSONGeometryCollection.model_rebuild()
 # ---------------------------------------------------------------------------
 
 
-class SpatioTemporalValue(BaseModel):
-    """Spatial and/or temporal filter without altitude — used by starts_within / ends_within.
+class EndpointWithinValue(BaseModel):
+    """Spatial and/or temporal filter on departure and/or arrival point.
 
-    At least one of geometry, time_from, or time_to must be provided.
+    At least one constraint must be provided.
     """
 
+    mode: Literal["start", "end", "either", "both"] = Field(
+        description="Which endpoint(s) to constrain: 'start' (departure only), 'end' (arrival only), "  # noqa: E501
+        "'either' (departure OR arrival), "
+        "or 'both' (departure AND arrival must satisfy their respective constraints).",
+    )
     geometry: Geometry | None = Field(
         default=None,
-        description="GeoJSON geometry or Circle to test the departure/arrival point against. "
-        "Omit for a time-only filter.",
+        description="GeoJSON geometry or Circle to test the constrained endpoint(s) against. "
+        "In 'both'/'either' mode the same geometry is applied to both departure and arrival points.",  # noqa: E501
     )
-    time_from: datetime | None = Field(
+    start_time_from: datetime | None = Field(
         default=None,
-        description="Inclusive lower bound on start_ts (starts_within) or end_ts (ends_within).",
+        description="Inclusive lower bound on start_ts. Applied when mode is 'start', 'either', or 'both'.",  # noqa: E501
     )
-    time_to: datetime | None = Field(
+    start_time_to: datetime | None = Field(
         default=None,
-        description="Exclusive upper bound on start_ts or end_ts.",
+        description="Exclusive upper bound on start_ts. Applied when mode is 'start', 'either', or 'both'.",  # noqa: E501
+    )
+    end_time_from: datetime | None = Field(
+        default=None,
+        description="Inclusive lower bound on end_ts. Applied when mode is 'end', 'either', or 'both'.",  # noqa: E501
+    )
+    end_time_to: datetime | None = Field(
+        default=None,
+        description="Exclusive upper bound on end_ts. Applied when mode is 'end', 'either', or 'both'.",  # noqa: E501
     )
 
     @model_validator(mode="after")
-    def _require_at_least_one(self) -> SpatioTemporalValue:
-        if self.geometry is None and self.time_from is None and self.time_to is None:
-            raise ValueError("at least one of geometry, time_from, or time_to must be set")
+    def _require_at_least_one(self) -> EndpointWithinValue:
+        if (
+            self.geometry is None
+            and self.start_time_from is None
+            and self.start_time_to is None
+            and self.end_time_from is None
+            and self.end_time_to is None
+        ):
+            raise ValueError("at least one of geometry or time constraints must be set")
         return self
 
 
@@ -556,19 +575,11 @@ class TrajectoryWithin(BaseModel):
     trajectory_within: SpatioTemporalAltitudeValue
 
 
-class StartsWithin(BaseModel):
-    """Flights whose departure point falls within the given geometry and/or departs within the given time window."""  # noqa: E501
+class EndpointWithin(BaseModel):
+    """Flights whose departure and/or arrival point falls within the given geometry and/or time window."""  # noqa: E501
 
-    starts_within: SpatioTemporalValue = Field(
-        description="Spatial and/or temporal constraints on the departure point and time."
-    )
-
-
-class EndsWithin(BaseModel):
-    """Flights whose arrival point falls within the given geometry and/or arrives within the given time window."""  # noqa: E501
-
-    ends_within: SpatioTemporalValue = Field(
-        description="Spatial and/or temporal constraints on the arrival point and time."
+    endpoint_within: EndpointWithinValue = Field(
+        description="Spatial and/or temporal constraints on the departure and/or arrival point."
     )
 
 
@@ -655,8 +666,7 @@ class NotPredicate(BaseModel):
 Predicate = (
     TrajectoryIntersects
     | TrajectoryWithin
-    | StartsWithin
-    | EndsWithin
+    | EndpointWithin
     | IcaoType
     | EmitterCategory
     | CallsignMatches

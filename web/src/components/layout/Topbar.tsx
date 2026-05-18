@@ -171,7 +171,11 @@ export function Topbar({
 
       <Sep />
 
-      <IconBtn active={airspaceOn} onClick={onToggleAirspace} title="Toggle airspace overlay">
+      <IconBtn
+        active={airspaceOn}
+        onClick={onToggleAirspace}
+        title="Toggle airspace overlay"
+      >
         <Layers />
       </IconBtn>
       <IconBtn onClick={onTheme} title="Toggle theme">
@@ -227,7 +231,12 @@ interface SegBtnProps {
   children: React.ReactNode;
 }
 
-function SegBtn({ active, onClick, title, children }: SegBtnProps): React.ReactElement {
+function SegBtn({
+  active,
+  onClick,
+  title,
+  children,
+}: SegBtnProps): React.ReactElement {
   return (
     <button
       onClick={onClick}
@@ -257,7 +266,12 @@ interface IconBtnProps {
   children: React.ReactNode;
 }
 
-function IconBtn({ active = false, onClick, title, children }: IconBtnProps): React.ReactElement {
+function IconBtn({
+  active = false,
+  onClick,
+  title,
+  children,
+}: IconBtnProps): React.ReactElement {
   return (
     <button
       onClick={onClick}

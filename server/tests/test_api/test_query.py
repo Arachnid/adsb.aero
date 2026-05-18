@@ -48,14 +48,15 @@ async def test_no_filter_returns_all(api_client: AsyncClient) -> None:
         assert len(f["path_tracks"]) > 0
 
 
-async def test_starts_within_time_filter(api_client: AsyncClient) -> None:
+async def test_endpoint_within_start_time_filter(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
         json=qbody(
             match={
-                "starts_within": {
-                    "time_from": "2025-04-01T09:00:00Z",
-                    "time_to": "2025-04-01T11:00:00Z",
+                "endpoint_within": {
+                    "mode": "start",
+                    "start_time_from": "2025-04-01T09:00:00Z",
+                    "start_time_to": "2025-04-01T11:00:00Z",
                 }
             }
         ),
@@ -91,10 +92,10 @@ async def test_aircraft_filter(api_client: AsyncClient) -> None:
     assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
 
 
-async def test_ends_within_manchester(api_client: AsyncClient) -> None:
+async def test_endpoint_within_end_geometry(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={"ends_within": {"geometry": MANCHESTER_CIRCLE}}),
+        json=qbody(match={"endpoint_within": {"mode": "end", "geometry": MANCHESTER_CIRCLE}}),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -344,7 +345,7 @@ async def test_trajectory_intersects_altitude_mixed_refs(api_client: AsyncClient
     assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
 
 
-async def test_starts_within_polygon(api_client: AsyncClient) -> None:
+async def test_endpoint_within_start_polygon(api_client: AsyncClient) -> None:
     # Flight A departs London; a polygon around London should match it.
     london_box = {
         "type": "Polygon",
@@ -352,7 +353,7 @@ async def test_starts_within_polygon(api_client: AsyncClient) -> None:
     }
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={"starts_within": {"geometry": london_box}}),
+        json=qbody(match={"endpoint_within": {"mode": "start", "geometry": london_box}}),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -361,15 +362,16 @@ async def test_starts_within_polygon(api_client: AsyncClient) -> None:
     assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
 
 
-async def test_ends_within_time_range(api_client: AsyncClient) -> None:
+async def test_endpoint_within_end_time_range(api_client: AsyncClient) -> None:
     # Flight B ends at 09:00; Flight A ends at 12:00.
     resp = await api_client.post(
         "/api/v1/query",
         json=qbody(
             match={
-                "ends_within": {
-                    "time_from": "2025-04-01T08:00:00Z",
-                    "time_to": "2025-04-01T10:00:00Z",
+                "endpoint_within": {
+                    "mode": "end",
+                    "end_time_from": "2025-04-01T08:00:00Z",
+                    "end_time_to": "2025-04-01T10:00:00Z",
                 }
             }
         ),
@@ -379,6 +381,41 @@ async def test_ends_within_time_range(api_client: AsyncClient) -> None:
     flight_ids = {f["flight_id"] for f in data["flights"]}
     assert "ddeeff:2025-04-01T06:00:00Z" in flight_ids
     assert "aabbcc:2025-04-01T10:00:00Z" not in flight_ids
+
+
+async def test_endpoint_within_both_same_polygon(api_client: AsyncClient) -> None:
+    # Flight A departs London and arrives Manchester — a UK-wide box covers both endpoints.
+    uk_box = {
+        "type": "Polygon",
+        "coordinates": [[[-6, 49], [2, 49], [2, 59], [-6, 59], [-6, 49]]],
+    }
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"endpoint_within": {"mode": "both", "geometry": uk_box}}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+
+
+async def test_endpoint_within_either_mode(api_client: AsyncClient) -> None:
+    # Flight A departs London (within UK box) — either mode should match it even though
+    # arrival (Manchester) is also within the box.
+    # Use a small box that covers only the London start point to confirm OR semantics.
+    london_box = {
+        "type": "Polygon",
+        "coordinates": [[[-1, 51], [1, 51], [1, 52], [-1, 52], [-1, 51]]],
+    }
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"endpoint_within": {"mode": "either", "geometry": london_box}}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    # Flight A starts near London → matches via start endpoint
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
 
 
 async def test_emitter_category_filter(api_client: AsyncClient) -> None:

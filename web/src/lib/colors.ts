@@ -138,10 +138,16 @@ const SPEED_STOPS: RGBA[] = [
 
 export function gsToColor(gsKt: number | null | undefined): RGBA {
   if (gsKt == null) return GRAY;
-  return piecewiseLerp(SPEED_STOPS, Math.sqrt(Math.max(0, Math.min(gsKt, 600)) / 600));
+  return piecewiseLerp(
+    SPEED_STOPS,
+    Math.sqrt(Math.max(0, Math.min(gsKt, 600)) / 600),
+  );
 }
 
 export function iasToColor(iasKt: number | null | undefined): RGBA {
   if (iasKt == null) return GRAY;
-  return piecewiseLerp(SPEED_STOPS, Math.sqrt(Math.max(0, Math.min(iasKt, 450)) / 450));
+  return piecewiseLerp(
+    SPEED_STOPS,
+    Math.sqrt(Math.max(0, Math.min(iasKt, 450)) / 450),
+  );
 }

@@ -19,8 +19,14 @@ export class QueryBuilderPage {
   }
 
   async addFilter(label: string): Promise<void> {
-    await this.page.getByRole("button", { name: /add filter/i }).first().click();
-    await this.page.locator(".add-filter-menu").getByText(label, { exact: true }).click();
+    await this.page
+      .getByRole("button", { name: /add filter/i })
+      .first()
+      .click();
+    await this.page
+      .locator(".add-filter-menu")
+      .getByText(label, { exact: true })
+      .click();
   }
 
   async removeFilter(index = 0): Promise<void> {
