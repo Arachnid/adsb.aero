@@ -7,13 +7,13 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-adsb}
       POSTGRES_USER: ${POSTGRES_USER:-adsb}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
-    ports:
-      - "127.0.0.1:5432:5432"
+    networks:
+      - db
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-adsb} -d $${POSTGRES_DB:-adsb}"]
       interval: 10s
@@ -67,8 +67,10 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DB: ${POSTGRES_DB:-adsb}
       POSTGRES_USER: ${POSTGRES_USER:-adsb}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       LOG_QUERIES: ${LOG_QUERIES:-false}
+    networks:
+      - default
+      - db
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,13 +99,14 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DB: ${POSTGRES_DB:-adsb}
       POSTGRES_USER: ${POSTGRES_USER:-adsb}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       SCHEDULER_CACHE_DIR: /data/cache
       SCHEDULER_INTERVAL_SECONDS: "43200"
       SCHEDULER_LOOKBACK_DAYS: "0"
       SCHEDULER_KEEP_TRACES: "false"
     volumes:
       - scheduler_cache:/data/cache
+    networks:
+      - db
     depends_on:
       postgres:
         condition: service_healthy
@@ -115,3 +118,6 @@ volumes:
   loki_data:
   scheduler_cache:
   openaip_cache:
+
+networks:
+  db:

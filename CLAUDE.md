@@ -35,6 +35,8 @@ All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) s
 
 **Dropping the adsb database**: connect to the `postgres` database, not `adsb`, otherwise psql fails with "cannot drop the currently open database": `docker exec infra-postgres-1 psql -U adsb -d postgres -c "DROP DATABASE IF EXISTS adsb;" 2>&1 | cat`. Recreate with `CREATE DATABASE adsb TEMPLATE template_mobilitydb;`.
 
+**Postgres auth**: Uses `trust` — no password. Connect with `postgresql://adsb@localhost/adsb` (dev) or `postgresql://adsb@postgres/adsb` (container-to-container). In dev the port is published to `127.0.0.1:5432`; in prod it is not. `POSTGRES_PASSWORD` is not set anywhere.
+
 **Compose setup**: All compose files live in `infra/`. Run all `docker compose` commands from that directory. The `.env` file lives at the repo root; `infra/.env` is a symlink to it (create once with `ln -sf ../.env infra/.env` if missing).
 
 **Dev stack**: `make dev` (or `cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`). Adds the `vite` service and mounts `infra/nginx/dev.conf`. Browser entry point: `http://localhost`.

@@ -11,7 +11,7 @@ The full stack runs in Docker Compose. In dev, nginx proxies HMR-aware to a Vite
 ## First-time setup
 
 ```bash
-# 1. Copy the env template and fill in passwords
+# 1. Copy the env template and fill in API keys (no database password needed)
 cp .env.example .env
 $EDITOR .env
 
@@ -54,6 +54,34 @@ This brings up:
 | `scheduler`| Ingestion scheduler (background, not needed for UI work)  |
 
 Open `http://localhost` in the browser. HMR is active — saving a `.tsx` file updates the page without a full reload.
+
+## Importing airframe reference data
+
+The `airframes` table holds registration, model, operator, and flag data sourced from [tar1090-db](https://github.com/wiedehopf/tar1090-db). It is required for the API to return aircraft metadata alongside trajectories.
+
+```bash
+make import-airframes
+# or directly:
+cd server && .venv/bin/python -m adsb_server.reference_data.airframes
+```
+
+This downloads `aircraft.csv.gz` from the tar1090-db GitHub release, upserts ~600k rows into `airframes`, and exits. It takes about 2 minutes. The dev stack must be up (`make dev`) so that postgres is reachable at `localhost:5432`.
+
+Re-run any time to pull the latest snapshot from upstream.
+
+## Accessing postgres from the host
+
+In dev, postgres is published to `127.0.0.1:5432`. It uses trust auth — no password required:
+
+```bash
+# via psql in the container (no port needed)
+docker exec infra-postgres-1 psql -U adsb -d adsb
+
+# from a local Python script
+# postgresql://adsb@localhost/adsb  (no password)
+```
+
+In prod the port is not published; postgres is only reachable by the `api` and `scheduler` containers.
 
 ## Daily use
 
