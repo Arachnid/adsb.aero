@@ -340,6 +340,9 @@ class TestDownloadAndProcessRelease:
 
         assert result is False
         mock_rb.assert_not_called()
+        conn.execute.assert_called_once()
+        sql: str = conn.execute.call_args[0][0]
+        assert "DELETE" in sql.upper() and "ingest_batches" in sql
 
     async def test_empty_assets_returns_true(self, tmp_path: Path) -> None:
         client = _release_client({"assets": []})
@@ -371,6 +374,9 @@ class TestDownloadAndProcessRelease:
         assert result is False
         mock_dl.assert_called_once()
         mock_rb.assert_not_called()
+        conn.execute.assert_called_once()
+        sql: str = conn.execute.call_args[0][0]
+        assert "DELETE" in sql.upper() and "ingest_batches" in sql
 
     async def test_asset_without_url_is_skipped(self, tmp_path: Path) -> None:
         release_data = {

@@ -145,6 +145,7 @@ async def _download_and_process_release(
         release_data: dict[str, object] = resp.json()
     except httpx.HTTPError:
         logger.error("Failed to fetch release %s", tag, exc_info=True)
+        await conn.execute("DELETE FROM ingest_batches WHERE batch_date = $1", batch_date)
         return False
 
     assets: list[dict[str, object]] = release_data.get("assets", [])  # type: ignore[assignment]
@@ -169,6 +170,7 @@ async def _download_and_process_release(
             await _download_asset(client, asset_url, dest, asset_size, asset_updated_at)
         except Exception:
             logger.error("Failed to download asset %s", asset_name, exc_info=True)
+            await conn.execute("DELETE FROM ingest_batches WHERE batch_date = $1", batch_date)
             return False
 
     logger.info("Starting batch ingestion for %s", batch_date_str)
