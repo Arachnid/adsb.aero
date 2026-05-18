@@ -7,7 +7,6 @@ dependencies = [
     "fastapi>=0.115",
     "scalar-fastapi>=1.8",
     "asyncpg>=0.30",
-    "dramatiq[redis]>=1.17",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "uvicorn[standard]>=0.32",
@@ -21,7 +20,6 @@ dependencies = [
     "herbie-data>=2025.3",
     "h3>=4.1",
     "orjson>=3.10",
-    "redis>=5.2",
     "sqlalchemy[asyncio]>=2.0",
     "alembic>=1.13",
 ]
@@ -35,7 +33,6 @@ dev = [
     "ruff>=0.8",
     "pre-commit>=4.0",
     "testcontainers[postgres]>=4.9",
-    "types-redis>=4.6",
 ]
 
 [build-system]

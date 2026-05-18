@@ -13,8 +13,6 @@ class Settings(BaseSettings):
     postgres_user: str = "adsb"
     postgres_password: str = ""
 
-    redis_url: str = "redis://localhost:6379"
-
     log_queries: bool = False
 
     scheduler_cache_dir: Path = Path("/data/cache")
