@@ -387,7 +387,7 @@ export function ResultsPanel({
                 textAlign: "center",
               }}
             >
-              {(() => {
+              {((): string => {
                 const earliestFlight =
                   hasMore && flights && flights.length > 0
                     ? (flights[flights.length - 1]?.start_ts ?? null)

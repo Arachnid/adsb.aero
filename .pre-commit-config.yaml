@@ -46,13 +46,14 @@ repos:
         files: ^web/
         types_or: [ts, tsx, javascript, jsx, json, yaml, css]
 
-  - repo: https://github.com/pre-commit/mirrors-eslint
-    rev: v9.15.0
+  - repo: local
     hooks:
-      - id: eslint
+      - id: web-eslint
+        name: Web ESLint
+        entry: bash -c 'cd web && pnpm eslint src'
+        language: system
+        pass_filenames: false
         files: ^web/src/
-        types: [ts, tsx]
-        args: ["--fix"]
 
   - repo: https://github.com/sqlfluff/sqlfluff
     rev: 3.3.0

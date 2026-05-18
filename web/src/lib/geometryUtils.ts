@@ -39,8 +39,9 @@ export function polygonAreaKm2(polygon: [number, number][]): number {
   const cosLat = Math.cos(meanLat * DEG_TO_RAD);
   let area = 0;
   for (let i = 0; i < n; i++) {
-    const p1 = polygon[i]!;
-    const p2 = polygon[(i + 1) % n]!;
+    const p1 = polygon[i];
+    const p2 = polygon[(i + 1) % n];
+    if (p1 === undefined || p2 === undefined) continue;
     area += p1[0] * cosLat * p2[1] - p2[0] * cosLat * p1[1];
   }
   return (Math.abs(area) / 2) * KM_PER_DEG * KM_PER_DEG;
