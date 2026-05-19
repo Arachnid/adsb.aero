@@ -252,13 +252,16 @@ def _should_flight_split(prev: RawPoint, curr: RawPoint, flight_start_ts: float)
     return curr.new_leg
 
 
-def _drop_implausible_positions(icao24: str, points: list[RawPoint]) -> list[RawPoint]:
+def _drop_implausible_positions(icao24: str, points: list[RawPoint]) -> tuple[list[RawPoint], int]:
     """Drop position reports that imply speed > _MAX_STITCH_SPEED_MPS from the previous kept point.
 
     Corrupted ADS-B receivers occasionally emit garbage coordinates for a real
     aircraft, producing planet-spanning linestrings that cause GEOS to error.
+
+    Returns (kept_points, dropped_count).
     """
     kept: list[RawPoint] = [points[0]]
+    dropped = 0
     for curr in points[1:]:
         prev = kept[-1]
         dt = curr.ts - prev.ts
@@ -269,13 +272,8 @@ def _drop_implausible_positions(icao24: str, points: list[RawPoint]) -> list[Raw
         if speed <= _MAX_POINT_SPEED_MPS:
             kept.append(curr)
         else:
-            logger.warning(
-                "icao24=%s: dropping implausible position at ts=%.3f (%.0f m/s)",
-                icao24,
-                curr.ts,
-                speed,
-            )
-    return kept
+            dropped += 1
+    return kept, dropped
 
 
 def _split_into_sub_sequences(points: list[RawPoint]) -> list[list[RawPoint]]:
@@ -297,20 +295,22 @@ def finalize_segment(
     icao24: str,
     seg_points: list[RawPoint],
     icao_type: str | None,
-) -> FinalizedFlight | None:
+) -> tuple[FinalizedFlight | None, int]:
     """Convert a list of RawPoints into a FinalizedFlight with a seqset path.
 
     The path is a tgeompoint_seqset: coverage gaps > _SUB_SEQ_GAP_S produce separate
     sub-sequences with no interpolation across the gap.  Returns None if there are
     fewer than 2 airborne points across all sub-sequences.
+
+    Returns (flight_or_none, implausible_points_dropped).
     """
     airborne = [p for p in seg_points if p.alt_baro is not None]
     if len(airborne) < 2:
-        return None
+        return None, 0
 
-    airborne = _drop_implausible_positions(icao24, airborne)
+    airborne, dropped = _drop_implausible_positions(icao24, airborne)
     if len(airborne) < 2:
-        return None
+        return None, dropped
 
     callsign = _most_common_non_null([p.callsign for p in seg_points])
     emitter_category = _most_common_non_null([p.emitter_category for p in seg_points])
@@ -350,7 +350,7 @@ def finalize_segment(
         path_ias_series.append(ias)
 
     if not vertex_sequences:
-        return None
+        return None, dropped
 
     start_ts = datetime.fromtimestamp(vertex_sequences[0][0][3], tz=UTC)
     end_ts = datetime.fromtimestamp(vertex_sequences[-1][-1][3], tz=UTC)
@@ -369,7 +369,7 @@ def finalize_segment(
         path_gs_series=path_gs_series,
         path_vr_series=path_vr_series,
         path_ias_series=path_ias_series,
-    )
+    ), dropped
 
 
 def _in_progress_window(seg: list[RawPoint]) -> float:
@@ -381,7 +381,7 @@ def split_flights(
     header: TraceHeader,
     points: list[RawPoint],  # sorted by ts, non-empty
     cutoff_ts: float,  # unix epoch — flights ending before this are finalized
-) -> tuple[list[FinalizedFlight], RawFlight | None]:
+) -> tuple[list[FinalizedFlight], RawFlight | None, int]:
     """Split a sorted sequence of RawPoints into discrete flights.
 
     Two-level split:
@@ -394,7 +394,7 @@ def split_flights(
     over-water routes to appear as single queryable records.
 
     Returns:
-        (list_of_finalized_flights, optional_in_progress_raw_flight)
+        (list_of_finalized_flights, optional_in_progress_raw_flight, implausible_points_dropped)
     """
     segments: list[list[RawPoint]] = []
     current_seg: list[RawPoint] = [points[0]]
@@ -413,6 +413,7 @@ def split_flights(
     icao_type = header.icao_type
     finalized: list[FinalizedFlight] = []
     in_progress: RawFlight | None = None
+    total_dropped = 0
 
     for seg_idx, seg in enumerate(segments):
         if len(seg) < 2:
@@ -432,8 +433,9 @@ def split_flights(
                 points=seg,
             )
         else:
-            result = finalize_segment(header.icao24, seg, icao_type)
+            result, dropped = finalize_segment(header.icao24, seg, icao_type)
+            total_dropped += dropped
             if result is not None:
                 finalized.append(result)
 
-    return finalized, in_progress
+    return finalized, in_progress, total_dropped

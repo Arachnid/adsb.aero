@@ -206,7 +206,7 @@ def _log_progress(
 
 def _process_and_correct(
     args: tuple[str, bytes | None],
-) -> tuple[list[_FlightParams], RawFlight | None]:
+) -> tuple[list[_FlightParams], RawFlight | None, int, str | None]:
     """
     Worker function: parse trace bytes, merge staging points, split into discrete
     flights, apply altitude correction, return (db_params_list, in_progress).
@@ -243,7 +243,7 @@ def _process_and_correct(
                 icao_type = staging_flight.icao_type
 
     if icao24 is None or not (base_points or new_points):
-        return [], None
+        return [], None, 0, icao24
 
     all_points = base_points + new_points
     all_points.sort(key=lambda p: p.ts)
@@ -255,11 +255,12 @@ def _process_and_correct(
             last_ts = p.ts
 
     trace_header = TraceHeader(icao24=icao24, icao_type=icao_type)
-    finalized, in_progress = split_flights(trace_header, deduped, state.cutoff_ts)
+    finalized, in_progress, total_dropped = split_flights(trace_header, deduped, state.cutoff_ts)
     if in_progress is not None:
-        ip_finalized = finalize_segment(
+        ip_finalized, ip_dropped = finalize_segment(
             in_progress.icao24, in_progress.points, in_progress.icao_type
         )
+        total_dropped += ip_dropped
         if ip_finalized is not None:
             finalized.append(ip_finalized)
 
@@ -287,7 +288,7 @@ def _process_and_correct(
             wkt = tfloat_stepwise_seqset(per_seq)
         params_list.append(_flight_to_params(flight, state.batch_date, wkt))
 
-    return params_list, in_progress
+    return params_list, in_progress, total_dropped, icao24
 
 
 async def run_batch(
@@ -385,6 +386,8 @@ async def run_batch(
     t_start = _time.monotonic()
     last_log_time = t_start
     in_progress_flights: dict[str, RawFlight] = {}
+    total_dropped_points = 0
+    icaos_with_drops: set[str] = set()
 
     def _iter_trace_args() -> Iterator[tuple[str, bytes | None]]:
         seen: set[str] = set()
@@ -410,9 +413,12 @@ async def run_batch(
         ):
             db_params: list[_FlightParams] = []
             for result in batch:
-                params_list, ip_raw = result
+                params_list, ip_raw, dropped, result_icao24 = result
                 if ip_raw is not None:
                     in_progress_flights[ip_raw.icao24] = ip_raw
+                if dropped and result_icao24 is not None:
+                    total_dropped_points += dropped
+                    icaos_with_drops.add(result_icao24)
                 db_params.extend(params_list)
                 traces_done += 1
                 last_log_time = _log_progress(traces_done, flight_count, t_start, last_log_time)
@@ -478,5 +484,15 @@ async def run_batch(
     if not effective_keep_herbie_cache:
         _cleanup_old_herbie_cache(effective_cache_dir, batch_date)
 
-    logger.info("Batch %s complete: %d flights finalized", batch_date, flight_count)
+    if total_dropped_points:
+        logger.info(
+            "Batch %s complete: %d flights finalized; "
+            "%d implausible points dropped across %d ICAO(s)",
+            batch_date,
+            flight_count,
+            total_dropped_points,
+            len(icaos_with_drops),
+        )
+    else:
+        logger.info("Batch %s complete: %d flights finalized", batch_date, flight_count)
     return flight_count

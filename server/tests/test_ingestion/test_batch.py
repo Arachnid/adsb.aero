@@ -738,7 +738,7 @@ class TestProcessAndCorrect:
         monkeypatch.setattr(batch_mod, "compute_correction_series", lambda *a, **kw: None)
 
         raw = _make_trace_bytes("aabbcc")  # Dec 2020 timestamps, well before Jan 2021 cutoff
-        params_list, in_progress = batch_mod._process_and_correct(
+        params_list, in_progress, _, _ = batch_mod._process_and_correct(
             ("traces/aa/trace_full_aabbcc.json.gz", raw)
         )
         assert len(params_list) == 1
@@ -760,7 +760,7 @@ class TestProcessAndCorrect:
                 [30.0, 51.6, -0.2, 35100.0, 455.0, 91.0, 0, None, None],
             ],
         )
-        _params_list, in_progress = batch_mod._process_and_correct(
+        _params_list, in_progress, _, _ = batch_mod._process_and_correct(
             ("traces/aa/trace_full_aabbcc.json.gz", raw)
         )
         assert in_progress is not None
@@ -806,7 +806,7 @@ class TestProcessAndCorrect:
         )
         monkeypatch.setattr(batch_mod, "compute_correction_series", lambda *a, **kw: None)
 
-        params_list, _in_progress = batch_mod._process_and_correct(("aabbcc", None))
+        params_list, _in_progress, _, _ = batch_mod._process_and_correct(("aabbcc", None))
         assert isinstance(params_list, list)
         assert len(params_list) >= 1
 
@@ -851,7 +851,7 @@ class TestProcessAndCorrect:
         )
         monkeypatch.setattr(batch_mod, "compute_correction_series", lambda *a, **kw: None)
 
-        params_list, _ = batch_mod._process_and_correct(("aabbcc", None))
+        params_list, _, _, _ = batch_mod._process_and_correct(("aabbcc", None))
         assert params_list
         assert params_list[0][2] == "A320"  # icao_type at index 2
 
@@ -860,7 +860,7 @@ class TestProcessAndCorrect:
 
         monkeypatch.setattr(batch_mod, "_worker_state", self._make_state())
 
-        params_list, in_progress = batch_mod._process_and_correct(
+        params_list, in_progress, _, _ = batch_mod._process_and_correct(
             ("traces/aa/trace_full_aabbcc.json.gz", b"not valid gzip or json")
         )
         assert params_list == []
@@ -871,7 +871,7 @@ class TestProcessAndCorrect:
 
         monkeypatch.setattr(batch_mod, "_worker_state", self._make_state(staging={}))
 
-        params_list, in_progress = batch_mod._process_and_correct(("unknown_icao24", None))
+        params_list, in_progress, _, _ = batch_mod._process_and_correct(("unknown_icao24", None))
         assert params_list == []
         assert in_progress is None
 
@@ -888,7 +888,7 @@ class TestProcessAndCorrect:
         )
 
         raw = _make_trace_bytes("aabbcc")
-        params_list, _ = batch_mod._process_and_correct(
+        params_list, _, _, _ = batch_mod._process_and_correct(
             ("traces/aa/trace_full_aabbcc.json.gz", raw)
         )
         assert params_list

@@ -57,7 +57,7 @@ class TestNewLegFlag:
         header = _make_header()
         cutoff = 10000.0
 
-        finalized, _in_progress = split_flights(header, points, cutoff)
+        finalized, _in_progress, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 2
 
     def test_new_leg_on_first_point_ignored(self) -> None:
@@ -71,7 +71,7 @@ class TestNewLegFlag:
         header = _make_header()
         cutoff = 10000.0
 
-        finalized, _in_progress = split_flights(header, points, cutoff)
+        finalized, _in_progress, _ = split_flights(header, points, cutoff)
         # First segment has 1 point (ts=1000) → too short, skipped
         # Second segment has 3 points → finalized
         assert len(finalized) == 1
@@ -95,7 +95,7 @@ class TestInProgress:
         # last_ts (2000) >= cutoff - 600 (1400) → in-progress ✓
 
         header = _make_header()
-        finalized, in_progress = split_flights(header, points, cutoff)
+        finalized, in_progress, _ = split_flights(header, points, cutoff)
         assert in_progress is not None
         assert len(finalized) == 0
 
@@ -109,7 +109,7 @@ class TestInProgress:
             _make_point(ts=2060.0),  # 2060 < 10000 - 3600 = 6400 → finalized
         ]
         header = _make_header()
-        finalized, in_progress = split_flights(header, points, cutoff)
+        finalized, in_progress, _ = split_flights(header, points, cutoff)
         assert in_progress is None
         assert len(finalized) == 1
 
@@ -126,7 +126,7 @@ class TestInProgress:
             _make_point(ts=230.0),
         ]
         header = _make_header()
-        finalized, in_progress = split_flights(header, points, cutoff)
+        finalized, in_progress, _ = split_flights(header, points, cutoff)
         assert in_progress is not None
         assert len(finalized) == 2
 
@@ -143,7 +143,7 @@ class TestSquawkRuns:
             _make_point(ts=1240.0, squawk="2200"),  # change!
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, cutoff)
+        finalized, _, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
         # squawk_runs is now per-sub-sequence; all points are in one sub-sequence
         runs = finalized[0].squawk_runs[0]
@@ -162,7 +162,7 @@ class TestSquawkRuns:
             _make_point(ts=1120.0, squawk=None),
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, cutoff)
+        finalized, _, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
         assert all(runs == [] for runs in finalized[0].squawk_runs)
 
@@ -175,7 +175,7 @@ class TestSquawkRuns:
             _make_point(ts=1120.0, squawk="1234"),
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, cutoff)
+        finalized, _, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
         runs = finalized[0].squawk_runs[0]
         assert runs[0] == (1000.0, "1234")
@@ -193,7 +193,7 @@ class TestCallsignResolution:
             _make_point(ts=1120.0, callsign="BAW456"),
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, cutoff)
+        finalized, _, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
         assert finalized[0].callsign == "BAW123"
 
@@ -205,7 +205,7 @@ class TestCallsignResolution:
             _make_point(ts=1060.0, callsign=None),
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, cutoff)
+        finalized, _, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
         assert finalized[0].callsign is None
 
@@ -221,7 +221,7 @@ class TestFinalizedFlightShape:
             _make_point(ts=1120.0),
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, cutoff)
+        finalized, _, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
         f = finalized[0]
         assert f.start_ts.tzinfo == UTC
@@ -237,7 +237,7 @@ class TestFinalizedFlightShape:
             _make_point(ts=1060.0, lat=51.1, lon=-0.2, alt_baro=11000.0),
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, cutoff)
+        finalized, _, _ = split_flights(header, points, cutoff)
         assert len(finalized) == 1
         v = finalized[0].vertex_sequences[0]
         assert len(v) >= 2
@@ -257,7 +257,7 @@ class TestFinalizedFlightShape:
             _make_point(ts=1120.0),
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, cutoff)
+        finalized, _, _ = split_flights(header, points, cutoff)
         # First segment: [ts=1000] → 1 point → skipped
         # Second segment: [ts=1060, ts=1120] → 2 points → finalized
         assert len(finalized) == 1
@@ -285,7 +285,7 @@ class TestGroundPointHandling:
             _make_point(ts=1240.0, alt_baro=10000.0),
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, 10000.0)
+        finalized, _, _ = split_flights(header, points, 10000.0)
         assert len(finalized) == 2
         assert finalized[1].start_ts.timestamp() == 1180.0
         for flight in finalized:
@@ -299,7 +299,7 @@ class TestGroundPointHandling:
             _make_point(ts=1120.0, alt_baro=10000.0),
         ]
         header = _make_header()
-        finalized, _ = split_flights(header, points, 10000.0)
+        finalized, _, _ = split_flights(header, points, 10000.0)
         assert len(finalized) == 1
         f = finalized[0]
         assert f.start_ts.timestamp() == 1060.0
@@ -324,7 +324,7 @@ class TestGapBasedSplitting:
             _make_point(ts=1860.0, alt_baro=5000.0),
             _make_point(ts=1920.0, alt_baro=10000.0),
         ]
-        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        finalized, _, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 2
 
     def test_ground_gap_at_threshold_no_split(self) -> None:
@@ -336,7 +336,7 @@ class TestGapBasedSplitting:
             _make_point(ts=1720.0, alt_baro=5000.0),
             _make_point(ts=1780.0, alt_baro=10000.0),
         ]
-        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        finalized, _, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 1
 
     # --- air gap ---
@@ -350,7 +350,7 @@ class TestGapBasedSplitting:
             _make_point(ts=4700.0, lat=51.5, lon=0.5, alt_baro=35000.0),  # ~42 km, 3640 s gap
             _make_point(ts=4760.0, lat=51.5, lon=0.5, alt_baro=35000.0),
         ]
-        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        finalized, _, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 1
         assert len(finalized[0].vertex_sequences) == 2
 
@@ -368,7 +368,7 @@ class TestGapBasedSplitting:
             _make_point(ts=10588.0, lat=50.814, lon=-1.201, alt_baro=125.0),
             _make_point(ts=10648.0, lat=50.815, lon=-1.200, alt_baro=200.0),
         ]
-        finalized, _ = split_flights(_make_header(), points, 99999.0)
+        finalized, _, _ = split_flights(_make_header(), points, 99999.0)
         assert len(finalized) == 2
 
     def test_stationary_air_gap_with_small_drift_splits(self) -> None:
@@ -393,7 +393,7 @@ class TestGapBasedSplitting:
             _make_point(ts=72083.0, lat=50.8123, lon=-1.2111, alt_baro=125.0),
             _make_point(ts=72085.0, lat=50.8121, lon=-1.2118, alt_baro=150.0),
         ]
-        finalized, _ = split_flights(_make_header(), points, 99999.0)
+        finalized, _, _ = split_flights(_make_header(), points, 99999.0)
         assert len(finalized) == 2
 
     def test_air_gap_geographically_implausible_splits(self) -> None:
@@ -405,7 +405,7 @@ class TestGapBasedSplitting:
             _make_point(ts=1121.0, lat=40.7, lon=-74.0, alt_baro=35000.0),  # ~5570 km in 61 s
             _make_point(ts=1180.0, lat=40.7, lon=-74.0, alt_baro=35000.0),
         ]
-        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        finalized, _, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 2
 
     def test_air_gap_at_sub_seq_threshold_no_flight_split(self) -> None:
@@ -417,7 +417,7 @@ class TestGapBasedSplitting:
             _make_point(ts=4660.0, lat=51.5, lon=0.5, alt_baro=35000.0),  # ~42 km, 3600 s gap
             _make_point(ts=4720.0, lat=51.5, lon=0.5, alt_baro=35000.0),
         ]
-        finalized, _ = split_flights(_make_header(), points, 10000.0)
+        finalized, _, _ = split_flights(_make_header(), points, 10000.0)
         assert len(finalized) == 1
 
     # --- 24-hour duration cap ---
@@ -431,7 +431,7 @@ class TestGapBasedSplitting:
             lon = -0.1 + i * 0.6
             pts.append(_make_point(ts=float(i * 3600), lon=lon, alt_baro=35000.0))
             pts.append(_make_point(ts=float(i * 3600 + 30), lon=lon, alt_baro=35000.0))
-        finalized, _ = split_flights(_make_header(), pts, 999999.0)
+        finalized, _, _ = split_flights(_make_header(), pts, 999999.0)
         assert len(finalized) >= 2, "25-hour span should produce at least two segments"
 
     def test_24h_duration_cap_boundary_no_split(self) -> None:
@@ -443,7 +443,7 @@ class TestGapBasedSplitting:
             lon = -0.1 + i * 0.6
             pts.append(_make_point(ts=float(i * 3600), lon=lon, alt_baro=35000.0))
             pts.append(_make_point(ts=float(i * 3600 + 30), lon=lon, alt_baro=35000.0))
-        finalized, _ = split_flights(_make_header(), pts, 999999.0)
+        finalized, _, _ = split_flights(_make_header(), pts, 999999.0)
         assert len(finalized) == 1, "23-hour span should be a single segment"
 
     # --- in-progress window ---
@@ -456,7 +456,7 @@ class TestGapBasedSplitting:
             _make_point(ts=8000.0, alt_baro=35000.0),
             _make_point(ts=8200.0, alt_baro=35000.0),
         ]
-        _, in_progress = split_flights(_make_header(), points, cutoff)
+        _, in_progress, _ = split_flights(_make_header(), points, cutoff)
         assert in_progress is not None
 
     def test_in_progress_window_airborne_over_1h_finalizes(self) -> None:
@@ -468,7 +468,7 @@ class TestGapBasedSplitting:
             _make_point(ts=4000.0, alt_baro=35000.0),
             _make_point(ts=4030.0, alt_baro=35000.0),
         ]
-        finalized, in_progress = split_flights(_make_header(), points, cutoff)
+        finalized, in_progress, _ = split_flights(_make_header(), points, cutoff)
         assert in_progress is None
         assert len(finalized) == 1
 
@@ -481,7 +481,7 @@ class TestGapBasedSplitting:
             _make_point(ts=8000.0, alt_baro=35000.0),
             _make_point(ts=8800.0, alt_baro=None),  # ground landing
         ]
-        _, in_progress = split_flights(_make_header(), points, cutoff)
+        _, in_progress, _ = split_flights(_make_header(), points, cutoff)
         assert in_progress is None
 
 
@@ -574,7 +574,7 @@ class TestImplausiblePositions:
             _make_point(ts=1.0, lat=35.6, lon=139.7),  # Tokyo — Mach 40+
             _make_point(ts=60.0, lat=51.6, lon=-0.2),  # back near London
         ]
-        flight = finalize_segment("aabbcc", points, icao_type=None)
+        flight, _ = finalize_segment("aabbcc", points, icao_type=None)
         assert flight is not None
         # Only the two plausible points survive; Tokyo is dropped.
         assert flight.raw_point_count == 3  # raw count unchanged
@@ -589,7 +589,7 @@ class TestImplausiblePositions:
             _make_point(ts=0.0, lat=51.5, lon=-0.1),
             _make_point(ts=60.0, lat=51.5, lon=-0.25),
         ]
-        flight = finalize_segment("aabbcc", points, icao_type=None)
+        flight, _ = finalize_segment("aabbcc", points, icao_type=None)
         assert flight is not None
         assert len(flight.vertex_sequences[0]) == 2
 
@@ -599,5 +599,5 @@ class TestImplausiblePositions:
             _make_point(ts=0.0, lat=51.5, lon=-0.1),
             _make_point(ts=1.0, lat=35.6, lon=139.7),  # Mach 40 — dropped
         ]
-        flight = finalize_segment("aabbcc", points, icao_type=None)
+        flight, _ = finalize_segment("aabbcc", points, icao_type=None)
         assert flight is None
