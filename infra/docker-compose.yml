@@ -25,7 +25,7 @@ services:
   api:
     build:
       context: ../server
-    image: adsb-api:latest
+    image: ghcr.io/arachnid/adsb.aero/api:latest
     restart: unless-stopped
     environment:
       POSTGRES_HOST: postgres
