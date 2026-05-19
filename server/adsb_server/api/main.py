@@ -613,7 +613,17 @@ async def query_flights(
             params,
         )
 
-    rows = await pool.fetch(sql, *params)
+    import asyncpg
+
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SET statement_timeout = '15s'")
+            rows = await conn.fetch(sql, *params)
+    except asyncpg.exceptions.QueryCanceledError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="Query timed out. Reduce the search area or time range.",
+        ) from exc
 
     has_more = len(rows) > body.limit
     result_rows = rows[: body.limit]
