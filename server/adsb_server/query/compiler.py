@@ -40,22 +40,30 @@ def _float_span_sql(alt_min_p: str | None, alt_max_p: str | None) -> str:
 
 
 class CompiledPredicate(str):
-    """SQL WHERE fragment that may carry CTE definitions for use in WITH clauses.
+    """SQL WHERE fragment that may carry CTE definitions and deferred outer conditions.
 
     Subclasses str so it works as a plain string in most contexts.
     ctes holds (alias, select_body) pairs; each CTE produces a single row with
     'geom' (the 2D geometry) and 'sb' (the STBOX) columns.
+    outer_parts holds expensive filter expressions (eIntersects, dwell, squawk
+    temporal correlation) that should be applied in an outer query after an inner
+    query has sorted H3-prefiltered candidates by start_ts.  When non-empty the
+    query builder wraps the inner query in a subquery with a large LIMIT so the
+    outer LIMIT can stop as soon as enough rows pass the expensive filters.
     """
 
     ctes: list[tuple[str, str]]
+    outer_parts: list[str]
 
     def __new__(
         cls,
         where: str,
         ctes: list[tuple[str, str]] | None = None,
+        outer_parts: list[str] | None = None,
     ) -> CompiledPredicate:
         instance: CompiledPredicate = super().__new__(cls, where)
         instance.ctes = ctes if ctes is not None else []
+        instance.outer_parts = outer_parts if outer_parts is not None else []
         return instance
 
 
@@ -66,6 +74,13 @@ def _p(params: list[Any], val: Any) -> str:
 
 
 MAX_QUERY_H3_CELLS = 250
+
+# Upper bound for the inner subquery LIMIT used in two-level query plans.
+# Forces PostgreSQL to materialise the inner result (sort by start_ts) before
+# applying eIntersects in the outer query, so eIntersects only runs on the
+# first N candidates in timestamp order rather than on all H3 matches.
+# 1M exceeds the largest observed candidate set (~38k for a 7-day window).
+INNER_SUBQUERY_LIMIT = 1_000_000
 
 
 class GeometryTooLargeError(Exception):
@@ -190,6 +205,7 @@ def _compile_spatial_path(
     """
     parts: list[str] = []
     ctes: list[tuple[str, str]] = []
+    outer_parts: list[str] = []
 
     # Altitude bounds, separated by reference system.
     # FL bounds use raw barometric altitude: getZ(path) in feet (FL x 100).
@@ -315,9 +331,20 @@ def _compile_spatial_path(
             # Geometry only — no altitude or time constraints.
             if spatial_fn == "ST_Within":
                 parts.append(f"ST_Within(trajectory(path), {geom_sql})")
+                clipped_path_expr = f"atgeometry(path, {geom_sql})"
             else:
-                parts.append(f"eIntersects(path, {geom_sql})")
-            clipped_path_expr = f"atgeometry(path, {geom_sql})"
+                # Compute geometry once in a CTE.  Move the STBOX pre-filter and
+                # eIntersects to outer_parts: the query builder will sort H3
+                # candidates by start_ts in an inner subquery and stream them to
+                # the outer query, which applies eIntersects and stops at LIMIT.
+                cte_name = f"_s{len(params)}"
+                cte_body = (
+                    f"SELECT geom, stbox(geom) AS sb FROM (VALUES ({geom_sql})) AS _base(geom)"
+                )
+                ctes.append((cte_name, cte_body))
+                outer_parts.append(f"path && {cte_name}.sb")
+                outer_parts.append(f"eIntersects(path, {cte_name}.geom)")
+                clipped_path_expr = f"atgeometry(path, {cte_name}.geom)"
 
     # Altitude when no geometry: btree indexes on stored generated columns for all refs.
     if v.geometry is None:
@@ -337,31 +364,40 @@ def _compile_spatial_path(
         parts.append(f"start_ts < {time_to_p}")
 
     # Dwell time / distance filters on the clipped path inside the geometry.
+    # When eIntersects is deferred to outer_parts (geometry-only case), these
+    # also go to outer_parts since they depend on clipped_path_expr (atgeometry).
     # The model validator guarantees geometry is set when these are present,
     # so clipped_path_expr is always non-None here.
+    _expensive = outer_parts if outer_parts else parts
     if v.dwell_min_s is not None:
         dmin_p = _p(params, v.dwell_min_s)
-        parts.append(f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) >= {dmin_p}")
+        # Necessary condition: total flight duration >= dwell_min_s.  Cheap btree
+        # pre-filter that eliminates short flights before the expensive atgeometry
+        # + duration computation.  Safe to add unconditionally (inner or outer plan).
+        parts.append(f"EXTRACT(EPOCH FROM (end_ts - start_ts)) >= {dmin_p}")
+        _expensive.append(f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) >= {dmin_p}")
     if v.dwell_max_s is not None:
         dmax_p = _p(params, v.dwell_max_s)
-        parts.append(f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) <= {dmax_p}")
+        _expensive.append(f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) <= {dmax_p}")
     if v.distance_min_m is not None:
         distmin_p = _p(params, v.distance_min_m)
-        parts.append(f"length(trajectory({clipped_path_expr})::geography) >= {distmin_p}")
+        _expensive.append(f"length(trajectory({clipped_path_expr})::geography) >= {distmin_p}")
     if v.distance_max_m is not None:
         distmax_p = _p(params, v.distance_max_m)
-        parts.append(f"length(trajectory({clipped_path_expr})::geography) <= {distmax_p}")
+        _expensive.append(f"length(trajectory({clipped_path_expr})::geography) <= {distmax_p}")
 
     # Squawk filter: GIN pre-filter then precise temporal check.
     # squawk_codes (text[] GIN) eliminates flights that never had any of the
     # queried codes.  squawk_seq IS NOT NULL + EXISTS then checks exact instants.
+    # The GIN pre-filter and IS NOT NULL are cheap and stay in the inner query.
+    # The expensive EXISTS correlation goes to outer_parts when eIntersects is deferred.
     if v.squawk_codes:
         codes_p = _p(params, v.squawk_codes)
         parts.append(f"squawk_codes && {codes_p}::text[]")
         parts.append("squawk_seq IS NOT NULL")
         if clipped_path_expr is not None:
             # Correlate: squawk must match during the instants the path was in the region.
-            parts.append(
+            _expensive.append(
                 f"EXISTS ("
                 f"SELECT 1 FROM unnest(instants("
                 f"atTime(squawk_seq, getTime({clipped_path_expr}))"
@@ -379,7 +415,7 @@ def _compile_spatial_path(
             )
 
     where = " AND ".join(parts) if parts else "TRUE"
-    return CompiledPredicate(where, ctes=ctes)
+    return CompiledPredicate(where, ctes=ctes, outer_parts=outer_parts)
 
 
 def _compile_point_within(col: str, val: AnyGeometry, params: list[Any]) -> str:
@@ -514,20 +550,30 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> CompiledPredicate:
             return CompiledPredicate("TRUE")
         compiled_parts = [compile_predicate(p, params) for p in pred.and_]
         all_ctes = [cte for c in compiled_parts for cte in c.ctes]
+        all_outer = [op for c in compiled_parts for op in c.outer_parts]
         parts_and = [f"({c})" for c in compiled_parts]
-        return CompiledPredicate(" AND ".join(parts_and), ctes=all_ctes)
+        return CompiledPredicate(" AND ".join(parts_and), ctes=all_ctes, outer_parts=all_outer)
 
     if isinstance(pred, OrPredicate):
         if not pred.or_:
             return CompiledPredicate("FALSE")
         compiled_parts = [compile_predicate(p, params) for p in pred.or_]
         all_ctes = [cte for c in compiled_parts for cte in c.ctes]
-        parts_or = [f"({c})" for c in compiled_parts]
-        return CompiledPredicate(" OR ".join(parts_or), ctes=all_ctes)
+        # Flatten outer_parts into each branch so the OR remains a single-level predicate.
+        or_branches: list[str] = []
+        for c in compiled_parts:
+            branch = [x for x in [str(c), *c.outer_parts] if x and x != "TRUE"]
+            or_branches.append(
+                "(" + " AND ".join(f"({x})" for x in branch) + ")" if branch else "TRUE"
+            )
+        return CompiledPredicate(" OR ".join(or_branches), ctes=all_ctes)
 
     if isinstance(pred, NotPredicate):
         inner = compile_predicate(pred.not_, params)
-        return CompiledPredicate(f"NOT ({inner})", ctes=inner.ctes)
+        # Flatten outer_parts before negating.
+        all_parts = [x for x in [str(inner), *inner.outer_parts] if x and x != "TRUE"]
+        full = " AND ".join(f"({x})" for x in all_parts) if all_parts else "TRUE"
+        return CompiledPredicate(f"NOT ({full})", ctes=inner.ctes)
 
     # exhaustive — should never reach here
     raise ValueError(f"Unknown predicate type: {type(pred)}")

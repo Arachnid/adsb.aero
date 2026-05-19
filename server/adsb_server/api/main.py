@@ -18,6 +18,7 @@ from scalar_fastapi import get_scalar_api_reference
 from adsb_server.config import get_settings
 from adsb_server.db.pool import create_pool
 from adsb_server.query.compiler import (
+    INNER_SUBQUERY_LIMIT,
     CompiledPredicate,
     GeometryTooLargeError,
     compile_predicate,
@@ -150,6 +151,59 @@ _FLIGHT_COLS = f"""
 """
 
 _FLIGHT_JOIN = "LEFT JOIN airframes af ON af.icao24 = f.icao24"
+
+# Raw columns projected by the inner subquery of the two-level intersects plan.
+# Excludes large arrays (path_h3, squawk_codes) and generated columns not needed
+# by the outer query or _FLIGHT_COLS_OUTER.
+_INNER_COLS = """
+    f.icao24,
+    f.callsign,
+    f.icao_type,
+    f.emitter_category,
+    f.start_ts,
+    f.end_ts,
+    f.path,
+    f.path_tracks,
+    f.path_gs,
+    f.path_vr,
+    f.path_ias,
+    f.squawk_seq,
+    f.alt_correction_ft,
+    f.raw_point_count,
+    f.ingest_batch_date,
+    af.registration,
+    af.model,
+    af.year,
+    af.operator
+"""
+
+# Same derived columns as _FLIGHT_COLS but sourced from the inner subquery (alias f),
+# where airframe columns are projected without the af. prefix.
+_FLIGHT_COLS_OUTER = f"""
+    {FLIGHT_ID_EXPR} AS flight_id,
+    f.icao24,
+    f.callsign,
+    f.icao_type,
+    f.emitter_category,
+    f.registration,
+    f.model,
+    f.year,
+    f.operator,
+    f.start_ts,
+    f.end_ts,
+    ST_AsGeoJSON(startValue(f.path)::geometry, 6) AS start_point,
+    ST_AsGeoJSON(endValue(f.path)::geometry, 6) AS end_point,
+    asText(f.path) AS path_text,
+    asText(f.path_tracks) AS path_tracks_text,
+    asText(f.path_gs) AS path_gs_text,
+    asText(f.path_vr) AS path_vr_text,
+    asText(f.path_ias) AS path_ias_text,
+    asText(f.squawk_seq) AS squawk_seq_text,
+    asText(f.alt_correction_ft) AS alt_correction_ft_text,
+    f.raw_point_count,
+    f.ingest_batch_date,
+    numInstants(f.path) AS point_count
+"""
 
 
 _INSTANT_RE = re.compile(
@@ -494,17 +548,6 @@ async def query_flights(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         where_parts.append(f"({compiled})")
 
-    # Keyset cursor: excludes results already returned on prior pages.
-    # Combined with start_ts < end_date, this correctly deduplicates ties at cursor_ts.
-    if cursor_ts is not None and cursor_icao is not None:
-        ts_p = _p(params, cursor_ts)
-        icao_p = _p(params, cursor_icao)
-        where_parts.append(
-            f"(f.start_ts < {ts_p} OR (f.start_ts = {ts_p} AND f.icao24 < {icao_p}))"
-        )
-
-    where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
-
     limit_p = _p(params, body.limit + 1)
 
     ctes = compiled.ctes if compiled is not None else []
@@ -513,15 +556,53 @@ async def query_flights(
         if ctes
         else ""
     )
-    from_extras = (", " + ", ".join(name for name, _ in ctes)) if ctes else ""
 
-    sql = f"""
-        {with_clause}SELECT {_FLIGHT_COLS}
-        FROM flights f {_FLIGHT_JOIN}{from_extras}
-        {where_sql}
-        ORDER BY f.start_ts DESC, f.icao24 DESC
-        LIMIT {limit_p}
-    """
+    if compiled is not None and compiled.outer_parts:
+        # Two-level plan: inner subquery collects H3-prefiltered candidates sorted
+        # by start_ts; outer applies eIntersects (and dwell/squawk correlations)
+        # only to as many rows as needed to satisfy LIMIT.  The inner LIMIT is
+        # large enough to never truncate real result sets while preventing
+        # PostgreSQL from inlining the subquery.
+        cursor_parts: list[str] = []
+        if cursor_ts is not None and cursor_icao is not None:
+            ts_p = _p(params, cursor_ts)
+            icao_p = _p(params, cursor_icao)
+            cursor_parts.append(
+                f"(f.start_ts < {ts_p} OR (f.start_ts = {ts_p} AND f.icao24 < {icao_p}))"
+            )
+        inner_where = "WHERE " + " AND ".join(where_parts + cursor_parts)
+        outer_where = "WHERE " + " AND ".join(f"({p})" for p in compiled.outer_parts)
+        from_extras = (", " + ", ".join(name for name, _ in ctes)) if ctes else ""
+        sql = f"""
+            {with_clause}SELECT {_FLIGHT_COLS_OUTER}
+            FROM (
+                SELECT {_INNER_COLS}
+                FROM flights f {_FLIGHT_JOIN}
+                {inner_where}
+                ORDER BY f.start_ts DESC, f.icao24 DESC
+                LIMIT {INNER_SUBQUERY_LIMIT}
+            ) f{from_extras}
+            {outer_where}
+            ORDER BY f.start_ts DESC, f.icao24 DESC
+            LIMIT {limit_p}
+        """
+    else:
+        # Flat single-level query.
+        if cursor_ts is not None and cursor_icao is not None:
+            ts_p = _p(params, cursor_ts)
+            icao_p = _p(params, cursor_icao)
+            where_parts.append(
+                f"(f.start_ts < {ts_p} OR (f.start_ts = {ts_p} AND f.icao24 < {icao_p}))"
+            )
+        where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+        from_extras = (", " + ", ".join(name for name, _ in ctes)) if ctes else ""
+        sql = f"""
+            {with_clause}SELECT {_FLIGHT_COLS}
+            FROM flights f {_FLIGHT_JOIN}{from_extras}
+            {where_sql}
+            ORDER BY f.start_ts DESC, f.icao24 DESC
+            LIMIT {limit_p}
+        """
 
     if get_settings().log_queries:
         dsl = body.match.model_dump(mode="json") if body.match is not None else None

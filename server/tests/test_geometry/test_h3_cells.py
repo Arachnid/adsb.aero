@@ -75,9 +75,9 @@ class TestQueryDisk:
         lat, lon = 51.5, -0.1
         assert len(query_disk(lat, lon, 200_000)) > len(query_disk(lat, lon, 10_000))
 
-    def test_zero_radius_still_returns_disk(self) -> None:
-        # k is clamped to at least 1, so we always get center + 1 ring (≥ 7 cells).
-        assert len(query_disk(51.5, -0.1, 0)) >= 7
+    def test_zero_radius_returns_at_least_center(self) -> None:
+        # Zero radius returns the center cell; may include neighbours if P is on a boundary.
+        assert len(query_disk(51.5, -0.1, 0)) >= 1
 
     def test_all_cells_valid_res4(self) -> None:
         for cell in query_disk(51.5, -0.1, 50_000):

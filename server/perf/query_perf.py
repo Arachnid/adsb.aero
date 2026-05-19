@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import statistics
@@ -39,7 +40,7 @@ from typing import Any
 
 import asyncpg
 
-from adsb_server.query.compiler import compile_predicate
+from adsb_server.query.compiler import INNER_SUBQUERY_LIMIT, compile_predicate
 from adsb_server.query.models import (
     AndPredicate,
     CallsignMatches,
@@ -47,14 +48,13 @@ from adsb_server.query.models import (
     Duration,
     DurationValue,
     EmitterCategory,
-    EndsWithin,
+    EndpointWithin,
+    EndpointWithinValue,
     IcaoType,
     NotPredicate,
     OrPredicate,
     Predicate,
     SpatioTemporalAltitudeValue,
-    SpatioTemporalValue,
-    StartsWithin,
     TrajectoryIntersects,
 )
 
@@ -76,11 +76,15 @@ def intersects(lon: float, lat: float, radius_m: float, **kw: Any) -> Predicate:
 
 
 def starts(lon: float, lat: float, radius_m: float) -> Predicate:
-    return StartsWithin(starts_within=SpatioTemporalValue(geometry=circle(lon, lat, radius_m)))
+    return EndpointWithin(
+        endpoint_within=EndpointWithinValue(mode="start", geometry=circle(lon, lat, radius_m))
+    )
 
 
 def ends(lon: float, lat: float, radius_m: float) -> Predicate:
-    return EndsWithin(ends_within=SpatioTemporalValue(geometry=circle(lon, lat, radius_m)))
+    return EndpointWithin(
+        endpoint_within=EndpointWithinValue(mode="end", geometry=circle(lon, lat, radius_m))
+    )
 
 
 def and_(*preds: Predicate) -> Predicate:
@@ -251,6 +255,27 @@ def build_scenarios() -> list[Scenario]:
             and_(starts(*LHR, 5_000), IcaoType(icao_type=["B738"])),
             "point index + btree BitmapAnd",
         ),
+        # ── Worst-case outer selectivity ──────────────────────────────────────
+        # Tiny geometry: H3 candidate set identical to LHR-1km but eIntersects
+        # passes for only a handful of flights; outer query exhausts all inner rows.
+        Scenario(
+            "worst-case/LHR-200m",
+            intersects(*LHR, 200),
+            "point-like: same H3 cells as LHR-1km, near-zero eIntersects pass rate",
+        ),
+        # Large area + implausible dwell: outer must evaluate atgeometry+duration
+        # on every H3 candidate, and almost none qualify.
+        Scenario(
+            "worst-case/LHR-100km-dwell-12hr",
+            intersects(*LHR, 100_000, dwell_min_s=43200),
+            "large area + 12hr dwell: outer exhausts all inner rows, zero results expected",
+        ),
+        # 3hr dwell: many flights pass the end_ts-start_ts pre-filter but fail atgeometry+duration.
+        Scenario(
+            "worst-case/LHR-100km-dwell-3hr",
+            intersects(*LHR, 100_000, dwell_min_s=10800),
+            "large area + 3hr dwell: pre-filter leaky, outer still selective",
+        ),
         # ── Dwell filters (expensive: O(path x candidates)) ──────────────────
         Scenario(
             "dwell/LHR-2km-60s",
@@ -345,8 +370,27 @@ def build_sql(
     with_clause = (
         "WITH " + ", ".join(f"{name} AS ({body})" for name, body in ctes) + "\n" if ctes else ""
     )
-    from_extras = (", " + ", ".join(name for name, _ in ctes)) if ctes else ""
 
+    if compiled is not None and compiled.outer_parts:
+        from_extras = (", " + ", ".join(name for name, _ in ctes)) if ctes else ""
+        inner_where = "WHERE " + " AND ".join(where_parts)
+        outer_where = "WHERE " + " AND ".join(f"({p})" for p in compiled.outer_parts)
+        return (
+            f"{with_clause}"
+            f"SELECT f.icao24, f.start_ts, f.end_ts\n"
+            f"FROM (\n"
+            f"    SELECT f.icao24, f.start_ts, f.end_ts, f.path, f.squawk_seq\n"
+            f"    FROM flights f LEFT JOIN airframes af ON af.icao24 = f.icao24\n"
+            f"    {inner_where}\n"
+            f"    ORDER BY f.start_ts DESC, f.icao24 DESC\n"
+            f"    LIMIT {INNER_SUBQUERY_LIMIT}\n"
+            f") f{from_extras}\n"
+            f"{outer_where}\n"
+            f"ORDER BY f.start_ts DESC, f.icao24 DESC\n"
+            f"LIMIT {limit_p}"
+        )
+
+    from_extras = (", " + ", ".join(name for name, _ in ctes)) if ctes else ""
     return (
         f"{with_clause}"
         f"SELECT f.icao24, f.start_ts, f.end_ts\n"
@@ -485,6 +529,12 @@ async def run_scenario(
         )
 
 
+async def _fresh_conn(pool: asyncpg.Pool, timeout_s: int) -> asyncpg.Connection:  # type: ignore[type-arg]
+    conn = await pool.acquire()
+    await conn.execute(f"SET statement_timeout = '{timeout_s}s'")
+    return conn
+
+
 async def run_all(
     dsn: str,
     start_from: datetime,
@@ -492,18 +542,25 @@ async def run_all(
     runs: int,
     scenarios: list[Scenario],
     limit: int = LIMIT,
+    timeout_s: int = 60,
 ) -> list[ScenarioResult]:
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=1)
     assert pool is not None
     results: list[ScenarioResult] = []
-    async with pool.acquire() as conn:
-        for i, scenario in enumerate(scenarios, 1):
-            print(f"  [{i:2d}/{len(scenarios)}] {scenario.name} ...", end="", flush=True)
-            result = await run_scenario(conn, scenario, start_from, start_to, runs, limit=limit)
-            status = f"ERROR: {result.error}" if result.error else f"{result.rows} rows"
-            print(f" {status}")
-            results.append(result)
-    await pool.close()
+    conn = await _fresh_conn(pool, timeout_s)
+    for i, scenario in enumerate(scenarios, 1):
+        print(f"  [{i:2d}/{len(scenarios)}] {scenario.name} ...", end="", flush=True)
+        result = await run_scenario(conn, scenario, start_from, start_to, runs, limit=limit)
+        if result.error and conn.is_closed():
+            # Backend crashed — release the dead connection and get a fresh one.
+            with contextlib.suppress(Exception):
+                await pool.release(conn, timeout=1)
+            conn = await _fresh_conn(pool, timeout_s)
+        status = f"ERROR: {result.error}" if result.error else f"{result.rows} rows"
+        print(f" {status}")
+        results.append(result)
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(pool.close(), timeout=5)
     return results
 
 
@@ -631,6 +688,13 @@ def main() -> None:
         default=LIMIT,
         help=f"Row limit per query (default: {LIMIT}). Lower values reduce saturation.",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=60,
+        metavar="SECONDS",
+        help="statement_timeout per query in seconds (default: 60). Prevents OOM crashes.",
+    )
     args = parser.parse_args()
 
     if not args.dsn:
@@ -651,7 +715,15 @@ def main() -> None:
     print(f"Window: {start_from.date()} → {start_to.date()}, {args.runs} wall-time run(s) each\n")
 
     results = asyncio.run(
-        run_all(args.dsn, start_from, start_to, args.runs, scenarios, limit=args.limit)
+        run_all(
+            args.dsn,
+            start_from,
+            start_to,
+            args.runs,
+            scenarios,
+            limit=args.limit,
+            timeout_s=args.timeout,
+        )
     )
     print_markdown_table(results, start_from, start_to, args.runs, limit=args.limit)
 

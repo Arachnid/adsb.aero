@@ -154,9 +154,11 @@ class TestCircleGeometry:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_CIRCLE)
         )
-        sql = compile_predicate(pred, params)
-        assert "ST_Buffer" in sql
-        assert "ST_MakePoint" in sql
+        compiled = compile_predicate(pred, params)
+        # ST_Buffer ends up in the CTE, not the WHERE clause
+        assert compiled.ctes
+        assert "ST_Buffer" in compiled.ctes[0][1]
+        assert "ST_MakePoint" in compiled.ctes[0][1]
         assert len(params) == 4  # h3_cells, lon, lat, radius
 
     def test_polygon_path_predicate_uses_geomfromgeojson(self) -> None:
@@ -164,9 +166,10 @@ class TestCircleGeometry:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON)
         )
-        sql = compile_predicate(pred, params)
-        assert "ST_GeomFromGeoJSON" in sql
-        assert "ST_Buffer" not in sql
+        compiled = compile_predicate(pred, params)
+        assert compiled.ctes
+        assert "ST_GeomFromGeoJSON" in compiled.ctes[0][1]
+        assert "ST_Buffer" not in compiled.ctes[0][1]
         assert len(params) == 2  # h3_cells, serialised GeoJSON string
 
 
@@ -181,11 +184,15 @@ class TestTrajectoryIntersects:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON)
         )
-        sql = compile_predicate(pred, params)
-        assert "eIntersects(path," in sql
-        assert "ST_Intersects(trajectory(path)::geometry," not in sql
-        assert "atStbox" not in sql
-        assert "stbox" not in sql
+        compiled = compile_predicate(pred, params)
+        # eIntersects and STBOX pre-filter are deferred to outer_parts.
+        assert "eIntersects(path," not in compiled
+        assert any("eIntersects(path," in p for p in compiled.outer_parts)
+        assert any("path && " in p for p in compiled.outer_parts)
+        assert "ST_Intersects(trajectory(path)::geometry," not in compiled
+        assert "atStbox" not in compiled
+        assert compiled.ctes
+        assert "stbox(geom)" in compiled.ctes[0][1]
 
     def test_geometry_altitude_min_fl_uses_atvalues(self) -> None:
         params: list = []
@@ -391,7 +398,8 @@ class TestTrajectoryIntersects:
         assert "ST_ZMin" not in compiled
         assert "EXISTS" not in compiled
         assert "atStbox" not in compiled
-        assert not compiled.ctes
+        # geometry-only path emits one CTE for the stbox pre-filter; no atStbox CTE
+        assert len(compiled.ctes) == 1
 
     def test_altitude_min_fl_no_geometry_uses_stored_column(self) -> None:
         params: list = []
@@ -696,18 +704,19 @@ class TestSquawkFilter:
 
     def test_squawk_codes_with_geometry_correlates_atgeometry(self) -> None:
         # With geometry: squawk is checked only at instants the path was inside the polygon.
+        # eIntersects and the temporal EXISTS correlation are deferred to outer_parts.
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(
                 geometry=_POLYGON, squawk_codes=["7700"]
             )
         )
-        sql = compile_predicate(pred, params)
-        assert "eIntersects(path," in sql
-        assert "squawk_seq IS NOT NULL" in sql
-        assert "atgeometry(path," in sql
-        assert "getTime(atgeometry" in sql
-        assert "atTime(squawk_seq" in sql
+        compiled = compile_predicate(pred, params)
+        assert any("eIntersects(path," in p for p in compiled.outer_parts)
+        assert "squawk_seq IS NOT NULL" in compiled  # cheap check stays in inner
+        assert any("atgeometry(path," in p for p in compiled.outer_parts)
+        assert any("getTime(atgeometry" in p for p in compiled.outer_parts)
+        assert any("atTime(squawk_seq" in p for p in compiled.outer_parts)
         assert ["7700"] in params
 
     def test_squawk_codes_with_geometry_and_altitude_fl_uses_stbox(self) -> None:
@@ -1044,13 +1053,14 @@ class TestDwellDistance:
             SpatioTemporalAltitudeValue(geometry=None, altitude_min=1000, distance_max_m=500000)
 
     def test_dwell_min_s_with_geometry_emits_duration_ge(self) -> None:
+        # Geometry-only dwell: condition deferred to outer_parts alongside eIntersects.
         params: list = []
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON, dwell_min_s=600.0)
         )
-        sql = compile_predicate(pred, params)
-        assert "EXTRACT(EPOCH FROM duration(getTime(" in sql
-        assert ">= " in sql
+        compiled = compile_predicate(pred, params)
+        assert any("EXTRACT(EPOCH FROM duration(getTime(" in p for p in compiled.outer_parts)
+        assert any(">= " in p for p in compiled.outer_parts)
         assert 600.0 in params
 
     def test_dwell_max_s_with_geometry_emits_duration_le(self) -> None:
@@ -1058,9 +1068,9 @@ class TestDwellDistance:
         pred = TrajectoryIntersects(
             trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON, dwell_max_s=1800.0)
         )
-        sql = compile_predicate(pred, params)
-        assert "EXTRACT(EPOCH FROM duration(getTime(" in sql
-        assert "<= " in sql
+        compiled = compile_predicate(pred, params)
+        assert any("EXTRACT(EPOCH FROM duration(getTime(" in p for p in compiled.outer_parts)
+        assert any("<= " in p for p in compiled.outer_parts)
         assert 1800.0 in params
 
     def test_distance_min_m_with_geometry_emits_length_ge(self) -> None:
@@ -1070,10 +1080,10 @@ class TestDwellDistance:
                 geometry=_POLYGON, distance_min_m=50000.0
             )
         )
-        sql = compile_predicate(pred, params)
-        assert "length(trajectory(" in sql
-        assert "::geography)" in sql
-        assert ">= " in sql
+        compiled = compile_predicate(pred, params)
+        assert any("length(trajectory(" in p for p in compiled.outer_parts)
+        assert any("::geography)" in p for p in compiled.outer_parts)
+        assert any(">= " in p for p in compiled.outer_parts)
         assert 50000.0 in params
 
     def test_distance_max_m_with_geometry_emits_length_le(self) -> None:
@@ -1083,9 +1093,9 @@ class TestDwellDistance:
                 geometry=_POLYGON, distance_max_m=200000.0
             )
         )
-        sql = compile_predicate(pred, params)
-        assert "length(trajectory(" in sql
-        assert "<= " in sql
+        compiled = compile_predicate(pred, params)
+        assert any("length(trajectory(" in p for p in compiled.outer_parts)
+        assert any("<= " in p for p in compiled.outer_parts)
         assert 200000.0 in params
 
     def test_dwell_and_distance_all_four_bounds(self) -> None:
@@ -1099,9 +1109,10 @@ class TestDwellDistance:
                 distance_max_m=500000.0,
             )
         )
-        sql = compile_predicate(pred, params)
-        assert sql.count("EXTRACT(EPOCH FROM duration(getTime(") == 2
-        assert sql.count("length(trajectory(") == 2
+        compiled = compile_predicate(pred, params)
+        outer = " ".join(compiled.outer_parts)
+        assert outer.count("EXTRACT(EPOCH FROM duration(getTime(") == 2
+        assert outer.count("length(trajectory(") == 2
         assert 300.0 in params
         assert 3600.0 in params
         assert 10000.0 in params

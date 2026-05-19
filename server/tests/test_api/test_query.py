@@ -554,3 +554,42 @@ async def test_start_from_equal_end_date_rejected(api_client: AsyncClient) -> No
         },
     )
     assert resp.status_code == 422
+
+
+async def test_dwell_min_s_includes_flight_with_long_dwell(api_client: AsyncClient) -> None:
+    # Flight A flies entirely within UK_CORRIDOR for 7200 s (10:00-12:00).
+    # dwell_min_s=3600 should include it; verifies the two-level outer_parts SQL executes.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_CORRIDOR,
+                    "dwell_min_s": 3600,
+                }
+            }
+        ),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+
+
+async def test_dwell_min_s_excludes_flight_below_threshold(api_client: AsyncClient) -> None:
+    # Flight A dwells in UK_CORRIDOR for exactly 7200 s; requiring 7201 s should exclude it.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_CORRIDOR,
+                    "dwell_min_s": 7201,
+                }
+            }
+        ),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["flights"] == []
