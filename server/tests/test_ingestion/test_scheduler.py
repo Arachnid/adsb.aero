@@ -1062,15 +1062,19 @@ class TestReimportSpecificDates:
             processed.append(batch_date)
             return True
 
-        async def mock_find(client: object, year: int, target: date) -> str:
-            return f"v{target.year}.{target.month:02d}.{target.day:02d}-planes-readsb-prod-0"
+        async def mock_fetch(client: object, year: int) -> dict[date, str]:
+            dates = [date(2025, 4, 1), date(2025, 4, 2), date(2025, 4, 3)]
+            return {d: f"v{d.year}.{d.month:02d}.{d.day:02d}-planes-readsb-prod-0" for d in dates}
 
         with (
             patch(
                 "adsb_server.ingestion.scheduler.httpx.AsyncClient",
                 return_value=_patch_httpx_client(),
             ),
-            patch("adsb_server.ingestion.scheduler._find_tag_for_date", side_effect=mock_find),
+            patch(
+                "adsb_server.ingestion.scheduler._fetch_releases_by_date",
+                side_effect=mock_fetch,
+            ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
                 side_effect=mock_dapr,
@@ -1085,15 +1089,18 @@ class TestReimportSpecificDates:
         assert processed == [date(2025, 4, 1), date(2025, 4, 2), date(2025, 4, 3)]
 
     async def test_skips_date_with_no_release(self, tmp_path: Path) -> None:
-        async def mock_find(client: object, year: int, target: date) -> str | None:
-            return None if target == date(2025, 4, 2) else "v2025.04.01-planes-readsb-prod-0"
+        async def mock_fetch(client: object, year: int) -> dict[date, str]:
+            return {date(2025, 4, 1): "v2025.04.01-planes-readsb-prod-0"}
 
         with (
             patch(
                 "adsb_server.ingestion.scheduler.httpx.AsyncClient",
                 return_value=_patch_httpx_client(),
             ),
-            patch("adsb_server.ingestion.scheduler._find_tag_for_date", side_effect=mock_find),
+            patch(
+                "adsb_server.ingestion.scheduler._fetch_releases_by_date",
+                side_effect=mock_fetch,
+            ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
                 new=AsyncMock(return_value=True),

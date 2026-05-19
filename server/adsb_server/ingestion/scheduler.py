@@ -78,6 +78,32 @@ async def _get_errored_dates(conn: asyncpg.Connection) -> set[date]:
     return {row["batch_date"] for row in rows}
 
 
+async def _fetch_releases_by_date(
+    client: httpx.AsyncClient,
+    year: int,
+) -> dict[date, str]:
+    """Fetch all releases for a year and return a date → newest-tag mapping.
+
+    Releases are returned newest-first by the API, so setdefault keeps the
+    latest revision when multiple tags exist for the same date.
+    """
+    releases_by_date: dict[date, str] = {}
+    page = 1
+    while True:
+        releases = await _get_releases(client, year, page=page)
+        if not releases:
+            break
+        for release in releases:
+            tag = str(release.get("tag_name", ""))
+            batch_date = _tag_to_date(tag)
+            if batch_date is not None:
+                releases_by_date.setdefault(batch_date, tag)
+        if len(releases) < _GITHUB_RELEASES_PER_PAGE:
+            break
+        page += 1
+    return releases_by_date
+
+
 async def _find_tag_for_date(
     client: httpx.AsyncClient,
     year: int,
@@ -332,23 +358,28 @@ async def reimport_specific_dates(
     Useful for manually recovering dates that were skipped due to transient
     network errors or that fall behind the normal scan frontier.
     """
+    dates_by_year: dict[int, list[date]] = {}
+    for d in sorted(dates):
+        dates_by_year.setdefault(d.year, []).append(d)
+
     async with httpx.AsyncClient(
         timeout=_HTTP_TIMEOUT,
         follow_redirects=True,
         headers={"Accept": "application/vnd.github+json"},
     ) as client:
-        for batch_date in sorted(dates):
-            year = batch_date.year
-            tag = await _find_tag_for_date(client, year, batch_date)
-            if tag is None:
-                logger.warning("No release found for %s — skipping", batch_date)
-                continue
-            logger.info("Reimporting %s (tag=%s)", batch_date, tag)
-            ok = await _download_and_process_release(
-                conn, client, year, tag, batch_date, cache_dir, keep_traces=keep_traces
-            )
-            if not ok:
-                logger.warning("Reimport of %s failed", batch_date)
+        for year, year_dates in sorted(dates_by_year.items()):
+            releases_by_date = await _fetch_releases_by_date(client, year)
+            for batch_date in year_dates:
+                tag = releases_by_date.get(batch_date)
+                if tag is None:
+                    logger.warning("No release found for %s — skipping", batch_date)
+                    continue
+                logger.info("Reimporting %s (tag=%s)", batch_date, tag)
+                ok = await _download_and_process_release(
+                    conn, client, year, tag, batch_date, cache_dir, keep_traces=keep_traces
+                )
+                if not ok:
+                    logger.warning("Reimport of %s failed", batch_date)
 
 
 async def scheduler_loop(
