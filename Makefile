@@ -25,7 +25,7 @@ prod-down:
 # ── Database setup ────────────────────────────────────────────────────────────
 # Run once after `make dev` on a fresh database (postgres uses trust auth for localhost).
 migrate:
-	cd server && .venv/bin/alembic upgrade head
+	cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm api alembic upgrade head
 
 import-airframes:
 	cd server && .venv/bin/python -m adsb_server.reference_data.airframes

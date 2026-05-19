@@ -10,6 +10,8 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir -e .
 
 COPY adsb_server/ adsb_server/
+COPY alembic.ini .
+COPY alembic/ alembic/
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
