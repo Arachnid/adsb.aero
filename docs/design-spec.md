@@ -58,6 +58,8 @@ Key columns:
 - `alt_min_qnh_ft`, `alt_max_qnh_ft` FLOAT4 — min/max QNH-corrected altitude. Stored as generated columns (`getZ(path) + alt_correction_ft`, falling back to pressure altitude if correction is unavailable).
 - `raw_point_count` INT — airborne point count before simplification.
 - `ingest_batch_date` DATE — provenance
+- `path_h3` h3index[] — H3 res-4 cells covering the trajectory, computed at ingest. Drives the GIN spatial pre-filter.
+- `squawk_codes` text[] — distinct squawk codes seen on the flight, computed at ingest. Drives the GIN squawk pre-filter.
 
 `start_point` and `end_point` are not stored columns — they are derived at query time via `startValue(path)::geometry` and `endValue(path)::geometry`, with expression GIST indexes to support radius queries. Timestamps are likewise not a separate column: they are extracted from `path`'s native temporal dimension during API serialisation. Mean speed is derivable from the start/end positions and timestamps.
 
@@ -65,13 +67,13 @@ VFR/IFR classification is **not** in this schema. It would require QNH-corrected
 
 Indexes:
 
-- STBOX GiST on `path` — MobilityDB's native spatiotemporal bounding-box index covering X, Y, Z (altitude), and T (time) in a single scan. Handles all combinations of spatial, altitude, and time constraints.
+- GIN on `path_h3 h3index[]` — primary spatial pre-filter for trajectory queries. The query compiler converts the query geometry to a set of H3 res-4 cells and uses `path_h3 && $cells::h3index[]` to narrow candidates before the expensive `eIntersects` check.
+- GIN on `squawk_codes text[]` — pre-filter for squawk code queries.
 - Expression GIST on `(startValue(path)::geometry)` and `(endValue(path)::geometry)` — supports radius queries against departure/arrival points.
 - B-tree on `alt_min_pressure_ft`, `alt_max_pressure_ft`, `alt_min_qnh_ft`, `alt_max_qnh_ft` — fast range scans for altitude-band filters.
 - B-tree on `start_ts`, `end_ts`, `icao24`, `icao_type`, `emitter_category`
-- Composite indexes per query pattern as profiling reveals need
 
-Partitioned by `start_ts` using native Postgres declarative partitioning. Monthly partitions. `pg_partman` automates partition creation.
+Partitioned by `start_ts` using native Postgres declarative partitioning. Weekly partitions (7-day intervals, starting from 2022-01-03). `pg_partman` automates partition creation; ~260 partitions for 5 years of data, with PostgreSQL 17's O(log n) pruning keeping planning overhead negligible.
 
 Geometry is **already simplified** at ingest using 2D TD-TR (synchronised Euclidean distance) for spatial fidelity at ε=50m, plus an altitude pass that recursively inserts vertices into each TD-TR-kept inter-vertex span wherever altitude interpolation exceeds ε=100ft (against pressure altitude). Stored result is a `tgeompoint` sequence with vertices that satisfy both spatial and altitude bounds.
 
@@ -94,9 +96,9 @@ Records each batch's state for the scheduler. Columns: `batch_date` (PK), `statu
 
 The scheduler checks this table on each poll cycle; a batch with status `succeeded` is skipped. Backfilling is "insert pending rows for date range".
 
-### Aircraft metadata table
+### airframes — aircraft metadata
 
-Mapping from `icao24` → registration, type, owner. Sourced from the OpenSky aircraft database, refreshed periodically. Used to enrich incoming traces where adsb.lol's metadata is incomplete.
+Mapping from `icao24` → registration, type, operator. Sourced from the tar1090-db (Mictronics) aircraft database, refreshed periodically. Used to enrich query results and the `icao_type_stats` aggregation.
 
 ### Reference data
 
@@ -163,7 +165,7 @@ A separate long-running container connects to adsb.lol's live feed, accumulates 
 
 ## Query API
 
-Primary endpoint: `POST /query`, accepting a JSON DSL. Every request requires `start_from` and `start_to` fields (mandatory, max 7-day window) bounding the flight start time. Returns flight detail (including path) by default; set `include_path: false` for lightweight listing.
+Primary endpoint: `POST /query`, accepting a JSON DSL. The search window is controlled by `end_date` (defaults to now) and `window_days` (1–7, default 7), defining a sliding window back from `end_date`. An optional `start_from` field sets an explicit lower-bound floor. Returns flight detail (including path) by default; set `include_path: false` for lightweight listing.
 
 ### Query DSL
 
@@ -184,7 +186,8 @@ Primary endpoint: `POST /query`, accepting a JSON DSL. Every request requires `s
         }
       },
       {
-        "ends_within": {
+        "endpoint_within": {
+          "mode": "end",
           "geometry": {"type": "Circle", "coordinates": [-1.18, 50.65], "radius": 3000}
         }
       },
@@ -202,7 +205,7 @@ Predicate types:
 
 - `trajectory_intersects`: flight path ever intersects a geometry. Optional: `altitude_min`/`altitude_max` (with `_ref`: `"ft"` for QNH-corrected feet MSL or `"fl"` for flight level), `time_from`/`time_to`, `squawk_codes`, `dwell_min_s`/`dwell_max_s` (seconds spent inside), `distance_min_m`/`distance_max_m` (path length inside geometry).
 - `trajectory_within`: flight path always stays within a geometry (same optional fields).
-- `starts_within`, `ends_within`: spatial/temporal constraints on the start or end point only. Geometry types: Circle, Polygon (including airspace-sourced polygons), or viewport rectangle.
+- `endpoint_within`: spatial/temporal constraints on the start or end point. `mode` is one of `"start"`, `"end"`, `"both"` (start AND end), or `"either"` (start OR end). Geometry types: Circle, Polygon (including airspace-sourced polygons), or viewport rectangle.
 - `icao_type`: filter by one or more ICAO type designators.
 - `emitter_category`: filter by ADS-B emitter category (A1-A7, B1-B7, C1-C3).
 - `callsign_matches`: regex match against callsign.
@@ -329,7 +332,7 @@ adsb-aero/
 - **Logs**: stdout from each container. Loki planned for log aggregation. Not yet deployed.
 - **Errors**: Sentry SDK in every backend entry point (API server and all scheduled tasks — add to any new background task or cron job). Free tier sufficient. DSN stored as a Docker secret (`infra/secrets/sentry_dsn`); read via `settings.effective_sentry_dsn`.
 - **Secrets**: `.env` files (gitignored) for now. Migrate to `sops` if collaborators are added.
-- **CI/CD**: GitHub Actions builds Docker images, pushes to GitHub Container Registry. Deployment to OVH is `git pull && docker compose -f infra/docker-compose.yml pull && docker compose -f infra/docker-compose.yml up -d` (always run from the project root so Docker Compose picks up `.env`) either manually or via a webhook. No Kubernetes.
+- **CI/CD**: GitHub Actions builds Docker images, pushes to GitHub Container Registry. Deployment to OVH is `git pull && cd infra && docker compose -f docker-compose.yml pull && docker compose -f docker-compose.yml up -d` (run from `infra/`; `infra/.env` is a symlink to the repo-root `.env`) either manually or via a webhook. No Kubernetes.
 - **Backups and DR**: handled at infrastructure level via OVHcloud. Out of scope for this spec.
 
 ## Cloud migration path
@@ -337,7 +340,6 @@ adsb-aero/
 If the OVH server becomes inadequate or operational burden too high:
 
 - **Postgres**: migrate to Crunchy Bridge or Cloud SQL. Schema and queries are portable. PostGIS version compatibility is the only thing to verify.
-- **Redis**: managed Redis at any provider.
 - **API + ingestion containers**: deploy to Cloud Run, Fargate, or managed Kubernetes. The images are unchanged.
 - **Frontend**: already static, deploys to Cloudflare Pages, Netlify, or any static host.
 - **Object storage** (for GFS/NWP cache, OpenAIP cache): already S3-compatible, just point at the cloud provider's offering.

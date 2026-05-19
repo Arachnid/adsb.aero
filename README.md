@@ -4,7 +4,7 @@ Map-based UI for querying historical ADS-B flight trajectories from the [adsb.lo
 
 ## Architecture
 
-- **Database**: PostgreSQL 17 + PostGIS 3.5 + MobilityDB, partitioned by month
+- **Database**: PostgreSQL 17 + PostGIS 3.5 + MobilityDB, partitioned by week
 - **Server**: Python — FastAPI (query API) + Dramatiq (ingestion workers)
 - **Web**: TypeScript + React + Vite + MapLibre GL JS + deck.gl
 - **Deployment**: Docker Compose on a single dedicated server
@@ -14,7 +14,7 @@ See [docs/design-spec.md](docs/design-spec.md) for full architectural decisions.
 ## Quick start
 
 ```bash
-cp .env.example .env          # fill in POSTGRES_PASSWORD
+cp .env.example .env          # add ENVIRONMENT=development for local dev
 
 # Dev stack (Vite dev server + hot reload)
 cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
