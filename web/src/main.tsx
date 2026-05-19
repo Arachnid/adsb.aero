@@ -17,14 +17,15 @@ const queryClient = new QueryClient({
 const root = document.getElementById("root");
 if (!root) throw new Error("No #root element found");
 
-const initialShare: DecodedShare | null = await decodeShareUrl(
-  window.location.hash,
-);
-
-createRoot(root).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App initialShare={initialShare} />
-    </QueryClientProvider>
-  </StrictMode>,
-);
+void (async () => {
+  const initialShare: DecodedShare | null = await decodeShareUrl(
+    window.location.hash,
+  );
+  createRoot(root).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App initialShare={initialShare} />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+})();
