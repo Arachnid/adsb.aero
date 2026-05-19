@@ -19,8 +19,11 @@ ln -sf ../.env infra/.env
 
 # 3. Create secrets files (see "Secrets" section below)
 mkdir -p infra/secrets
-echo "your-openaip-api-key"  > infra/secrets/openaip_api_key
-echo "your-grafana-password" > infra/secrets/grafana_password
+echo "your-openaip-api-key" > infra/secrets/openaip_api_key
+echo "your-sentry-dsn"      > infra/secrets/sentry_dsn       # optional: leave blank to disable
+# TLS certs for prod only (not needed for local dev):
+# cp /path/to/origin.crt infra/secrets/origin.crt
+# cp /path/to/origin.key infra/secrets/origin.key
 
 # 4. Set up the Python virtualenv (for local test runs only — not needed for Docker)
 python -m venv server/.venv
@@ -61,12 +64,18 @@ Open `http://localhost` in the browser. HMR is active — saving a `.tsx` file u
 
 Sensitive values are kept in `infra/secrets/` as plain text files (gitignored). Docker Compose mounts them into containers at `/run/secrets/<name>`.
 
-| File                          | Used by   | What it is                  |
-| ----------------------------- | --------- | --------------------------- |
-| `infra/secrets/openaip_api_key`  | `nginx`   | OpenAIP API key for tile and airspace proxy |
-| `infra/secrets/grafana_password` | `grafana` | Grafana admin password      |
+| File                          | Used by                          | What it is                                  |
+| ----------------------------- | -------------------------------- | ------------------------------------------- |
+| `infra/secrets/openaip_api_key` | `nginx`                        | OpenAIP API key for tile and airspace proxy |
+| `infra/secrets/sentry_dsn`    | `api`, `scheduler`               | Sentry DSN for error reporting (optional)   |
+| `infra/secrets/origin.crt`    | `nginx` (prod only)              | TLS origin certificate                      |
+| `infra/secrets/origin.key`    | `nginx` (prod only)              | TLS origin private key                      |
 
-Create these files before starting the stack. The OpenAIP key is available from [account.openaip.net](https://account.openaip.net).
+`openaip_api_key` is required for the airspace overlay to work. The OpenAIP key is available from [account.openaip.net](https://account.openaip.net).
+
+`sentry_dsn` is optional — leave the file empty or omit it to disable error reporting.
+
+`origin.crt` and `origin.key` are only needed in production (HTTPS). The dev stack uses plain HTTP on port 80 and does not require these.
 
 ## Importing airframe reference data
 
