@@ -64,7 +64,7 @@ async def test_flights_partitioned(conn: asyncpg.Connection) -> None:  # type: i
 
 
 @pytest.mark.asyncio
-async def test_flights_monthly_partitions_exist(conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
+async def test_flights_weekly_partitions_exist(conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
     rows = await conn.fetch(
         """
         SELECT c.relname FROM pg_inherits i
@@ -75,11 +75,11 @@ async def test_flights_monthly_partitions_exist(conn: asyncpg.Connection) -> Non
         """
     )
     partition_names = {r["relname"] for r in rows}
-    # Historical partitions exist back to p_start_partition (pg_partman names: flights_pYYYYMMDD)
-    for month in ["flights_p20220101", "flights_p20220601", "flights_p20230101"]:
-        assert month in partition_names, f"Missing partition {month}"
-    # Should have substantial coverage (2022-present + 1 premake)
-    assert len(partition_names) >= 30, f"Expected ≥30 partitions, got {len(partition_names)}"
+    # p_start_partition is 2022-01-03 (Monday); partitions step by 7 days.
+    for week in ["flights_p20220103", "flights_p20220606", "flights_p20230102"]:
+        assert week in partition_names, f"Missing partition {week}"
+    # 5 years * 52 weeks + 4 premake = ~264 partitions; check a reasonable lower bound.
+    assert len(partition_names) >= 150, f"Expected >=150 partitions, got {len(partition_names)}"
 
 
 @pytest.mark.asyncio
@@ -138,7 +138,7 @@ async def test_partman_manages_flights(conn: asyncpg.Connection) -> None:  # typ
     )
     assert row is not None, "pg_partman has no config entry for public.flights"
     assert row["control"] == "start_ts"
-    assert row["partition_interval"] == "1 mon"
+    assert row["partition_interval"] == "7 days"
 
 
 # ---------------------------------------------------------------------------

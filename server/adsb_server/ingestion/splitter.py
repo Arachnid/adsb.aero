@@ -48,6 +48,13 @@ _IN_PROGRESS_WINDOW_AIR = 3600.0
 # 350 m/s ≈ 1260 km/h — faster than any airliner, so false positives are rare.
 _MAX_STITCH_SPEED_MPS = 350.0
 
+# Hard cap on implied speed between consecutive position reports within a
+# flight sequence.  Points exceeding this are from a corrupted ADS-B receiver
+# emitting garbage coordinates (observed cases were 570-14 000 m/s).
+# Higher than _MAX_STITCH_SPEED_MPS because GPS quantisation can produce
+# apparent bursts slightly above airliner speeds on very short intervals.
+_MAX_POINT_SPEED_MPS = 500.0
+
 # Minimum implied average speed for an aircraft to be considered continuously
 # airborne across a gap.  Below this the aircraft was almost certainly stationary
 # (parked at an airfield whose baro elevation is non-zero, so alt_baro is not
@@ -245,6 +252,32 @@ def _should_flight_split(prev: RawPoint, curr: RawPoint, flight_start_ts: float)
     return curr.new_leg
 
 
+def _drop_implausible_positions(icao24: str, points: list[RawPoint]) -> list[RawPoint]:
+    """Drop position reports that imply speed > _MAX_STITCH_SPEED_MPS from the previous kept point.
+
+    Corrupted ADS-B receivers occasionally emit garbage coordinates for a real
+    aircraft, producing planet-spanning linestrings that cause GEOS to error.
+    """
+    kept: list[RawPoint] = [points[0]]
+    for curr in points[1:]:
+        prev = kept[-1]
+        dt = curr.ts - prev.ts
+        if dt <= 0.0:
+            kept.append(curr)
+            continue
+        speed = _haversine_m(prev, curr) / dt
+        if speed <= _MAX_POINT_SPEED_MPS:
+            kept.append(curr)
+        else:
+            logger.warning(
+                "icao24=%s: dropping implausible position at ts=%.3f (%.0f m/s)",
+                icao24,
+                curr.ts,
+                speed,
+            )
+    return kept
+
+
 def _split_into_sub_sequences(points: list[RawPoint]) -> list[list[RawPoint]]:
     """Partition a flat list of airborne points into sub-sequences at coverage gaps.
 
@@ -272,6 +305,10 @@ def finalize_segment(
     fewer than 2 airborne points across all sub-sequences.
     """
     airborne = [p for p in seg_points if p.alt_baro is not None]
+    if len(airborne) < 2:
+        return None
+
+    airborne = _drop_implausible_positions(icao24, airborne)
     if len(airborne) < 2:
         return None
 

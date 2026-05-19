@@ -29,7 +29,7 @@ def upgrade() -> None:
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman"))
 
     # ------------------------------------------------------------------
-    # flights — finalised trajectories, partitioned monthly by start_ts
+    # flights — finalised trajectories, partitioned weekly by start_ts
     #
     # path        tgeompoint  — SRID 4326, 3D with Z=pressure-alt-ft;
     #                           timestamps are the native temporal dimension.
@@ -91,9 +91,9 @@ def upgrade() -> None:
         SELECT partman.create_parent(
             p_parent_table   := 'public.flights',
             p_control        := 'start_ts',
-            p_interval       := '1 month',
-            p_start_partition := '2022-01-01 00:00:00',
-            p_premake        := 1
+            p_interval       := '1 week',
+            p_start_partition := '2022-01-03 00:00:00',
+            p_premake        := 4
         )
         """)
     )

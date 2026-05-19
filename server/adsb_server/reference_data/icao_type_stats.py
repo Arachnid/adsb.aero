@@ -2,7 +2,7 @@
 
 Iterates every date in ingest_batches where status='succeeded' and runs the
 same aggregation query that run_batch executes after each live ingestion.
-Each date only touches its own monthly flights partition (partition pruning),
+Each date only touches its own weekly flights partition (partition pruning),
 so the total work is proportional to the number of flights, not a full scan.
 
 Usage:

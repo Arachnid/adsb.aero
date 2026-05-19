@@ -5,7 +5,11 @@ from __future__ import annotations
 from datetime import UTC
 
 from adsb_server.ingestion.models import RawPoint, TraceHeader
-from adsb_server.ingestion.splitter import interpolate_missing_values, split_flights
+from adsb_server.ingestion.splitter import (
+    finalize_segment,
+    interpolate_missing_values,
+    split_flights,
+)
 
 
 def _make_point(
@@ -560,3 +564,40 @@ class TestInterpolateMissingValues:
         ]
         interpolate_missing_values(points)
         assert p.alt_baro is None  # original untouched
+
+
+class TestImplausiblePositions:
+    def test_hypersonic_point_dropped(self) -> None:
+        """A point implying >350 m/s from the previous is silently dropped."""
+        points = [
+            _make_point(ts=0.0, lat=51.5, lon=-0.1),  # London
+            _make_point(ts=1.0, lat=35.6, lon=139.7),  # Tokyo — Mach 40+
+            _make_point(ts=60.0, lat=51.6, lon=-0.2),  # back near London
+        ]
+        flight = finalize_segment("aabbcc", points, icao_type=None)
+        assert flight is not None
+        # Only the two plausible points survive; Tokyo is dropped.
+        assert flight.raw_point_count == 3  # raw count unchanged
+        verts = flight.vertex_sequences[0]
+        lons = [v[0] for v in verts]
+        assert all(abs(lon) < 10 for lon in lons), f"Tokyo lon leaked into path: {lons}"
+
+    def test_plausible_points_kept(self) -> None:
+        """Normal airliner speeds (< 500 m/s) are never filtered."""
+        # ~170 m/s westbound (600 km/h) — 0.15° lon ≈ 10 km in 60 s at lat 51.5°
+        points = [
+            _make_point(ts=0.0, lat=51.5, lon=-0.1),
+            _make_point(ts=60.0, lat=51.5, lon=-0.25),
+        ]
+        flight = finalize_segment("aabbcc", points, icao_type=None)
+        assert flight is not None
+        assert len(flight.vertex_sequences[0]) == 2
+
+    def test_all_implausible_returns_none(self) -> None:
+        """If filtering leaves fewer than 2 airborne points, return None."""
+        points = [
+            _make_point(ts=0.0, lat=51.5, lon=-0.1),
+            _make_point(ts=1.0, lat=35.6, lon=139.7),  # Mach 40 — dropped
+        ]
+        flight = finalize_segment("aabbcc", points, icao_type=None)
+        assert flight is None
