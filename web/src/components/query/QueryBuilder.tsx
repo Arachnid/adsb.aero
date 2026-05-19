@@ -316,6 +316,7 @@ export function QueryBuilderDateRange({
           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
             <DatePicker<CalendarDate>
               style={{ flex: 1, minWidth: 0 }}
+              aria-label="From (optional)"
               granularity="day"
               value={fromValue}
               onChange={handleFromChange}
@@ -374,6 +375,7 @@ export function QueryBuilderDateRange({
         <div className="date-range-bar-field">
           <FieldLabel>To</FieldLabel>
           <DatePicker<CalendarDate>
+            aria-label="To"
             granularity="day"
             value={toValue}
             onChange={handleToChange}
@@ -580,6 +582,7 @@ function DateTimeField({
     <div>
       <FieldLabel>{label}</FieldLabel>
       <DatePicker<CalendarDateTime>
+        aria-label={label}
         granularity="minute"
         value={dateTimeValue}
         onChange={handleChange}
