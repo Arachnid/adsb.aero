@@ -37,19 +37,19 @@ beforeEach(() => {
 
 describe("App", () => {
   it("renders without crashing", () => {
-    render(<App />);
+    render(<App initialShare={null} />);
     expect(screen.getByText(/adsb\.aero/i)).toBeDefined();
   });
 
   it("calls getDataRange on mount", async () => {
-    render(<App />);
+    render(<App initialShare={null} />);
     await waitFor(() => {
       expect(mockGetDataRange).toHaveBeenCalledOnce();
     });
   });
 
   it("populates the date range from getDataRange response", async () => {
-    render(<App />);
+    render(<App initialShare={null} />);
     await waitFor(() => {
       expect(screen.getAllByDisplayValue("2025-01-07").length).toBeGreaterThan(
         0,
@@ -58,7 +58,7 @@ describe("App", () => {
   });
 
   it("toggles theme when theme button is clicked", () => {
-    render(<App />);
+    render(<App initialShare={null} />);
     const themeBtn = screen.getByTitle("Toggle theme");
     fireEvent.click(themeBtn);
     // Theme toggled to dark — Moon icon replaced by Sun
@@ -68,7 +68,7 @@ describe("App", () => {
   });
 
   it("toggles airspace when airspace button is clicked", () => {
-    render(<App />);
+    render(<App initialShare={null} />);
     const airspaceBtn = screen.getByTitle("Toggle airspace overlay");
     fireEvent.click(airspaceBtn);
     fireEvent.click(airspaceBtn);
@@ -76,7 +76,7 @@ describe("App", () => {
   });
 
   it("collapses and expands the left panel via toggle button", () => {
-    render(<App />);
+    render(<App initialShare={null} />);
     const collapseBtn = screen.getByRole("button", {
       name: "Collapse left panel",
     });
@@ -91,7 +91,7 @@ describe("App", () => {
   });
 
   it("expands and collapses the right panel via toggle button", () => {
-    render(<App />);
+    render(<App initialShare={null} />);
     const expandBtn = screen.getByRole("button", {
       name: "Expand right panel",
     });
@@ -142,7 +142,7 @@ describe("App", () => {
       cursor: "page2",
     });
 
-    render(<App />);
+    render(<App initialShare={null} />);
 
     await act(async () => {
       await waitFor(() => expect(mockGetDataRange).toHaveBeenCalled());

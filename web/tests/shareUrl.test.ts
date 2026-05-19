@@ -33,10 +33,35 @@ const group: FilterGroup = {
 const dateRange: GlobalDateRange = { to: "2025-04-15", from: "2025-04-10" };
 const mapView: MapViewState = { lng: -1.3, lat: 50.67, zoom: 9 };
 
+async function compressJson(obj: unknown): Promise<string> {
+  const cs = new CompressionStream("deflate-raw");
+  const writer = cs.writable.getWriter();
+  await writer.write(
+    new TextEncoder().encode(JSON.stringify(obj)) as Uint8Array<ArrayBuffer>,
+  );
+  await writer.close();
+  const chunks: Uint8Array[] = [];
+  const reader = cs.readable.getReader();
+  let chunk = await reader.read();
+  while (!chunk.done) {
+    chunks.push(chunk.value);
+    chunk = await reader.read();
+  }
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  let latin1 = "";
+  out.forEach((b) => (latin1 += String.fromCharCode(b)));
+  return "#" + btoa(latin1);
+}
+
 describe("shareUrl", () => {
-  it("round-trips group + dateRange + mapView", () => {
-    const hash = encodeShareUrl(group, dateRange, mapView);
-    const decoded = decodeShareUrl(hash);
+  it("round-trips group + dateRange + mapView", async () => {
+    const hash = await encodeShareUrl(group, dateRange, mapView);
+    const decoded = await decodeShareUrl(hash);
     expect(decoded).not.toBeNull();
     expect(decoded!.dateRange).toEqual(dateRange);
     expect(decoded!.mapView).toEqual(mapView);
@@ -47,33 +72,32 @@ describe("shareUrl", () => {
     expect(decoded!.rootGroup.items[0]!.kind).toBe("endpoint_within");
   });
 
-  it("round-trips without mapView", () => {
-    const hash = encodeShareUrl(group, dateRange, null);
-    const decoded = decodeShareUrl(hash);
+  it("round-trips without mapView", async () => {
+    const hash = await encodeShareUrl(group, dateRange, null);
+    const decoded = await decodeShareUrl(hash);
     expect(decoded).not.toBeNull();
     expect(decoded!.mapView).toBeNull();
   });
 
-  it("returns null for empty hash", () => {
-    expect(decodeShareUrl("")).toBeNull();
-    expect(decodeShareUrl("#")).toBeNull();
+  it("returns null for empty hash", async () => {
+    expect(await decodeShareUrl("")).toBeNull();
+    expect(await decodeShareUrl("#")).toBeNull();
   });
 
-  it("returns null for garbage input", () => {
-    expect(decodeShareUrl("#notbase64!!!")).toBeNull();
+  it("returns null for garbage input", async () => {
+    expect(await decodeShareUrl("#notbase64!!!")).toBeNull();
   });
 
-  it("returns null for wrong version", () => {
-    const hash = encodeShareUrl(group, dateRange, null);
-    // Tamper the version by decoding, changing v, re-encoding
-    const b64 = hash.slice(1);
-    const json = atob(b64);
-    const tampered = json.replace('"v":2', '"v":99');
-    const tamperedHash = "#" + btoa(tampered);
-    expect(decodeShareUrl(tamperedHash)).toBeNull();
+  it("returns null for wrong version", async () => {
+    const hash = await compressJson({
+      v: 99,
+      g: { kind: "group", mode: "all", items: [] },
+      d: { to: "" },
+    });
+    expect(await decodeShareUrl(hash)).toBeNull();
   });
 
-  it("produces a hash string starting with #", () => {
-    expect(encodeShareUrl(group, dateRange, mapView)).toMatch(/^#/);
+  it("produces a hash string starting with #", async () => {
+    expect(await encodeShareUrl(group, dateRange, mapView)).toMatch(/^#/);
   });
 });

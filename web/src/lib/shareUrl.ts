@@ -3,6 +3,7 @@
  * URL-safe base64 JSON fragment suitable for use as window.location.hash.
  *
  * IDs are stripped on encode and regenerated on decode to keep URLs short.
+ * Payload is deflate-raw compressed via the native CompressionStream API.
  * A version tag ("v") guards against silent misparse if the schema changes.
  */
 
@@ -14,7 +15,51 @@ import type {
 import { makeId } from "../components/query/QueryBuilder";
 import type { MapViewState } from "../components/map/MapView";
 
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
+
+// ── Compression ──────────────────────────────────────────────────────────────
+
+async function compress(bytes: Uint8Array): Promise<Uint8Array> {
+  const cs = new CompressionStream("deflate-raw");
+  const writer = cs.writable.getWriter();
+  await writer.write(bytes as Uint8Array<ArrayBuffer>);
+  await writer.close();
+  const reader = cs.readable.getReader();
+  const chunks: Uint8Array[] = [];
+  let chunk = await reader.read();
+  while (!chunk.done) {
+    chunks.push(chunk.value);
+    chunk = await reader.read();
+  }
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+async function decompress(bytes: Uint8Array): Promise<Uint8Array> {
+  const ds = new DecompressionStream("deflate-raw");
+  const writer = ds.writable.getWriter();
+  await writer.write(bytes as Uint8Array<ArrayBuffer>);
+  await writer.close();
+  const reader = ds.readable.getReader();
+  const chunks: Uint8Array[] = [];
+  let chunk = await reader.read();
+  while (!chunk.done) {
+    chunks.push(chunk.value);
+    chunk = await reader.read();
+  }
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
 
 // ── Encode ──────────────────────────────────────────────────────────────────
 
@@ -45,11 +90,11 @@ function stripIds(item: QueryItem): unknown {
   return stripped;
 }
 
-export function encodeShareUrl(
+export async function encodeShareUrl(
   rootGroup: FilterGroup,
   dateRange: GlobalDateRange,
   mapView: MapViewState | null,
-): string {
+): Promise<string> {
   const payload = {
     v: CURRENT_VERSION,
     g: stripIds(rootGroup),
@@ -57,11 +102,9 @@ export function encodeShareUrl(
     ...(mapView !== null ? { m: mapView } : {}),
   };
   const json = JSON.stringify(payload);
-  // TextEncoder → UTF-8 bytes → Latin1 string → btoa avoids encodeURIComponent bloat
-  // while remaining safe for non-ASCII characters (e.g. accented airspace names).
-  const bytes = new TextEncoder().encode(json);
+  const compressed = await compress(new TextEncoder().encode(json));
   let latin1 = "";
-  bytes.forEach((b) => (latin1 += String.fromCharCode(b)));
+  compressed.forEach((b) => (latin1 += String.fromCharCode(b)));
   return "#" + btoa(latin1);
 }
 
@@ -96,13 +139,15 @@ export interface DecodedShare {
   mapView: MapViewState | null;
 }
 
-export function decodeShareUrl(hash: string): DecodedShare | null {
+export async function decodeShareUrl(
+  hash: string,
+): Promise<DecodedShare | null> {
   try {
     const b64 = hash.startsWith("#") ? hash.slice(1) : hash;
     if (!b64) return null;
     const latin1 = atob(b64);
     const bytes = Uint8Array.from(latin1, (c) => c.charCodeAt(0));
-    const json = new TextDecoder().decode(bytes);
+    const json = new TextDecoder().decode(await decompress(bytes));
     const payload = JSON.parse(json) as SharePayload;
     if (payload.v !== CURRENT_VERSION) return null;
     const rootGroup = rehydrateIds(payload.g) as FilterGroup;

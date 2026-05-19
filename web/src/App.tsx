@@ -13,7 +13,8 @@ import {
   HoveredPoint,
   ColorMode,
 } from "./components/map/MapView";
-import { encodeShareUrl, decodeShareUrl } from "./lib/shareUrl";
+import { encodeShareUrl } from "./lib/shareUrl";
+import type { DecodedShare } from "./lib/shareUrl";
 
 // Numeric codes from the OpenAIP API
 const AIRSPACE_TYPES: Record<number, string> = {
@@ -192,7 +193,11 @@ function ToggleButton({
   );
 }
 
-export function App(): React.ReactElement {
+export function App({
+  initialShare,
+}: {
+  initialShare: DecodedShare | null;
+}): React.ReactElement {
   const [theme, setTheme] = useState<Theme>(() => {
     document.documentElement.dataset["theme"] = "light";
     return "light";
@@ -203,10 +208,8 @@ export function App(): React.ReactElement {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(true);
 
-  const _initialShare = decodeShareUrl(window.location.hash);
-
   const [rootGroup, setRootGroup] = useState<FilterGroup>(
-    _initialShare?.rootGroup ?? {
+    initialShare?.rootGroup ?? {
       id: makeId(),
       kind: "group",
       mode: "all",
@@ -231,10 +234,10 @@ export function App(): React.ReactElement {
     },
   );
   const [globalDateRange, setGlobalDateRange] = useState<GlobalDateRange>(
-    _initialShare?.dateRange ?? { to: "" },
+    initialShare?.dateRange ?? { to: "" },
   );
   const [mapViewState, setMapViewState] = useState<MapViewState | null>(
-    _initialShare?.mapView ?? null,
+    initialShare?.mapView ?? null,
   );
   const [hasShareUrl, setHasShareUrl] = useState(
     window.location.hash.length > 1,
@@ -482,12 +485,12 @@ export function App(): React.ReactElement {
     const ctrl = new AbortController();
     queryAbortRef.current = ctrl;
 
-    window.location.hash = encodeShareUrl(
-      rootGroup,
-      globalDateRange,
-      mapViewState,
-    );
     setHasShareUrl(true);
+    void encodeShareUrl(rootGroup, globalDateRange, mapViewState).then(
+      (hash) => {
+        window.location.hash = hash;
+      },
+    );
 
     const match = compileGroup(rootGroup, mapBounds);
     const { endDate, startFrom } = dateRangeToApiParams(globalDateRange);
@@ -604,7 +607,7 @@ export function App(): React.ReactElement {
         geometries={mapGeometries}
         onMoveEnd={handleMoveEnd}
         onViewChange={setMapViewState}
-        initialView={_initialShare?.mapView ?? null}
+        initialView={initialShare?.mapView ?? null}
         flights={queryFlights}
         colorMode={colorMode}
         selectedFlightId={selectedFlightId}
