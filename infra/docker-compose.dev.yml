@@ -39,7 +39,7 @@ services:
   # One-shot import services for manual dev use (not started by `docker compose up`).
   # Run with: docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm import-traces
   import-traces:
-    image: adsb-api:latest
+    image: ghcr.io/arachnid/adsb.aero/api:latest
     profiles: ["tools"]
     command: ["python", "-m", "adsb_server.ingestion.ingest"]
     environment:
@@ -62,7 +62,7 @@ services:
         condition: service_healthy
 
   import-airframes:
-    image: adsb-api:latest
+    image: ghcr.io/arachnid/adsb.aero/api:latest
     profiles: ["tools"]
     command: ["python", "-m", "adsb_server.reference_data.airframes"]
     environment:
