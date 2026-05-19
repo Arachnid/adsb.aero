@@ -903,6 +903,24 @@ function PointRadiusCard({
     pred.mode === "start" || pred.mode === "either" || pred.mode === "both";
   const showEndTime =
     pred.mode === "end" || pred.mode === "either" || pred.mode === "both";
+
+  const hasStartTimeData = pred.startTimeFrom !== "" || pred.startTimeTo !== "";
+  const hasEndTimeData = pred.endTimeFrom !== "" || pred.endTimeTo !== "";
+  const [startTimeOpenLocal, setStartTimeOpenLocal] =
+    useState(hasStartTimeData);
+  const [endTimeOpenLocal, setEndTimeOpenLocal] = useState(hasEndTimeData);
+  const startTimeOpen = startTimeOpenLocal || hasStartTimeData;
+  const endTimeOpen = endTimeOpenLocal || hasEndTimeData;
+
+  const toggleStartTime = (checked: boolean): void => {
+    if (!checked) onChange({ ...pred, startTimeFrom: "", startTimeTo: "" });
+    setStartTimeOpenLocal(checked);
+  };
+  const toggleEndTime = (checked: boolean): void => {
+    if (!checked) onChange({ ...pred, endTimeFrom: "", endTimeTo: "" });
+    setEndTimeOpenLocal(checked);
+  };
+
   return (
     <PredCard
       icon={<Pin />}
@@ -1065,57 +1083,75 @@ function PointRadiusCard({
         </>
       ) : null}
       {showStartTime && (
-        <div style={{ marginTop: 4 }}>
-          {(pred.mode === "both" || pred.mode === "either") && (
-            <div className="field-label" style={{ marginBottom: 2 }}>
-              Departure time
+        <div className="optional-group" style={{ marginTop: 4 }}>
+          <label className="optional-group-label">
+            <input
+              type="checkbox"
+              checked={startTimeOpen}
+              onChange={(e) => {
+                toggleStartTime(e.target.checked);
+              }}
+            />
+            Departure time
+          </label>
+          {startTimeOpen && (
+            <div className="optional-group-body">
+              <DateTimeField
+                label="From"
+                value={pred.startTimeFrom}
+                onChange={(v) => {
+                  onChange({ ...pred, startTimeFrom: v });
+                }}
+                minDate={effectiveMinDate}
+                maxDate={effectiveMaxDate}
+              />
+              <DateTimeField
+                label="To"
+                value={pred.startTimeTo}
+                onChange={(v) => {
+                  onChange({ ...pred, startTimeTo: v });
+                }}
+                minDate={effectiveMinDate}
+                maxDate={effectiveMaxDate}
+              />
             </div>
           )}
-          <DateTimeField
-            label="From"
-            value={pred.startTimeFrom}
-            onChange={(v) => {
-              onChange({ ...pred, startTimeFrom: v });
-            }}
-            minDate={effectiveMinDate}
-            maxDate={effectiveMaxDate}
-          />
-          <DateTimeField
-            label="To"
-            value={pred.startTimeTo}
-            onChange={(v) => {
-              onChange({ ...pred, startTimeTo: v });
-            }}
-            minDate={effectiveMinDate}
-            maxDate={effectiveMaxDate}
-          />
         </div>
       )}
       {showEndTime && (
-        <div style={{ marginTop: 4 }}>
-          {(pred.mode === "both" || pred.mode === "either") && (
-            <div className="field-label" style={{ marginBottom: 2 }}>
-              Arrival time
+        <div className="optional-group" style={{ marginTop: 4 }}>
+          <label className="optional-group-label">
+            <input
+              type="checkbox"
+              checked={endTimeOpen}
+              onChange={(e) => {
+                toggleEndTime(e.target.checked);
+              }}
+            />
+            Arrival time
+          </label>
+          {endTimeOpen && (
+            <div className="optional-group-body">
+              <DateTimeField
+                label="From"
+                value={pred.endTimeFrom}
+                onChange={(v) => {
+                  onChange({ ...pred, endTimeFrom: v });
+                }}
+                minDate={effectiveMinDate}
+                maxDate={effectiveMaxDate}
+              />
+              <DateTimeField
+                label="To"
+                value={pred.endTimeTo}
+                onChange={(v) => {
+                  onChange({ ...pred, endTimeTo: v });
+                }}
+                minDate={effectiveMinDate}
+                maxDate={effectiveMaxDate}
+              />
             </div>
           )}
-          <DateTimeField
-            label="From"
-            value={pred.endTimeFrom}
-            onChange={(v) => {
-              onChange({ ...pred, endTimeFrom: v });
-            }}
-            minDate={effectiveMinDate}
-            maxDate={effectiveMaxDate}
-          />
-          <DateTimeField
-            label="To"
-            value={pred.endTimeTo}
-            onChange={(v) => {
-              onChange({ ...pred, endTimeTo: v });
-            }}
-            minDate={effectiveMinDate}
-            maxDate={effectiveMaxDate}
-          />
         </div>
       )}
     </PredCard>

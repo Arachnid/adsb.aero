@@ -292,11 +292,12 @@ describe("QueryBuilderBody", () => {
       endTimeTo: "",
     };
 
-    it("shows From and To inputs regardless of shape", () => {
+    it("shows From and To inputs after checking the Departure time checkbox", () => {
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
-      expect(screen.getByText("From")).toBeDefined();
-      expect(screen.getByText("To")).toBeDefined();
+      fireEvent.click(screen.getByLabelText("Departure time"));
+      expect(screen.getAllByText("From").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("To").length).toBeGreaterThan(0);
     });
 
     it("does not show radius slider for shape=none", () => {
@@ -327,6 +328,7 @@ describe("QueryBuilderBody", () => {
       const onChange = vi.fn();
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
+      fireEvent.click(screen.getByLabelText("Departure time"));
       fireEvent.change(screen.getAllByPlaceholderText("YYYY-MM-DDTHH:MM")[0], {
         target: { value: "2024-01-01T00:00" },
       });
