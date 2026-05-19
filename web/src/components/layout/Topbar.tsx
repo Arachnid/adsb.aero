@@ -74,13 +74,16 @@ export function Topbar({
           textDecoration: "none",
         }}
       >
-        <span
+        <img
+          src="/logo.png"
+          alt=""
+          width={22}
+          height={22}
           style={{
-            width: 8,
-            height: 8,
-            background: "var(--accent)",
             borderRadius: "50%",
-            boxShadow: "0 0 0 3px var(--accent-soft)",
+            objectFit: "cover",
+            display: "block",
+            flexShrink: 0,
           }}
         />
         adsb.aero
