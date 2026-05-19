@@ -576,10 +576,34 @@ export function MapView({
     const map = new MaplibreMap({
       container: containerRef.current,
       style: STYLES[basemap],
-      center: [-2.0, 54.5],
-      zoom: 5,
+      center: [0, 30],
+      zoom: 2,
       attributionControl: { compact: true },
     });
+
+    // Fly to the user's location once geolocation resolves — only if the user
+    // hasn't moved the map yet (hasMoved guard prevents overriding intentional
+    // pans that arrive before the geolocation callback fires).
+    let hasMoved = false;
+    void map.once("movestart", () => {
+      hasMoved = true;
+    });
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          if (!hasMoved) {
+            void map.flyTo({
+              center: [coords.longitude, coords.latitude],
+              zoom: 9,
+            });
+          }
+        },
+        () => {
+          /* permission denied or unavailable — stay on default view */
+        },
+        { timeout: 5000 },
+      );
+    }
 
     const onClick = (e: MapMouseEvent): void => {
       const { lat, lng } = e.lngLat;

@@ -205,7 +205,24 @@ export function App(): React.ReactElement {
     id: makeId(),
     kind: "group",
     mode: "all",
-    items: [],
+    items: [
+      {
+        id: makeId(),
+        kind: "endpoint_within",
+        mode: "either",
+        shape: "viewport",
+        lat: null,
+        lng: null,
+        radiusNm: 1,
+        polygon: null,
+        airspaceName: null,
+        airspaceLabel: null,
+        startTimeFrom: "",
+        startTimeTo: "",
+        endTimeFrom: "",
+        endTimeTo: "",
+      },
+    ],
   });
   const [globalDateRange, setGlobalDateRange] = useState<GlobalDateRange>({
     to: "",

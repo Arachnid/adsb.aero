@@ -150,6 +150,6 @@ describe("App", () => {
 
     // Directly set state by calling the footer run button — but it requires a valid group.
     // Instead, verify the right panel shows "—" initially (no flights run yet).
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 });
