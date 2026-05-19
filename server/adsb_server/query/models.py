@@ -704,9 +704,9 @@ class QueryRequest(BaseModel):
         examples=["2025-03-01T00:00:00Z"],
     )
     window_days: int = Field(
-        default=28,
+        default=7,
         ge=1,
-        le=365,
+        le=7,
         description="Size of the sliding search window in days, measured back from the "
         "current cursor position (or `end_date` on the first page). "
         "Combined with keyset pagination this lets callers walk back through history "

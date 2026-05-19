@@ -523,7 +523,7 @@ async def test_window_days_limits_results(api_client: AsyncClient) -> None:
         json={
             "end_date": "2025-04-02T00:00:00Z",
             "start_from": "2025-04-01T09:00:00Z",  # excludes Flight B (starts 06:00)
-            "window_days": 28,
+            "window_days": 7,
         },
     )
     assert resp.status_code == 200
