@@ -47,7 +47,10 @@ export function Topbar({
       }}
     >
       {/* Brand */}
-      <div
+      <a
+        href="https://github.com/Arachnid/adsb.aero"
+        target="_blank"
+        rel="noopener noreferrer"
         style={{
           display: "flex",
           alignItems: "center",
@@ -55,6 +58,8 @@ export function Topbar({
           fontWeight: 600,
           fontSize: 13,
           letterSpacing: "-0.01em",
+          color: "inherit",
+          textDecoration: "none",
         }}
       >
         <span
@@ -80,7 +85,7 @@ export function Topbar({
         >
           HISTORICAL
         </span>
-      </div>
+      </a>
 
       <Sep />
 
