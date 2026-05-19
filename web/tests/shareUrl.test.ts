@@ -67,9 +67,9 @@ describe("shareUrl", () => {
     const hash = encodeShareUrl(group, dateRange, null);
     // Tamper the version by decoding, changing v, re-encoding
     const b64 = hash.slice(1);
-    const json = decodeURIComponent(atob(b64));
-    const tampered = json.replace('"v":1', '"v":99');
-    const tamperedHash = "#" + btoa(encodeURIComponent(tampered));
+    const json = atob(b64);
+    const tampered = json.replace('"v":2', '"v":99');
+    const tamperedHash = "#" + btoa(tampered);
     expect(decodeShareUrl(tamperedHash)).toBeNull();
   });
 

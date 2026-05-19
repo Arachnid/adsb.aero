@@ -14,7 +14,7 @@ import type {
 import { makeId } from "../components/query/QueryBuilder";
 import type { MapViewState } from "../components/map/MapView";
 
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 // ── Encode ──────────────────────────────────────────────────────────────────
 
@@ -24,11 +24,25 @@ function omitId<T extends { id: string }>(obj: T): Omit<T, "id"> {
   return rest;
 }
 
+const round5 = (n: number): number => Math.round(n * 1e5) / 1e5;
+
+function compactPolygon(
+  poly: [number, number][] | null,
+): [number, number][] | null {
+  if (poly === null) return null;
+  return poly.map(([lng, lat]) => [round5(lng), round5(lat)]);
+}
+
 function stripIds(item: QueryItem): unknown {
   if (item.kind === "group") {
     return { ...omitId(item), items: item.items.map(stripIds) };
   }
-  return omitId(item);
+  const stripped = omitId(item) as Record<string, unknown>;
+  if ("polygon" in stripped)
+    stripped["polygon"] = compactPolygon(
+      stripped["polygon"] as [number, number][] | null,
+    );
+  return stripped;
 }
 
 export function encodeShareUrl(
@@ -43,8 +57,7 @@ export function encodeShareUrl(
     ...(mapView !== null ? { m: mapView } : {}),
   };
   const json = JSON.stringify(payload);
-  // btoa requires latin1; encodeURIComponent escapes to %xx which btoa handles
-  const b64 = btoa(encodeURIComponent(json));
+  const b64 = btoa(json);
   return "#" + b64;
 }
 
@@ -83,7 +96,7 @@ export function decodeShareUrl(hash: string): DecodedShare | null {
   try {
     const b64 = hash.startsWith("#") ? hash.slice(1) : hash;
     if (!b64) return null;
-    const json = decodeURIComponent(atob(b64));
+    const json = atob(b64);
     const payload = JSON.parse(json) as SharePayload;
     if (payload.v !== CURRENT_VERSION) return null;
     const rootGroup = rehydrateIds(payload.g) as FilterGroup;
