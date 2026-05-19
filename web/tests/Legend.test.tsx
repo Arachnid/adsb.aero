@@ -37,9 +37,9 @@ describe("Legend", () => {
     render(<Legend colorMode="vs" />);
     expect(screen.getByText("Vert. speed (fpm)")).toBeInTheDocument();
     // GradientLabels left/center/right
-    expect(screen.getByText("−3000")).toBeInTheDocument();
+    expect(screen.getByText("−1000")).toBeInTheDocument();
     expect(screen.getByText("0")).toBeInTheDocument();
-    expect(screen.getByText("+3000")).toBeInTheDocument();
+    expect(screen.getByText("+1000")).toBeInTheDocument();
     expect(screen.getByText("No data")).toBeInTheDocument();
   });
 

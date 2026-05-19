@@ -106,9 +106,9 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
 
       {colorMode === "vs" && (
         <>
-          {/* 7 stops evenly spaced in sqrt space ≈ −3000, −1300, −300, 0, +300, +1300, +3000 fpm */}
+          {/* 7 stops evenly spaced in sqrt space ≈ −1000, −440, −110, 0, +110, +440, +1000 fpm */}
           <GradientBar gradient="linear-gradient(to right, #dc3232 0%, #f56e3c 16.7%, #c8afa5 33.3%, #aaaaaa 50%, #a5afcd 66.7%, #5a8cf0 83.3%, #325adc 100%)" />
-          <GradientLabels left="−3000" center="0" right="+3000" />
+          <GradientLabels left="−1000" center="0" right="+1000" />
           <LegendRow swatch="#969696">No data</LegendRow>
         </>
       )}

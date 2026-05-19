@@ -102,24 +102,24 @@ function piecewiseLerp(stops: RGBA[], t: number): RGBA {
 }
 
 // Vertical speed: diverging red (descending) → gray (level) → blue (climbing).
-// Stops are evenly spaced in sqrt-curved space; physical breakpoints ≈ ±3000,
-// ±1300, ±300, 0 fpm. This keeps ±500 fpm visually distinct from level.
+// Stops are evenly spaced in sqrt-curved space; physical breakpoints ≈ ±1000,
+// ±440, ±110, 0 fpm. This keeps ±200 fpm visually distinct from level.
 const VS_STOPS: RGBA[] = [
-  [220, 50, 50, 220], // ≈ −3000 fpm — deep red
-  [245, 110, 60, 220], // ≈ −1300 fpm — orange-red
-  [200, 175, 165, 220], // ≈ −  300 fpm — warm gray
-  [170, 170, 170, 220], //      0 fpm — neutral gray
-  [165, 175, 205, 220], // ≈ +  300 fpm — cool gray
-  [90, 140, 240, 220], // ≈ +1300 fpm — medium blue
-  [50, 90, 220, 220], // ≈ +3000 fpm — deep blue
+  [220, 50, 50, 220], // ≈ −1000 fpm — deep red
+  [245, 110, 60, 220], // ≈ −  440 fpm — orange-red
+  [200, 175, 165, 220], // ≈ −  110 fpm — warm gray
+  [170, 170, 170, 220], //       0 fpm — neutral gray
+  [165, 175, 205, 220], // ≈ +  110 fpm — cool gray
+  [90, 140, 240, 220], // ≈ +  440 fpm — medium blue
+  [50, 90, 220, 220], // ≈ +1000 fpm — deep blue
 ];
 
 export function vsToColor(vsFpm: number | null | undefined): RGBA {
   if (vsFpm == null) return GRAY;
-  const clamped = Math.max(-3000, Math.min(vsFpm, 3000));
-  // Signed sqrt: maps ±500 fpm to ±41% of full scale (vs ±17% linearly).
+  const clamped = Math.max(-1000, Math.min(vsFpm, 1000));
+  // Signed sqrt: maps ±200 fpm to ±45% of full scale (vs ±20% linearly).
   const sign = clamped >= 0 ? 1 : -1;
-  const curved = sign * Math.sqrt(Math.abs(clamped) / 3000); // [-1, 1]
+  const curved = sign * Math.sqrt(Math.abs(clamped) / 1000); // [-1, 1]
   return piecewiseLerp(VS_STOPS, (curved + 1) / 2);
 }
 
