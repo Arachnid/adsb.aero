@@ -57,8 +57,12 @@ export function encodeShareUrl(
     ...(mapView !== null ? { m: mapView } : {}),
   };
   const json = JSON.stringify(payload);
-  const b64 = btoa(json);
-  return "#" + b64;
+  // TextEncoder → UTF-8 bytes → Latin1 string → btoa avoids encodeURIComponent bloat
+  // while remaining safe for non-ASCII characters (e.g. accented airspace names).
+  const bytes = new TextEncoder().encode(json);
+  let latin1 = "";
+  bytes.forEach((b) => (latin1 += String.fromCharCode(b)));
+  return "#" + btoa(latin1);
 }
 
 // ── Decode ───────────────────────────────────────────────────────────────────
@@ -96,7 +100,9 @@ export function decodeShareUrl(hash: string): DecodedShare | null {
   try {
     const b64 = hash.startsWith("#") ? hash.slice(1) : hash;
     if (!b64) return null;
-    const json = atob(b64);
+    const latin1 = atob(b64);
+    const bytes = Uint8Array.from(latin1, (c) => c.charCodeAt(0));
+    const json = new TextDecoder().decode(bytes);
     const payload = JSON.parse(json) as SharePayload;
     if (payload.v !== CURRENT_VERSION) return null;
     const rootGroup = rehydrateIds(payload.g) as FilterGroup;
