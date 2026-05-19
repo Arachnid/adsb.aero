@@ -40,7 +40,7 @@ export async function postQuery(
   const body: QueryRequest = {
     end_date: opts.endDate,
     ...(opts.startFrom ? { start_from: opts.startFrom } : {}),
-    window_days: 28,
+    window_days: 7,
     match: match ?? null,
     limit: opts.limit ?? 100,
     include_path: true,

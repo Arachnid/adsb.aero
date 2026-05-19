@@ -421,6 +421,7 @@ function initOverlays(map: MaplibreMap, geoms: MapGeometry[]): void {
 
 // [west, south, east, north] in degrees
 export type MapBounds = [number, number, number, number];
+export type MapViewState = { lng: number; lat: number; zoom: number };
 
 export type HoveredPoint = { flightId: string; pointIdx: number };
 export type FitBoundsTarget = {
@@ -442,6 +443,8 @@ interface MapViewProps {
   onPickAirspace: (lat: number, lng: number, x: number, y: number) => void;
   geometries: MapGeometry[];
   onMoveEnd?: (bounds: MapBounds) => void;
+  onViewChange?: (view: MapViewState) => void;
+  initialView?: MapViewState | null;
   flights: FlightDetail[] | null;
   colorMode: ColorMode;
   selectedFlightId: string | null;
@@ -462,6 +465,8 @@ export function MapView({
   onPickAirspace,
   geometries,
   onMoveEnd,
+  onViewChange,
+  initialView,
   flights,
   colorMode,
   selectedFlightId,
@@ -480,6 +485,9 @@ export function MapView({
   const onDrawRef = useRef(onDrawComplete);
   const geometriesRef = useRef(geometries);
   const onMoveEndRef = useRef(onMoveEnd);
+  const onViewChangeRef = useRef<((v: MapViewState) => void) | undefined>(
+    onViewChange,
+  );
   const onSelectRef = useRef(onSelectFlight);
   const onHoverPointRef = useRef(onHoverPoint);
   const chartsOnRef = useRef(chartsOn);
@@ -516,6 +524,7 @@ export function MapView({
   onDrawRef.current = onDrawComplete;
   geometriesRef.current = geometries;
   onMoveEndRef.current = onMoveEnd;
+  onViewChangeRef.current = onViewChange;
   onSelectRef.current = onSelectFlight;
   onHoverPointRef.current = onHoverPoint;
   chartsOnRef.current = chartsOn;
@@ -581,14 +590,18 @@ export function MapView({
       attributionControl: { compact: true },
     });
 
-    // Fly to the user's location once geolocation resolves — only if the user
-    // hasn't moved the map yet (hasMoved guard prevents overriding intentional
-    // pans that arrive before the geolocation callback fires).
+    // If a shared view was decoded from the URL, fly there immediately.
+    // Otherwise try geolocation; skip it if the user pans first.
     let hasMoved = false;
     void map.once("movestart", () => {
       hasMoved = true;
     });
-    if ("geolocation" in navigator) {
+    if (initialView) {
+      void map.flyTo({
+        center: [initialView.lng, initialView.lat],
+        zoom: initialView.zoom,
+      });
+    } else if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         ({ coords }) => {
           if (!hasMoved) {
@@ -641,6 +654,8 @@ export function MapView({
 
     const onMoveEndHandler = (): void => {
       onMoveEndRef.current?.(getBounds());
+      const { lng, lat } = map.getCenter();
+      onViewChangeRef.current?.({ lng, lat, zoom: map.getZoom() });
     };
 
     const setupOverlays = (): void => {

@@ -9,9 +9,11 @@ import {
   MapView,
   FitBoundsTarget,
   MapBounds,
+  MapViewState,
   HoveredPoint,
   ColorMode,
 } from "./components/map/MapView";
+import { encodeShareUrl, decodeShareUrl } from "./lib/shareUrl";
 
 // Numeric codes from the OpenAIP API
 const AIRSPACE_TYPES: Record<number, string> = {
@@ -201,32 +203,42 @@ export function App(): React.ReactElement {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(true);
 
-  const [rootGroup, setRootGroup] = useState<FilterGroup>({
-    id: makeId(),
-    kind: "group",
-    mode: "all",
-    items: [
-      {
-        id: makeId(),
-        kind: "endpoint_within",
-        mode: "either",
-        shape: "viewport",
-        lat: null,
-        lng: null,
-        radiusNm: 1,
-        polygon: null,
-        airspaceName: null,
-        airspaceLabel: null,
-        startTimeFrom: "",
-        startTimeTo: "",
-        endTimeFrom: "",
-        endTimeTo: "",
-      },
-    ],
-  });
-  const [globalDateRange, setGlobalDateRange] = useState<GlobalDateRange>({
-    to: "",
-  });
+  const _initialShare = decodeShareUrl(window.location.hash);
+
+  const [rootGroup, setRootGroup] = useState<FilterGroup>(
+    _initialShare?.rootGroup ?? {
+      id: makeId(),
+      kind: "group",
+      mode: "all",
+      items: [
+        {
+          id: makeId(),
+          kind: "endpoint_within",
+          mode: "either",
+          shape: "viewport",
+          lat: null,
+          lng: null,
+          radiusNm: 1,
+          polygon: null,
+          airspaceName: null,
+          airspaceLabel: null,
+          startTimeFrom: "",
+          startTimeTo: "",
+          endTimeFrom: "",
+          endTimeTo: "",
+        },
+      ],
+    },
+  );
+  const [globalDateRange, setGlobalDateRange] = useState<GlobalDateRange>(
+    _initialShare?.dateRange ?? { to: "" },
+  );
+  const [mapViewState, setMapViewState] = useState<MapViewState | null>(
+    _initialShare?.mapView ?? null,
+  );
+  const [hasShareUrl, setHasShareUrl] = useState(
+    window.location.hash.length > 1,
+  );
   const [pickingId, setPickingId] = useState<string | null>(null);
   const [drawingId, setDrawingId] = useState<string | null>(null);
   const [airspacePickingId, setAirspacePickingId] = useState<string | null>(
@@ -470,6 +482,13 @@ export function App(): React.ReactElement {
     const ctrl = new AbortController();
     queryAbortRef.current = ctrl;
 
+    window.location.hash = encodeShareUrl(
+      rootGroup,
+      globalDateRange,
+      mapViewState,
+    );
+    setHasShareUrl(true);
+
     const match = compileGroup(rootGroup, mapBounds);
     const { endDate, startFrom } = dateRangeToApiParams(globalDateRange);
     setQueryLoading(true);
@@ -494,7 +513,7 @@ export function App(): React.ReactElement {
       .finally(() => {
         setQueryLoading(false);
       });
-  }, [rootGroup, mapBounds, viewportVersion, globalDateRange]);
+  }, [rootGroup, mapBounds, viewportVersion, globalDateRange, mapViewState]);
 
   const handleLoadMore = useCallback((): void => {
     if (!queryCursor || queryLoading) return;
@@ -584,6 +603,8 @@ export function App(): React.ReactElement {
         onDrawComplete={handleDrawComplete}
         geometries={mapGeometries}
         onMoveEnd={handleMoveEnd}
+        onViewChange={setMapViewState}
+        initialView={_initialShare?.mapView ?? null}
         flights={queryFlights}
         colorMode={colorMode}
         selectedFlightId={selectedFlightId}
@@ -631,6 +652,7 @@ export function App(): React.ReactElement {
         }}
         theme={theme}
         onTheme={handleTheme}
+        hasShareUrl={hasShareUrl}
       />
 
       <Sidebar

@@ -813,11 +813,11 @@ function AircraftCard({
 
   useEffect(() => {
     if (!globalDateRange?.to) return;
-    // Use explicit start if provided, otherwise a 28-day window before end.
+    // Use explicit start if provided, otherwise a 7-day window before end.
     const end = globalDateRange.to;
     const start =
       globalDateRange.from ??
-      new Date(Date.parse(end + "T00:00:00Z") - 28 * 86400000)
+      new Date(Date.parse(end + "T00:00:00Z") - 7 * 86400000)
         .toISOString()
         .slice(0, 10);
     const controller = new AbortController();

@@ -1,4 +1,5 @@
-import { Layers, Moon, Satellite, Sun } from "../Icons";
+import { useState } from "react";
+import { Layers, Link, Moon, Satellite, Sun } from "../Icons";
 import type { ColorMode } from "../map/MapView";
 
 type Basemap = "dark" | "light" | "sat";
@@ -13,6 +14,7 @@ interface TopbarProps {
   onToggleAirspace: () => void;
   theme: Theme;
   onTheme: () => void;
+  hasShareUrl: boolean;
 }
 
 export function Topbar({
@@ -24,7 +26,19 @@ export function Topbar({
   onToggleAirspace,
   theme,
   onTheme,
+  hasShareUrl,
 }: TopbarProps): React.ReactElement {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyLink = (): void => {
+    void navigator.clipboard.writeText(window.location.href).then(() => {
+      setCopied(true);
+      setTimeout(() => {
+        setCopied(false);
+      }, 1500);
+    });
+  };
+
   return (
     <div
       style={{
@@ -186,6 +200,26 @@ export function Topbar({
       <IconBtn onClick={onTheme} title="Toggle theme">
         {theme === "dark" ? <Sun /> : <Moon />}
       </IconBtn>
+
+      {hasShareUrl && (
+        <>
+          <Sep />
+          <IconBtn onClick={handleCopyLink} title="Copy share link">
+            {copied ? (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}
+              >
+                ✓
+              </span>
+            ) : (
+              <Link />
+            )}
+          </IconBtn>
+        </>
+      )}
     </div>
   );
 }
