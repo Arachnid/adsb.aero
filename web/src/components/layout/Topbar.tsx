@@ -14,7 +14,6 @@ interface TopbarProps {
   onToggleAirspace: () => void;
   theme: Theme;
   onTheme: () => void;
-  hasShareUrl: boolean;
 }
 
 export function Topbar({
@@ -26,7 +25,6 @@ export function Topbar({
   onToggleAirspace,
   theme,
   onTheme,
-  hasShareUrl,
 }: TopbarProps): React.ReactElement {
   const [copied, setCopied] = useState(false);
 
@@ -201,25 +199,21 @@ export function Topbar({
         {theme === "dark" ? <Sun /> : <Moon />}
       </IconBtn>
 
-      {hasShareUrl && (
-        <>
-          <Sep />
-          <IconBtn onClick={handleCopyLink} title="Copy share link">
-            {copied ? (
-              <span
-                style={{
-                  fontSize: 10,
-                  fontFamily: "'JetBrains Mono', monospace",
-                }}
-              >
-                ✓
-              </span>
-            ) : (
-              <Link />
-            )}
-          </IconBtn>
-        </>
-      )}
+      <Sep />
+      <IconBtn onClick={handleCopyLink} title="Copy share link">
+        {copied ? (
+          <span
+            style={{
+              fontSize: 10,
+              fontFamily: "'JetBrains Mono', monospace",
+            }}
+          >
+            ✓
+          </span>
+        ) : (
+          <Link />
+        )}
+      </IconBtn>
     </div>
   );
 }

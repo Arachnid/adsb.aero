@@ -239,9 +239,6 @@ export function App({
   const [mapViewState, setMapViewState] = useState<MapViewState | null>(
     initialShare?.mapView ?? null,
   );
-  const [hasShareUrl, setHasShareUrl] = useState(
-    window.location.hash.length > 1,
-  );
   const [pickingId, setPickingId] = useState<string | null>(null);
   const [drawingId, setDrawingId] = useState<string | null>(null);
   const [airspacePickingId, setAirspacePickingId] = useState<string | null>(
@@ -304,6 +301,14 @@ export function App({
   useEffect(() => {
     document.documentElement.dataset["theme"] = theme;
   }, [theme]);
+
+  useEffect(() => {
+    void encodeShareUrl(rootGroup, globalDateRange, mapViewState).then(
+      (hash) => {
+        window.location.hash = hash;
+      },
+    );
+  }, [rootGroup, globalDateRange, mapViewState]);
 
   useEffect(() => {
     getDataRange()
@@ -485,13 +490,6 @@ export function App({
     const ctrl = new AbortController();
     queryAbortRef.current = ctrl;
 
-    setHasShareUrl(true);
-    void encodeShareUrl(rootGroup, globalDateRange, mapViewState).then(
-      (hash) => {
-        window.location.hash = hash;
-      },
-    );
-
     const match = compileGroup(rootGroup, mapBounds);
     const { endDate, startFrom } = dateRangeToApiParams(globalDateRange);
     setQueryLoading(true);
@@ -655,7 +653,6 @@ export function App({
         }}
         theme={theme}
         onTheme={handleTheme}
-        hasShareUrl={hasShareUrl}
       />
 
       <Sidebar
