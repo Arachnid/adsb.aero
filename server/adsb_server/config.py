@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     log_queries: bool = False
     sentry_dsn: str = ""
+    environment: str = "production"
 
     scheduler_cache_dir: Path = Path("/data/cache")
     scheduler_lookback_days: int = 0  # 0 = unlimited; set to e.g. 7 in dev
@@ -42,6 +43,7 @@ class Settings(BaseSettings):
 
             sentry_sdk.init(
                 dsn=dsn,
+                environment=self.environment,
                 send_default_pii=False,
                 traces_sample_rate=1.0,
                 enable_logs=True,
