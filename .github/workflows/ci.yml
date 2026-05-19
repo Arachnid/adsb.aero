@@ -132,3 +132,12 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/web:${{ github.sha }},${{ env.IMAGE_PREFIX }}/web:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build and push postgres image
+        uses: docker/build-push-action@v6
+        with:
+          context: infra/postgres
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/postgres:${{ github.sha }},${{ env.IMAGE_PREFIX }}/postgres:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

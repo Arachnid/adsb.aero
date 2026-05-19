@@ -331,7 +331,7 @@ adsb-aero/
 - **Errors**: Sentry SDK in every backend entry point (API server and all scheduled tasks — add to any new background task or cron job). Free tier sufficient. DSN stored as a Docker secret (`infra/secrets/sentry_dsn`); read via `settings.effective_sentry_dsn`.
 - **Logs**: stdout from each container, captured by Docker's json-file driver.
 - **Secrets**: Plain text files in `infra/secrets/` (gitignored), mounted by Docker Compose at `/run/secrets/<name>`. Current secrets: `sentry_dsn` (Sentry DSN), `openaip_api_key` (OpenAIP tile/airspace proxy), `origin.crt` and `origin.key` (TLS certificates, prod only). Migrate to `sops` if collaborators are added.
-- **CI/CD**: GitHub Actions builds Docker images, pushes to GitHub Container Registry. Deployment to OVH is `git pull && cd infra && docker compose -f docker-compose.yml pull && docker compose -f docker-compose.yml up -d` (run from `infra/`; `infra/.env` is a symlink to the repo-root `.env`) either manually or via a webhook. No Kubernetes.
+- **CI/CD**: GitHub Actions builds and pushes `api`, `web`, and `postgres` images to GitHub Container Registry on every push to `main`. Deployment to OVH is `git pull && make prod` (which runs `docker compose pull && docker compose up -d` in `infra/`). Static assets are baked into the web image; no local build step is needed on the server. No Kubernetes.
 - **Backups and DR**: handled at infrastructure level via OVHcloud. Out of scope for this spec.
 
 ## Cloud migration path

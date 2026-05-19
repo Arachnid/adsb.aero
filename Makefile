@@ -10,12 +10,14 @@ dev-down:
 	cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 
 # ── Production stack ─────────────────────────────────────────────────────────
-# Requires a prior `make build-web` to populate web/dist.
+# Pull the latest images from GHCR, then start the stack.
+# Static assets are baked into the web image — no local build step needed.
+prod:
+	cd infra && docker compose -f docker-compose.yml pull && docker compose -f docker-compose.yml up -d
+
+# Build the web bundle locally (useful for testing the build outside Docker).
 build-web:
 	cd web && pnpm build
-
-prod:
-	cd infra && docker compose -f docker-compose.yml up -d
 
 prod-down:
 	cd infra && docker compose -f docker-compose.yml down

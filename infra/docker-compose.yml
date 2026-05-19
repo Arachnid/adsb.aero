@@ -3,7 +3,7 @@ name: infra
 services:
   postgres:
     build: ./postgres
-    image: adsb-postgres:latest
+    image: ghcr.io/arachnid/adsb.aero/postgres:latest
     restart: unless-stopped
     shm_size: 256m
     environment:
@@ -51,14 +51,15 @@ services:
       start_period: 30s
 
   nginx:
-    image: nginx:1.27-alpine
+    image: ghcr.io/arachnid/adsb.aero/web:latest
+    build:
+      context: ../web
     restart: unless-stopped
     entrypoint: ["/etc/nginx/entrypoint.sh"]
     command: ["/docker-entrypoint.sh", "nginx", "-g", "daemon off;"]
     volumes:
       - ./nginx/prod.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/entrypoint.sh:/etc/nginx/entrypoint.sh:ro
-      - ../web/dist:/srv/web:ro
       - openaip_cache:/var/cache/nginx/openaip
     ports:
       - "80:80"

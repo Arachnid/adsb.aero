@@ -132,17 +132,17 @@ cd web && pnpm test
 cd web && pnpm e2e
 ```
 
-## Production build
+## Production deployment
 
 ```bash
-# Build the frontend bundle into web/dist
-make build-web
-
-# Start the prod stack (nginx serves web/dist directly — no Vite)
 make prod
+# expands to:
+# cd infra && docker compose -f docker-compose.yml pull && docker compose -f docker-compose.yml up -d
 ```
 
-The prod stack uses the same `docker-compose.yml` without the dev overrides. Nginx serves `web/dist` as static files and proxies `/api/` to the API container.
+The prod stack uses `docker-compose.yml` without the dev overrides. It pulls the latest `api`, `web`, and `postgres` images from GHCR and starts them. Static assets are baked into the web image — no local `pnpm build` step is required.
+
+The nginx service uses the GHCR web image (which includes the compiled frontend) and overrides its config with `infra/nginx/prod.conf.template`, which adds TLS, the OpenAIP proxy, and the API key secret injection.
 
 ## Architecture
 
