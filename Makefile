@@ -1,4 +1,4 @@
-.PHONY: dev dev-down prod prod-down logs build-web migrate import-airframes import-traces
+.PHONY: dev dev-down prod prod-down logs build-web migrate import-airframes import-traces gen-cert
 
 # ── Dev stack ────────────────────────────────────────────────────────────────
 # Brings up postgres, redis, api (--reload), vite dev server, and nginx.
@@ -39,6 +39,15 @@ gen-types:
 	  "from adsb_server.api.main import app; import json; print(json.dumps(app.openapi(), indent=2))" \
 	  > server/openapi.json
 	cd web && pnpm gen-types
+
+# ── TLS ───────────────────────────────────────────────────────────────────────
+# Generate a self-signed origin certificate for use behind Cloudflare (Full SSL mode).
+# Run once; the files land in infra/secrets/ which is gitignored.
+gen-cert:
+	openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+	    -keyout infra/secrets/origin.key \
+	    -out infra/secrets/origin.crt \
+	    -subj "/CN=adsb.aero"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 logs:

@@ -60,5 +60,4 @@ cd web && pnpm e2e
 - [x] Frontend — full query builder (spatial predicates, altitude/time/squawk/dwell/distance filters), multiple colour modes (alt/cat/VS/GS/IAS/squawk), results panel with sparklines, rich hover infobox
 - [ ] OurAirports integration (radius-from-airfield pickers)
 - [ ] OpenSky aircraft metadata enrichment
-- [ ] Operational stack (Prometheus / Grafana / Loki / alerting)
 - [ ] Scale up (whole-world ingest, performance tuning)

@@ -16,7 +16,7 @@ Use cases include "where do people arrive at this airfield from", "what routes d
 - **Frontend**: TypeScript + React + Vite + MapLibre GL JS + deck.gl. State via React's built-in primitives plus TanStack Query for server state.
 - **Deployment**: Docker Compose for single-host. All services in containers. Configuration via environment variables. Same images deployable to managed Kubernetes/Cloud Run later.
 - **Hosting**: OVH dedicated server (EPYC 4244P, 64GB RAM, 4×960GB NVMe in RAID 5 giving ~2.88TB usable). Postgres tuned for NVMe (`random_page_cost=1.1`, `effective_io_concurrency=256`, `shared_buffers=16GB`, etc.). Backups, DR, and machine-level operational concerns are handled via OVHcloud's services and outside the scope of this spec.
-- **Observability**: Prometheus + Grafana + Loki for metrics and logs. Sentry for errors.
+- **Observability**: Sentry for errors.
 
 ## Altitude representation
 
@@ -315,9 +315,9 @@ adsb-aero/
 │   ├── docker-compose.dev.yml     # dev overrides (hot-reload, vite service)
 │   ├── postgres/
 │   │   └── postgresql.conf    # tuned for NVMe + 64GB RAM
-│   ├── prometheus/
-│   ├── grafana/
-│   └── loki/
+│   ├── nginx/
+│   ├── ofelia/
+│   └── secrets/               # gitignored runtime secrets
 ├── docs/
 │   ├── design-spec.md         # this document
 │   └── dev-setup.md
@@ -328,9 +328,8 @@ adsb-aero/
 
 ## Operational concerns
 
-- **Monitoring**: Prometheus + Grafana planned for metrics and dashboards. Not yet deployed.
-- **Logs**: stdout from each container. Loki planned for log aggregation. Not yet deployed.
 - **Errors**: Sentry SDK in every backend entry point (API server and all scheduled tasks — add to any new background task or cron job). Free tier sufficient. DSN stored as a Docker secret (`infra/secrets/sentry_dsn`); read via `settings.effective_sentry_dsn`.
+- **Logs**: stdout from each container, captured by Docker's json-file driver.
 - **Secrets**: `.env` files (gitignored) for now. Migrate to `sops` if collaborators are added.
 - **CI/CD**: GitHub Actions builds Docker images, pushes to GitHub Container Registry. Deployment to OVH is `git pull && cd infra && docker compose -f docker-compose.yml pull && docker compose -f docker-compose.yml up -d` (run from `infra/`; `infra/.env` is a symlink to the repo-root `.env`) either manually or via a webhook. No Kubernetes.
 - **Backups and DR**: handled at infrastructure level via OVHcloud. Out of scope for this spec.
@@ -362,6 +361,5 @@ The compose file becomes the dev config; cloud deploys use Helm charts or Terraf
 
 8. **OurAirports integration**: radius-from-airfield pickers in the query builder. Requires loading OurAirports data and a typeahead search UI.
 9. **OpenSky aircraft metadata**: enrich callsign and registration from the OpenSky aircraft database. Requires periodic-refresh loader.
-10. **Operational stack**: Prometheus, Grafana, and Loki containers exist in docker-compose but are not yet wired to application metrics/logs. Alertmanager and runbooks still needed.
-11. **Scale up**: ingest whole-world data, validate performance under load, tune indexes and query plans.
+10. **Scale up**: ingest whole-world data, validate performance under load, tune indexes and query plans.
 12. **Future**: VFR/IFR classification (separate column or table), streaming ingest from adsb.lol live feed, public launch, CI with GitHub Actions, hardening.

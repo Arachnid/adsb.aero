@@ -61,9 +61,12 @@ services:
       - ../web/dist:/srv/web:ro
       - openaip_cache:/var/cache/nginx/openaip
     ports:
-      - "127.0.0.1:80:80"
+      - "80:80"
+      - "443:443"
     secrets:
       - openaip_api_key
+      - origin_cert
+      - origin_key
     depends_on:
       - api
 
@@ -88,6 +91,10 @@ secrets:
     file: ./secrets/sentry_dsn
   openaip_api_key:
     file: ./secrets/openaip_api_key
+  origin_cert:
+    file: ./secrets/origin.crt
+  origin_key:
+    file: ./secrets/origin.key
 
 networks:
   db:
