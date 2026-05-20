@@ -387,14 +387,7 @@ export function ResultsPanel({
                 textAlign: "center",
               }}
             >
-              {((): string => {
-                const earliestFlight =
-                  hasMore && flights && flights.length > 0
-                    ? (flights[flights.length - 1]?.start_ts ?? null)
-                    : null;
-                const fromLabel = fmtDateLabel(earliestFlight ?? windowFrom);
-                return `Fetched ${fromLabel} – ${queryEndDate}`;
-              })()}
+              {`Fetched ${fmtDateLabel(windowFrom)} – ${queryEndDate}`}
             </div>
           )}
           {hasMore && (
