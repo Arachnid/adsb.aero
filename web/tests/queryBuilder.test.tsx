@@ -263,12 +263,72 @@ describe("QueryBuilderBody", () => {
       const onChange = vi.fn();
       const group = makeGroup([{ id: "c1", kind: "callsign", pattern: "" }]);
       render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
-      fireEvent.change(screen.getByPlaceholderText("^BAW.*"), {
-        target: { value: "^DLH" },
+      fireEvent.change(screen.getByPlaceholderText("BAW"), {
+        target: { value: "DLH" },
       });
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
       const pred = updated.items[0];
-      expect(pred.kind === "callsign" && pred.pattern).toBe("^DLH");
+      expect(pred.kind === "callsign" && pred.pattern).toBe("DLH");
+    });
+  });
+
+  // ---- RegistrationCard ------------------------------------------------------
+
+  describe("RegistrationCard", () => {
+    it("renders with invalid style when prefix is empty", () => {
+      const group = makeGroup([{ id: "r1", kind: "registration", prefix: "" }]);
+      const { container } = render(<QueryBuilderBody {...bodyProps(group)} />);
+      expect(container.querySelector(".pred--invalid")).not.toBeNull();
+    });
+
+    it("calls onGroupChange with updated prefix on input change", () => {
+      const onChange = vi.fn();
+      const group = makeGroup([{ id: "r1", kind: "registration", prefix: "" }]);
+      render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
+      fireEvent.change(screen.getByPlaceholderText("G-"), {
+        target: { value: "N" },
+      });
+      const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+      const pred = updated.items[0];
+      expect(pred.kind === "registration" && pred.prefix).toBe("N");
+    });
+  });
+
+  // ---- Icao24Card -----------------------------------------------------------
+
+  describe("Icao24Card", () => {
+    it("renders with invalid style when addresses is empty", () => {
+      const group = makeGroup([{ id: "i1", kind: "icao24", addresses: [] }]);
+      const { container } = render(<QueryBuilderBody {...bodyProps(group)} />);
+      expect(container.querySelector(".pred--invalid")).not.toBeNull();
+    });
+
+    it("adds an address on Enter and normalises to lower-case", () => {
+      const onChange = vi.fn();
+      const group = makeGroup([{ id: "i1", kind: "icao24", addresses: [] }]);
+      render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
+      fireEvent.change(screen.getByPlaceholderText("a0b1c2"), {
+        target: { value: "AABBCC" },
+      });
+      fireEvent.keyDown(screen.getByPlaceholderText("a0b1c2"), {
+        key: "Enter",
+      });
+      const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+      const pred = updated.items[0];
+      expect(pred.kind === "icao24" && pred.addresses).toEqual(["aabbcc"]);
+    });
+
+    it("removes an address when × is clicked", () => {
+      const onChange = vi.fn();
+      const group = makeGroup([
+        { id: "i1", kind: "icao24", addresses: ["aabbcc", "ddeeff"] },
+      ]);
+      render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
+      const removeButtons = screen.getAllByLabelText("Remove");
+      fireEvent.click(removeButtons[0]);
+      const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+      const pred = updated.items[0];
+      expect(pred.kind === "icao24" && pred.addresses).toEqual(["ddeeff"]);
     });
   });
 

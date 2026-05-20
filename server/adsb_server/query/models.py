@@ -601,13 +601,33 @@ class EmitterCategory(BaseModel):
     )
 
 
-class CallsignMatches(BaseModel):
-    """Flights whose callsign matches a POSIX regular expression."""
+class CallsignPrefix(BaseModel):
+    """Flights whose callsign starts with the given prefix."""
 
-    callsign_matches: str = Field(
-        description="POSIX regular expression matched against the callsign (case-sensitive). "
+    callsign_prefix: str = Field(
+        description="Case-sensitive prefix matched against the callsign. "
         "Flights with a null callsign never match.",
-        examples=["^BAW"],
+        examples=["BAW"],
+    )
+
+
+class RegistrationPrefix(BaseModel):
+    """Flights whose aircraft registration starts with the given prefix."""
+
+    registration_prefix: str = Field(
+        description="Case-sensitive prefix matched against the aircraft registration. "
+        "Flights without a linked airframe record never match.",
+        examples=["G-"],
+    )
+
+
+class Icao24(BaseModel):
+    """Flights operated by one of the given ICAO 24-bit aircraft addresses."""
+
+    icao24: list[str] = Field(
+        description="List of ICAO 24-bit addresses (6 hex chars, lower-case) to match. "
+        "OR semantics.",
+        examples=[["a0b1c2"]],
     )
 
 
@@ -669,7 +689,9 @@ Predicate = (
     | EndpointWithin
     | IcaoType
     | EmitterCategory
-    | CallsignMatches
+    | CallsignPrefix
+    | RegistrationPrefix
+    | Icao24
     | Duration
     | AndPredicate
     | OrPredicate

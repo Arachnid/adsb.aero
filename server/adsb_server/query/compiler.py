@@ -8,17 +8,19 @@ from adsb_server.geometry.h3_cells import query_disk, query_polygon_cells
 from adsb_server.query.models import (
     AndPredicate,
     AnyGeometry,
-    CallsignMatches,
+    CallsignPrefix,
     CircleGeometry,
     Duration,
     EmitterCategory,
     EndpointWithin,
     GeoJSONMultiPolygon,
     GeoJSONPolygon,
+    Icao24,
     IcaoType,
     NotPredicate,
     OrPredicate,
     Predicate,
+    RegistrationPrefix,
     SpatioTemporalAltitudeValue,
     TrajectoryIntersects,
     TrajectoryWithin,
@@ -532,9 +534,17 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> CompiledPredicate:
         cats = _p(params, pred.emitter_category)
         return CompiledPredicate(f"emitter_category = ANY({cats}::varchar[])")
 
-    if isinstance(pred, CallsignMatches):
-        pattern = _p(params, pred.callsign_matches)
-        return CompiledPredicate(f"callsign ~ {pattern}")
+    if isinstance(pred, CallsignPrefix):
+        pattern = _p(params, pred.callsign_prefix + "%")
+        return CompiledPredicate(f"callsign LIKE {pattern}")
+
+    if isinstance(pred, RegistrationPrefix):
+        pattern = _p(params, pred.registration_prefix + "%")
+        return CompiledPredicate(f"af.registration LIKE {pattern}")
+
+    if isinstance(pred, Icao24):
+        addresses = _p(params, pred.icao24)
+        return CompiledPredicate(f"f.icao24 = ANY({addresses}::varchar[])")
 
     if isinstance(pred, Duration):
         dur = pred.duration

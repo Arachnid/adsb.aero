@@ -58,7 +58,17 @@ function compilePred(
 
     case "callsign":
       return pred.pattern.trim()
-        ? { callsign_matches: pred.pattern.trim() }
+        ? { callsign_prefix: pred.pattern.trim() }
+        : null;
+
+    case "registration":
+      return pred.prefix.trim()
+        ? { registration_prefix: pred.prefix.trim() }
+        : null;
+
+    case "icao24":
+      return pred.addresses.length > 0
+        ? { icao24: pred.addresses.map((a) => a.toLowerCase()) }
         : null;
 
     case "endpoint_within": {

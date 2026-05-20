@@ -43,17 +43,59 @@ describe("empty group", () => {
 
 describe("callsign", () => {
   it("compiles a pattern", () => {
-    const g = group({ id: "1", kind: "callsign", pattern: "^BAW" });
-    expect(compileGroup(g, null)).toEqual({ callsign_matches: "^BAW" });
+    const g = group({ id: "1", kind: "callsign", pattern: "BAW" });
+    expect(compileGroup(g, null)).toEqual({ callsign_prefix: "BAW" });
   });
 
   it("trims whitespace", () => {
     const g = group({ id: "1", kind: "callsign", pattern: "  EZY  " });
-    expect(compileGroup(g, null)).toEqual({ callsign_matches: "EZY" });
+    expect(compileGroup(g, null)).toEqual({ callsign_prefix: "EZY" });
   });
 
   it("returns null for blank pattern", () => {
     const g = group({ id: "1", kind: "callsign", pattern: "   " });
+    expect(compileGroup(g, null)).toBeNull();
+  });
+});
+
+// ---- registration ----------------------------------------------------------
+
+describe("registration", () => {
+  it("compiles a prefix", () => {
+    const g = group({ id: "1", kind: "registration", prefix: "G-" });
+    expect(compileGroup(g, null)).toEqual({ registration_prefix: "G-" });
+  });
+
+  it("trims whitespace", () => {
+    const g = group({ id: "1", kind: "registration", prefix: "  N  " });
+    expect(compileGroup(g, null)).toEqual({ registration_prefix: "N" });
+  });
+
+  it("returns null for blank prefix", () => {
+    const g = group({ id: "1", kind: "registration", prefix: "   " });
+    expect(compileGroup(g, null)).toBeNull();
+  });
+});
+
+// ---- icao24 ----------------------------------------------------------------
+
+describe("icao24", () => {
+  it("compiles a single address", () => {
+    const g = group({ id: "1", kind: "icao24", addresses: ["a0b1c2"] });
+    expect(compileGroup(g, null)).toEqual({ icao24: ["a0b1c2"] });
+  });
+
+  it("compiles multiple addresses", () => {
+    const g = group({
+      id: "1",
+      kind: "icao24",
+      addresses: ["AABBCC", "ddeeff"],
+    });
+    expect(compileGroup(g, null)).toEqual({ icao24: ["aabbcc", "ddeeff"] });
+  });
+
+  it("returns null for empty addresses", () => {
+    const g = group({ id: "1", kind: "icao24", addresses: [] });
     expect(compileGroup(g, null)).toBeNull();
   });
 });
@@ -537,38 +579,38 @@ describe("always_within", () => {
 
 describe("group combinators", () => {
   it("single valid pred is unwrapped (no and/or)", () => {
-    const g = group({ id: "1", kind: "callsign", pattern: "^BAW" });
+    const g = group({ id: "1", kind: "callsign", pattern: "BAW" });
     const result = compileGroup(g, null);
-    expect(result).toEqual({ callsign_matches: "^BAW" });
+    expect(result).toEqual({ callsign_prefix: "BAW" });
     expect(result).not.toHaveProperty("and");
   });
 
   it("two preds in all-mode → and", () => {
     const g = group(
-      { id: "1", kind: "callsign", pattern: "^BAW" },
+      { id: "1", kind: "callsign", pattern: "BAW" },
       { id: "2", kind: "aircraft", icaoTypes: ["B738"], emitters: [] },
     );
     expect(compileGroup(g, null)).toEqual({
-      and: [{ callsign_matches: "^BAW" }, { icao_type: ["B738"] }],
+      and: [{ callsign_prefix: "BAW" }, { icao_type: ["B738"] }],
     });
   });
 
   it("two preds in any-mode → or", () => {
     const g = anyGroup(
-      { id: "1", kind: "callsign", pattern: "^BAW" },
-      { id: "2", kind: "callsign", pattern: "^EZY" },
+      { id: "1", kind: "callsign", pattern: "BAW" },
+      { id: "2", kind: "callsign", pattern: "EZY" },
     );
     expect(compileGroup(g, null)).toEqual({
-      or: [{ callsign_matches: "^BAW" }, { callsign_matches: "^EZY" }],
+      or: [{ callsign_prefix: "BAW" }, { callsign_prefix: "EZY" }],
     });
   });
 
   it("null predicates are excluded from children", () => {
     const g = group(
       { id: "1", kind: "callsign", pattern: "" },
-      { id: "2", kind: "callsign", pattern: "^BAW" },
+      { id: "2", kind: "callsign", pattern: "BAW" },
     );
-    expect(compileGroup(g, null)).toEqual({ callsign_matches: "^BAW" });
+    expect(compileGroup(g, null)).toEqual({ callsign_prefix: "BAW" });
   });
 
   it("group with all-null predicates returns null", () => {
@@ -581,8 +623,8 @@ describe("group combinators", () => {
 
   it("nested groups: inner compiled and included", () => {
     const inner = anyGroup(
-      { id: "1", kind: "callsign", pattern: "^BAW" },
-      { id: "2", kind: "callsign", pattern: "^EZY" },
+      { id: "1", kind: "callsign", pattern: "BAW" },
+      { id: "2", kind: "callsign", pattern: "EZY" },
     );
     const outer = group(inner, {
       id: "3",
@@ -592,7 +634,7 @@ describe("group combinators", () => {
     });
     expect(compileGroup(outer, null)).toEqual({
       and: [
-        { or: [{ callsign_matches: "^BAW" }, { callsign_matches: "^EZY" }] },
+        { or: [{ callsign_prefix: "BAW" }, { callsign_prefix: "EZY" }] },
         { icao_type: ["B738"] },
       ],
     });

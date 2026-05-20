@@ -133,7 +133,9 @@ export interface components {
         | components["schemas"]["EndpointWithin"]
         | components["schemas"]["IcaoType"]
         | components["schemas"]["EmitterCategory"]
-        | components["schemas"]["CallsignMatches"]
+        | components["schemas"]["CallsignPrefix"]
+        | components["schemas"]["RegistrationPrefix"]
+        | components["schemas"]["Icao24"]
         | components["schemas"]["Duration"]
         | components["schemas"]["AndPredicate"]
         | components["schemas"]["OrPredicate"]
@@ -141,16 +143,16 @@ export interface components {
       )[];
     };
     /**
-     * CallsignMatches
-     * @description Flights whose callsign matches a POSIX regular expression.
+     * CallsignPrefix
+     * @description Flights whose callsign starts with the given prefix.
      */
-    CallsignMatches: {
+    CallsignPrefix: {
       /**
-       * Callsign Matches
-       * @description POSIX regular expression matched against the callsign (case-sensitive). Flights with a null callsign never match.
-       * @example ^BAW
+       * Callsign Prefix
+       * @description Case-sensitive prefix matched against the callsign. Flights with a null callsign never match.
+       * @example BAW
        */
-      callsign_matches: string;
+      callsign_prefix: string;
     };
     /**
      * CircleGeometry
@@ -709,6 +711,20 @@ export interface components {
       detail?: components["schemas"]["ValidationError"][];
     };
     /**
+     * Icao24
+     * @description Flights operated by one of the given ICAO 24-bit aircraft addresses.
+     */
+    Icao24: {
+      /**
+       * Icao24
+       * @description List of ICAO 24-bit addresses (6 hex chars, lower-case) to match. OR semantics.
+       * @example [
+       *       "a0b1c2"
+       *     ]
+       */
+      icao24: string[];
+    };
+    /**
      * IcaoType
      * @description Flights matching one or more ICAO aircraft type designators.
      */
@@ -762,7 +778,9 @@ export interface components {
         | components["schemas"]["EndpointWithin"]
         | components["schemas"]["IcaoType"]
         | components["schemas"]["EmitterCategory"]
-        | components["schemas"]["CallsignMatches"]
+        | components["schemas"]["CallsignPrefix"]
+        | components["schemas"]["RegistrationPrefix"]
+        | components["schemas"]["Icao24"]
         | components["schemas"]["Duration"]
         | components["schemas"]["AndPredicate"]
         | components["schemas"]["OrPredicate"]
@@ -783,7 +801,9 @@ export interface components {
         | components["schemas"]["EndpointWithin"]
         | components["schemas"]["IcaoType"]
         | components["schemas"]["EmitterCategory"]
-        | components["schemas"]["CallsignMatches"]
+        | components["schemas"]["CallsignPrefix"]
+        | components["schemas"]["RegistrationPrefix"]
+        | components["schemas"]["Icao24"]
         | components["schemas"]["Duration"]
         | components["schemas"]["AndPredicate"]
         | components["schemas"]["OrPredicate"]
@@ -811,7 +831,7 @@ export interface components {
       /**
        * Window Days
        * @description Size of the sliding search window in days, measured back from the current cursor position (or `end_date` on the first page). Combined with keyset pagination this lets callers walk back through history one window at a time by passing the previous response's `window_from` as the next `end_date`.
-       * @default 28
+       * @default 7
        */
       window_days: number;
       /**
@@ -824,7 +844,9 @@ export interface components {
         | components["schemas"]["EndpointWithin"]
         | components["schemas"]["IcaoType"]
         | components["schemas"]["EmitterCategory"]
-        | components["schemas"]["CallsignMatches"]
+        | components["schemas"]["CallsignPrefix"]
+        | components["schemas"]["RegistrationPrefix"]
+        | components["schemas"]["Icao24"]
         | components["schemas"]["Duration"]
         | components["schemas"]["AndPredicate"]
         | components["schemas"]["OrPredicate"]
@@ -869,6 +891,18 @@ export interface components {
        * @description The inclusive lower bound on `start_ts` that was actually applied. Reflects the sliding window floor (cursor position minus `window_days`, or `start_from` if that is later). Pass this as `end_date` on the next request to continue searching the preceding window.
        */
       window_from: string;
+    };
+    /**
+     * RegistrationPrefix
+     * @description Flights whose aircraft registration starts with the given prefix.
+     */
+    RegistrationPrefix: {
+      /**
+       * Registration Prefix
+       * @description Case-sensitive prefix matched against the aircraft registration. Flights without a linked airframe record never match.
+       * @example G-
+       */
+      registration_prefix: string;
     };
     /**
      * SpatioTemporalAltitudeValue

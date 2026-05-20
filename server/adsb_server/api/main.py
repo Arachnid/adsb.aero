@@ -475,7 +475,7 @@ async def query_flights(
                 "callsign_prefix": {
                     "summary": "British Airways flights (callsign prefix)",
                     "value": {
-                        "match": {"callsign_matches": "^BAW"},
+                        "match": {"callsign_prefix": "BAW"},
                         "limit": 50,
                         "include_path": False,
                     },

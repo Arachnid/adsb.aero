@@ -113,13 +113,23 @@ interface CallsignPred extends BasePred {
   kind: "callsign";
   pattern: string;
 }
+interface RegistrationPred extends BasePred {
+  kind: "registration";
+  prefix: string;
+}
+interface Icao24Pred extends BasePred {
+  kind: "icao24";
+  addresses: string[];
+}
 
 export type UIPredicate =
   | AircraftPred
   | EndpointWithinPred
   | IntersectsPred
   | AlwaysWithinPred
-  | CallsignPred;
+  | CallsignPred
+  | RegistrationPred
+  | Icao24Pred;
 
 export interface FilterGroup {
   id: string;
@@ -192,6 +202,8 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
   if (kind === "aircraft") {
     return { id, kind, icaoTypes: [], emitters: [] };
   }
+  if (kind === "registration") return { id, kind: "registration", prefix: "" };
+  if (kind === "icao24") return { id, kind: "icao24", addresses: [] };
   return { id, kind: "callsign", pattern: "" };
 }
 
@@ -423,6 +435,10 @@ export function isPredValid(pred: UIPredicate): boolean {
       return pred.icaoTypes.length > 0 || pred.emitters.length > 0;
     case "callsign":
       return pred.pattern.trim() !== "";
+    case "registration":
+      return pred.prefix.trim() !== "";
+    case "icao24":
+      return pred.addresses.length > 0;
     case "endpoint_within": {
       const hasTime =
         pred.startTimeFrom !== "" ||
@@ -1690,15 +1706,117 @@ function CallsignCard({
       invalid={!isPredValid(pred)}
     >
       <div>
-        <FieldLabel>Regex pattern</FieldLabel>
+        <FieldLabel>Prefix</FieldLabel>
         <input
           className="text-field mono"
-          placeholder="^BAW.*"
+          placeholder="BAW"
           value={pred.pattern}
           onChange={(e) => {
             onChange({ ...pred, pattern: e.target.value });
           }}
         />
+      </div>
+    </PredCard>
+  );
+}
+
+function RegistrationCard({
+  pred,
+  onChange,
+  onRemove,
+}: {
+  pred: RegistrationPred;
+  onChange: (p: RegistrationPred) => void;
+  onRemove: () => void;
+}): React.ReactElement {
+  return (
+    <PredCard
+      icon={<Text />}
+      name="Registration"
+      onRemove={onRemove}
+      invalid={!isPredValid(pred)}
+    >
+      <div>
+        <FieldLabel>Prefix</FieldLabel>
+        <input
+          className="text-field mono"
+          placeholder="G-"
+          value={pred.prefix}
+          onChange={(e) => {
+            onChange({ ...pred, prefix: e.target.value });
+          }}
+        />
+      </div>
+    </PredCard>
+  );
+}
+
+function Icao24Card({
+  pred,
+  onChange,
+  onRemove,
+}: {
+  pred: Icao24Pred;
+  onChange: (p: Icao24Pred) => void;
+  onRemove: () => void;
+}): React.ReactElement {
+  const [input, setInput] = useState("");
+
+  function addAddress(raw: string): void {
+    const v = raw.trim().toLowerCase();
+    if (!v || pred.addresses.includes(v)) {
+      setInput("");
+      return;
+    }
+    onChange({ ...pred, addresses: [...pred.addresses, v] });
+    setInput("");
+  }
+
+  return (
+    <PredCard
+      icon={<Text />}
+      name="ICAO Address"
+      onRemove={onRemove}
+      invalid={!isPredValid(pred)}
+    >
+      <div>
+        <FieldLabel>Addresses (hex)</FieldLabel>
+        <div className="chip-group">
+          {pred.addresses.map((addr) => (
+            <span key={addr} className="chip mono">
+              {addr}
+              <button
+                onClick={() => {
+                  onChange({
+                    ...pred,
+                    addresses: pred.addresses.filter((a) => a !== addr),
+                  });
+                }}
+                aria-label="Remove"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <input
+            className="text-field mono"
+            placeholder="a0b1c2"
+            value={input}
+            style={{ width: 80 }}
+            onChange={(e) => {
+              setInput(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") {
+                e.preventDefault();
+                addAddress(input);
+              }
+            }}
+            onBlur={() => {
+              if (input.trim()) addAddress(input);
+            }}
+          />
+        </div>
       </div>
     </PredCard>
   );
@@ -1736,7 +1854,19 @@ const FILTER_OPTS: {
     label: "Always",
     desc: "Always within area/altitude/time",
   },
-  { kind: "callsign", icon: <Text />, label: "Callsign", desc: "Regex match" },
+  { kind: "callsign", icon: <Text />, label: "Callsign", desc: "Prefix match" },
+  {
+    kind: "registration",
+    icon: <Text />,
+    label: "Registration",
+    desc: "Prefix match (e.g. G-)",
+  },
+  {
+    kind: "icao24",
+    icon: <Text />,
+    label: "ICAO Address",
+    desc: "Hex address",
+  },
   {
     kind: "group_all",
     icon: <Braces />,
@@ -1898,6 +2028,26 @@ function PredicateRenderer({
     case "callsign":
       return (
         <CallsignCard
+          pred={pred}
+          onChange={(p) => {
+            onChange(p);
+          }}
+          onRemove={onRemove}
+        />
+      );
+    case "registration":
+      return (
+        <RegistrationCard
+          pred={pred}
+          onChange={(p) => {
+            onChange(p);
+          }}
+          onRemove={onRemove}
+        />
+      );
+    case "icao24":
+      return (
+        <Icao24Card
           pred={pred}
           onChange={(p) => {
             onChange(p);

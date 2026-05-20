@@ -106,10 +106,10 @@ async def test_endpoint_within_end_geometry(api_client: AsyncClient) -> None:
     assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
 
 
-async def test_callsign_matches(api_client: AsyncClient) -> None:
+async def test_callsign_prefix(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={"callsign_matches": "^BAW"}),
+        json=qbody(match={"callsign_prefix": "BAW"}),
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -460,7 +460,7 @@ async def test_or_predicate(api_client: AsyncClient) -> None:
 async def test_not_predicate(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={"not": {"callsign_matches": "^BAW"}}),
+        json=qbody(match={"not": {"callsign_prefix": "BAW"}}),
     )
     assert resp.status_code == 200
     data = resp.json()

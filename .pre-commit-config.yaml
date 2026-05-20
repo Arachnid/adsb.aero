@@ -3,6 +3,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^server/tests/fixtures/traces/
       - id: end-of-file-fixer
         exclude: ^server/tests/fixtures/traces/
       - id: check-yaml

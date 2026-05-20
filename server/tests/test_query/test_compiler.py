@@ -13,14 +13,17 @@ import pytest
 from adsb_server.query.compiler import CompiledPredicate, compile_predicate
 from adsb_server.query.models import (
     AndPredicate,
+    CallsignPrefix,
     Duration,
     DurationValue,
     EmitterCategory,
     EndpointWithin,
     EndpointWithinValue,
+    Icao24,
     IcaoType,
     NotPredicate,
     OrPredicate,
+    RegistrationPrefix,
     SpatioTemporalAltitudeValue,
     TrajectoryIntersects,
     TrajectoryWithin,
@@ -974,6 +977,24 @@ class TestAttributePredicates:
         assert sql == "TRUE"
         assert params == []
 
+    def test_callsign_prefix_uses_like(self) -> None:
+        params: list = []
+        sql = compile_predicate(CallsignPrefix(callsign_prefix="BAW"), params)
+        assert "callsign LIKE" in sql
+        assert params == ["BAW%"]
+
+    def test_registration_prefix_uses_like(self) -> None:
+        params: list = []
+        sql = compile_predicate(RegistrationPrefix(registration_prefix="G-"), params)
+        assert "registration LIKE" in sql
+        assert params == ["G-%"]
+
+    def test_icao24_uses_any(self) -> None:
+        params: list = []
+        sql = compile_predicate(Icao24(icao24=["a0b1c2", "d3e4f5"]), params)
+        assert "f.icao24 = ANY" in sql
+        assert len(params) == 1
+
 
 # ---------------------------------------------------------------------------
 # Logical predicates
@@ -1011,7 +1032,7 @@ class TestLogicalPredicates:
 
     def test_not_wraps_with_not(self) -> None:
         params: list = []
-        pred = NotPredicate.model_validate({"not": {"callsign_matches": "^BAW"}})
+        pred = NotPredicate.model_validate({"not": {"callsign_prefix": "BAW"}})
         sql = compile_predicate(pred, params)
         assert sql.startswith("NOT (")
 
@@ -1021,7 +1042,7 @@ class TestLogicalPredicates:
             {
                 "and": [
                     {"or": [{"icao_type": ["B738"]}, {"icao_type": ["A320"]}]},
-                    {"callsign_matches": "^[A-Z]"},
+                    {"callsign_prefix": "BA"},
                 ]
             }
         )

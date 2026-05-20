@@ -135,7 +135,8 @@
                           ]
                         },
                         {
-                          "ends_within": {
+                          "endpoint_within": {
+                            "mode": "end",
                             "geometry": {
                               "type": "Circle",
                               "coordinates": [
@@ -198,7 +199,7 @@
                   "summary": "British Airways flights (callsign prefix)",
                   "value": {
                     "match": {
-                      "callsign_matches": "^BAW"
+                      "callsign_prefix": "BAW"
                     },
                     "limit": 50,
                     "include_path": false
@@ -220,7 +221,8 @@
                   "summary": "Departures from Charles de Gaulle in a time window",
                   "value": {
                     "match": {
-                      "starts_within": {
+                      "endpoint_within": {
+                        "mode": "start",
                         "geometry": {
                           "type": "Circle",
                           "coordinates": [
@@ -229,8 +231,8 @@
                           ],
                           "radius": 10000
                         },
-                        "time_from": "2026-03-30T06:00:00Z",
-                        "time_to": "2026-03-30T12:00:00Z"
+                        "start_time_from": "2026-03-30T06:00:00Z",
+                        "start_time_to": "2026-03-30T12:00:00Z"
                       }
                     },
                     "limit": 50,
@@ -326,7 +328,13 @@
                   "$ref": "#/components/schemas/EmitterCategory"
                 },
                 {
-                  "$ref": "#/components/schemas/CallsignMatches"
+                  "$ref": "#/components/schemas/CallsignPrefix"
+                },
+                {
+                  "$ref": "#/components/schemas/RegistrationPrefix"
+                },
+                {
+                  "$ref": "#/components/schemas/Icao24"
                 },
                 {
                   "$ref": "#/components/schemas/Duration"
@@ -354,23 +362,23 @@
         "title": "AndPredicate",
         "description": "All child predicates must be true (logical AND)."
       },
-      "CallsignMatches": {
+      "CallsignPrefix": {
         "properties": {
-          "callsign_matches": {
+          "callsign_prefix": {
             "type": "string",
-            "title": "Callsign Matches",
-            "description": "POSIX regular expression matched against the callsign (case-sensitive). Flights with a null callsign never match.",
+            "title": "Callsign Prefix",
+            "description": "Case-sensitive prefix matched against the callsign. Flights with a null callsign never match.",
             "examples": [
-              "^BAW"
+              "BAW"
             ]
           }
         },
         "type": "object",
         "required": [
-          "callsign_matches"
+          "callsign_prefix"
         ],
-        "title": "CallsignMatches",
-        "description": "Flights whose callsign matches a POSIX regular expression."
+        "title": "CallsignPrefix",
+        "description": "Flights whose callsign starts with the given prefix."
       },
       "CircleGeometry": {
         "properties": {
@@ -1461,6 +1469,29 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "Icao24": {
+        "properties": {
+          "icao24": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Icao24",
+            "description": "List of ICAO 24-bit addresses (6 hex chars, lower-case) to match. OR semantics.",
+            "examples": [
+              [
+                "a0b1c2"
+              ]
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "icao24"
+        ],
+        "title": "Icao24",
+        "description": "Flights operated by one of the given ICAO 24-bit aircraft addresses."
+      },
       "IcaoType": {
         "properties": {
           "icao_type": {
@@ -1548,7 +1579,13 @@
                 "$ref": "#/components/schemas/EmitterCategory"
               },
               {
-                "$ref": "#/components/schemas/CallsignMatches"
+                "$ref": "#/components/schemas/CallsignPrefix"
+              },
+              {
+                "$ref": "#/components/schemas/RegistrationPrefix"
+              },
+              {
+                "$ref": "#/components/schemas/Icao24"
               },
               {
                 "$ref": "#/components/schemas/Duration"
@@ -1595,7 +1632,13 @@
                   "$ref": "#/components/schemas/EmitterCategory"
                 },
                 {
-                  "$ref": "#/components/schemas/CallsignMatches"
+                  "$ref": "#/components/schemas/CallsignPrefix"
+                },
+                {
+                  "$ref": "#/components/schemas/RegistrationPrefix"
+                },
+                {
+                  "$ref": "#/components/schemas/Icao24"
                 },
                 {
                   "$ref": "#/components/schemas/Duration"
@@ -1652,11 +1695,11 @@
           },
           "window_days": {
             "type": "integer",
-            "maximum": 365.0,
+            "maximum": 7.0,
             "minimum": 1.0,
             "title": "Window Days",
             "description": "Size of the sliding search window in days, measured back from the current cursor position (or `end_date` on the first page). Combined with keyset pagination this lets callers walk back through history one window at a time by passing the previous response's `window_from` as the next `end_date`.",
-            "default": 28
+            "default": 7
           },
           "match": {
             "anyOf": [
@@ -1676,7 +1719,13 @@
                 "$ref": "#/components/schemas/EmitterCategory"
               },
               {
-                "$ref": "#/components/schemas/CallsignMatches"
+                "$ref": "#/components/schemas/CallsignPrefix"
+              },
+              {
+                "$ref": "#/components/schemas/RegistrationPrefix"
+              },
+              {
+                "$ref": "#/components/schemas/Icao24"
               },
               {
                 "$ref": "#/components/schemas/Duration"
@@ -1768,6 +1817,24 @@
         ],
         "title": "QueryResponse",
         "description": "Paginated list of flights matching a query."
+      },
+      "RegistrationPrefix": {
+        "properties": {
+          "registration_prefix": {
+            "type": "string",
+            "title": "Registration Prefix",
+            "description": "Case-sensitive prefix matched against the aircraft registration. Flights without a linked airframe record never match.",
+            "examples": [
+              "G-"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "registration_prefix"
+        ],
+        "title": "RegistrationPrefix",
+        "description": "Flights whose aircraft registration starts with the given prefix."
       },
       "SpatioTemporalAltitudeValue": {
         "properties": {
