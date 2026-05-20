@@ -14,6 +14,7 @@ interface TopbarProps {
   onToggleAirspace: () => void;
   theme: Theme;
   onTheme: () => void;
+  onAbout: () => void;
 }
 
 export function Topbar({
@@ -25,6 +26,7 @@ export function Topbar({
   onToggleAirspace,
   theme,
   onTheme,
+  onAbout,
 }: TopbarProps): React.ReactElement {
   const [copied, setCopied] = useState(false);
 
@@ -59,10 +61,9 @@ export function Topbar({
       }}
     >
       {/* Brand */}
-      <a
-        href="https://github.com/Arachnid/adsb.aero"
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        onClick={onAbout}
+        title="About adsb.aero"
         style={{
           display: "flex",
           alignItems: "center",
@@ -71,7 +72,10 @@ export function Topbar({
           fontSize: 13,
           letterSpacing: "-0.01em",
           color: "inherit",
-          textDecoration: "none",
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
         }}
       >
         <img
@@ -100,7 +104,7 @@ export function Topbar({
         >
           HISTORICAL
         </span>
-      </a>
+      </button>
 
       <Sep />
 

@@ -100,6 +100,7 @@ function openaipLimit(
 }
 import { anyViewportFilter, collectGeometries } from "./lib/queryGeometry";
 import { Topbar } from "./components/layout/Topbar";
+import { AboutDialog } from "./components/ui/AboutDialog";
 import { Sidebar } from "./components/layout/Sidebar";
 import {
   countPredicates,
@@ -207,6 +208,7 @@ export function App({
   const [airspaceOn, setAirspaceOn] = useState(true);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(true);
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const [rootGroup, setRootGroup] = useState<FilterGroup>(
     initialShare?.rootGroup ?? {
@@ -653,6 +655,15 @@ export function App({
         }}
         theme={theme}
         onTheme={handleTheme}
+        onAbout={() => {
+          setAboutOpen(true);
+        }}
+      />
+      <AboutDialog
+        open={aboutOpen}
+        onClose={() => {
+          setAboutOpen(false);
+        }}
       />
 
       <Sidebar
