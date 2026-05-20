@@ -14,8 +14,11 @@ import httpx
 
 if TYPE_CHECKING:
     import asyncpg
+    import xarray as xr
 
+from adsb_server.config import get_settings
 from adsb_server.ingestion.batch import run_batch
+from adsb_server.pressure.fetch import fetch_mslp_for_batch
 
 logger = logging.getLogger(__name__)
 
@@ -169,22 +172,19 @@ async def _download_asset(
     etag_path.write_text(updated_at)
 
 
-async def _download_and_process_release(
-    conn: asyncpg.Connection,
+async def _fetch_release_assets(
     client: httpx.AsyncClient,
     year: int,
     tag: str,
     batch_date: date,
     cache_dir: Path,
-    keep_traces: bool = False,
-    workers: int | None = None,
-) -> bool:
-    """Download all tar parts for a release and run the batch ingestion.
+) -> tuple[str, Path | None] | None:
+    """Fetch release metadata and download all assets.
 
-    Returns True on success, False on any failure. Downloaded files are kept
-    on failure so the next attempt can skip already-verified parts.
-    On failure the batch is marked 'errored' and the release URL is stored so
-    re-runs can detect if a new release has been published for the same date.
+    Returns:
+        None on HTTP error or asset download failure.
+        (release_api_url, None) when the release has no assets.
+        (release_api_url, dest_dir) when all assets are downloaded.
     """
     repo = _REPO_TEMPLATE.format(year=year)
     release_api_url = f"{_GITHUB_API_BASE}/repos/{repo}/releases/tags/{tag}"
@@ -195,13 +195,12 @@ async def _download_and_process_release(
         release_data: dict[str, object] = resp.json()
     except httpx.HTTPError:
         logger.error("Failed to fetch release %s", tag, exc_info=True)
-        await conn.execute("DELETE FROM ingest_batches WHERE batch_date = $1", batch_date)
-        return False
+        return None
 
     assets: list[dict[str, object]] = release_data.get("assets", [])  # type: ignore[assignment]
     if not assets:
         logger.warning("No assets found for release %s", tag)
-        return True
+        return release_api_url, None
 
     batch_date_str = batch_date.isoformat()
     dest_dir = cache_dir / batch_date_str
@@ -220,12 +219,55 @@ async def _download_and_process_release(
             await _download_asset(client, asset_url, dest, asset_size, asset_updated_at)
         except Exception:
             logger.error("Failed to download asset %s", asset_name, exc_info=True)
-            await conn.execute("DELETE FROM ingest_batches WHERE batch_date = $1", batch_date)
-            return False
+            return None
 
+    return release_api_url, dest_dir
+
+
+async def _prefetch_release(
+    client: httpx.AsyncClient,
+    year: int,
+    tag: str,
+    batch_date: date,
+    cache_dir: Path,
+    herbie_cache_dir: Path,
+) -> tuple[str, Path | None, xr.DataArray | None] | None:
+    """Download release assets and fetch MSLP data in parallel.
+
+    Returns:
+        None if the asset download fails (caller should clean up ingest_batches).
+        (release_api_url, None, mslp) when the release has no assets.
+        (release_api_url, dest_dir, mslp) on success; mslp may be None if the
+        MSLP fetch failed (run_batch will retry from settings cache dir).
+    """
+    asset_result, mslp = await asyncio.gather(
+        _fetch_release_assets(client, year, tag, batch_date, cache_dir),
+        fetch_mslp_for_batch(batch_date, herbie_cache_dir),
+    )
+    if asset_result is None:
+        return None
+    release_api_url, dest_dir = asset_result
+    return release_api_url, dest_dir, mslp
+
+
+async def _process_downloaded_release(
+    conn: asyncpg.Connection,
+    batch_date: date,
+    dest_dir: Path,
+    mslp: xr.DataArray | None,
+    release_api_url: str,
+    keep_traces: bool = False,
+    workers: int | None = None,
+) -> bool:
+    """Run batch ingestion on already-downloaded assets and update DB state.
+
+    Returns True on success, False on failure (batch marked 'errored').
+    Downloaded files are kept on failure to allow resuming on the next attempt.
+    """
+    batch_date_str = batch_date.isoformat()
     logger.info("Starting batch ingestion for %s", batch_date_str)
     try:
-        count = await run_batch(conn, dest_dir, batch_date, workers=workers)
+        count = await run_batch(conn, dest_dir, batch_date, workers=workers, mslp=mslp)
         logger.info("Batch %s: %d flights ingested", batch_date_str, count)
         if not keep_traces:
             shutil.rmtree(dest_dir, ignore_errors=True)
@@ -244,6 +286,56 @@ async def _download_and_process_release(
         )
         # Keep dest_dir so verified downloads can be reused on the next attempt.
         return False
+
+
+async def _process_date_queue(
+    conn: asyncpg.Connection,
+    client: httpx.AsyncClient,
+    year: int,
+    queue: list[tuple[date, str]],
+    cache_dir: Path,
+    herbie_cache_dir: Path,
+    keep_traces: bool,
+    workers: int | None,
+    *,
+    log_verb: str,
+) -> None:
+    """Pipeline-process a sorted list of (batch_date, tag) pairs oldest-first.
+
+    Prefetches each date's assets and MSLP data while the previous date is being
+    ingested so download I/O overlaps with CPU-bound trace processing.
+    """
+    if not queue:
+        return
+    prefetch_task = asyncio.create_task(
+        _prefetch_release(client, year, queue[0][1], queue[0][0], cache_dir, herbie_cache_dir)
+    )
+    for i, (batch_date, tag) in enumerate(queue):
+        logger.info("%s %s (tag=%s)", log_verb, batch_date, tag)
+        fetch_result = await prefetch_task
+        if i + 1 < len(queue):
+            next_date, next_tag = queue[i + 1]
+            prefetch_task = asyncio.create_task(
+                _prefetch_release(client, year, next_tag, next_date, cache_dir, herbie_cache_dir)
+            )
+        if fetch_result is None:
+            logger.error("Failed to fetch release for %s — skipping", batch_date)
+            await conn.execute("DELETE FROM ingest_batches WHERE batch_date = $1", batch_date)
+            continue
+        release_api_url, dest_dir, mslp = fetch_result
+        if dest_dir is None:
+            continue
+        ok = await _process_downloaded_release(
+            conn,
+            batch_date,
+            dest_dir,
+            mslp,
+            release_api_url,
+            keep_traces=keep_traces,
+            workers=workers,
+        )
+        if not ok:
+            logger.warning("Batch %s errored — continuing", batch_date)
 
 
 async def check_and_run_new_batches(
@@ -275,6 +367,7 @@ async def check_and_run_new_batches(
     # errored batches and the day after each (to fix in-progress flight data).
     errored_dates = await _get_errored_dates(conn)
     force_dates = errored_dates | {d + timedelta(days=1) for d in errored_dates}
+    herbie_cache_dir = get_settings().herbie_cache_dir
 
     async with httpx.AsyncClient(
         timeout=_HTTP_TIMEOUT,
@@ -330,21 +423,17 @@ async def check_and_run_new_batches(
                 else:
                     logger.debug("No release found for force date %s", fd)
 
-            for batch_date in sorted(to_process):
-                tag = to_process[batch_date]
-                logger.info("New batch found: %s (tag=%s)", batch_date, tag)
-                ok = await _download_and_process_release(
-                    conn,
-                    client,
-                    year,
-                    tag,
-                    batch_date,
-                    cache_dir,
-                    keep_traces=keep_traces,
-                    workers=workers,
-                )
-                if not ok:
-                    logger.warning("Batch %s errored — continuing to next batch", batch_date)
+            await _process_date_queue(
+                conn,
+                client,
+                year,
+                [(d, to_process[d]) for d in sorted(to_process)],
+                cache_dir,
+                herbie_cache_dir,
+                keep_traces,
+                workers,
+                log_verb="New batch found:",
+            )
 
             if stop:
                 break  # processed release found; all earlier years are also done
@@ -366,6 +455,8 @@ async def reimport_specific_dates(
     for d in sorted(dates):
         dates_by_year.setdefault(d.year, []).append(d)
 
+    herbie_cache_dir = get_settings().herbie_cache_dir
+
     async with httpx.AsyncClient(
         timeout=_HTTP_TIMEOUT,
         follow_redirects=True,
@@ -373,48 +464,20 @@ async def reimport_specific_dates(
     ) as client:
         for year, year_dates in sorted(dates_by_year.items()):
             releases_by_date = await _fetch_releases_by_date(client, year)
-            for batch_date in year_dates:
-                tag = releases_by_date.get(batch_date)
-                if tag is None:
-                    logger.warning("No release found for %s — skipping", batch_date)
-                    continue
-                logger.info("Reimporting %s (tag=%s)", batch_date, tag)
-                ok = await _download_and_process_release(
-                    conn,
-                    client,
-                    year,
-                    tag,
-                    batch_date,
-                    cache_dir,
-                    keep_traces=keep_traces,
-                    workers=workers,
-                )
-                if not ok:
-                    logger.warning("Reimport of %s failed", batch_date)
-
-
-async def scheduler_loop(
-    conn: asyncpg.Connection,
-    cache_dir: Path,
-    interval_seconds: int = 1800,
-    lookback_days: int = 0,
-    keep_traces: bool = False,
-    workers: int | None = None,
-) -> None:
-    """
-    Loop that calls check_and_run_new_batches every interval_seconds.
-    Handles errors gracefully, continuing to loop after failures.
-    """
-    logger.info("Scheduler loop started (interval=%ds)", interval_seconds)
-    while True:
-        try:
-            await check_and_run_new_batches(
+            processable = [(d, releases_by_date[d]) for d in year_dates if d in releases_by_date]
+            for d in year_dates:
+                if d not in releases_by_date:
+                    logger.warning("No release found for %s — skipping", d)
+            if not processable:
+                continue
+            await _process_date_queue(
                 conn,
+                client,
+                year,
+                processable,
                 cache_dir,
-                lookback_days=lookback_days,
-                keep_traces=keep_traces,
-                workers=workers,
+                herbie_cache_dir,
+                keep_traces,
+                workers,
+                log_verb="Reimporting",
             )
-        except Exception:
-            logger.error("Error in check_and_run_new_batches", exc_info=True)
-        await asyncio.sleep(interval_seconds)

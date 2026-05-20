@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import asyncpg
+    import xarray as xr
 
 
 _TTEXT_RE = re.compile(r"([^@,\[\]]+)@([^,\[\]]+)")
@@ -90,6 +91,7 @@ def _make_tarball_dir(tmp_path: Path, aircraft: list[str]) -> Path:
 async def test_run_batch_creates_flights(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """run_batch writes flights to the DB and returns the count."""
     from adsb_server.ingestion.batch import run_batch
@@ -97,7 +99,7 @@ async def test_run_batch_creates_flights(
     tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc", "ddeeff"])
     batch_date = date(2021, 1, 1)
 
-    count = await run_batch(conn, tarball_dir, batch_date)
+    count = await run_batch(conn, tarball_dir, batch_date, mslp=mslp)
     assert count == 2
 
     rows = await conn.fetch("SELECT icao24 FROM flights")
@@ -110,6 +112,7 @@ async def test_run_batch_creates_flights(
 async def test_run_batch_marks_ingest_batch_succeeded(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """run_batch records status='succeeded' in ingest_batches."""
     from adsb_server.ingestion.batch import run_batch
@@ -117,7 +120,7 @@ async def test_run_batch_marks_ingest_batch_succeeded(
     tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
     batch_date = date(2021, 2, 1)
 
-    await run_batch(conn, tarball_dir, batch_date)
+    await run_batch(conn, tarball_dir, batch_date, mslp=mslp)
 
     row = await conn.fetchrow(
         "SELECT status, flight_count FROM ingest_batches WHERE batch_date = $1",
@@ -132,6 +135,7 @@ async def test_run_batch_marks_ingest_batch_succeeded(
 async def test_run_batch_idempotent_upsert(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """Running the same batch twice does not duplicate flights."""
     from adsb_server.ingestion.batch import run_batch
@@ -139,8 +143,8 @@ async def test_run_batch_idempotent_upsert(
     tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
     batch_date = date(2021, 5, 1)
 
-    await run_batch(conn, tarball_dir, batch_date)
-    await run_batch(conn, tarball_dir, batch_date)
+    await run_batch(conn, tarball_dir, batch_date, mslp=mslp)
+    await run_batch(conn, tarball_dir, batch_date, mslp=mslp)
 
     rows = await conn.fetch(
         "SELECT icao24 FROM flights WHERE icao24 = 'aabbcc' AND ingest_batch_date = '2021-05-01'"
@@ -152,6 +156,7 @@ async def test_run_batch_idempotent_upsert(
 async def test_run_batch_in_progress_written_to_staging(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """
     In-progress flights are written to flight_staging and visible in the flights
@@ -177,7 +182,7 @@ async def test_run_batch_in_progress_written_to_staging(
         tf.addfile(ti, io.BytesIO(trace_bytes))
     (tmp_path / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    await run_batch(conn, tmp_path, batch_date)
+    await run_batch(conn, tmp_path, batch_date, mslp=mslp)
 
     # Flight is visible in the flights table with a simplified path
     row = await conn.fetchrow("SELECT icao24 FROM flights WHERE icao24 = 'ip0001'")
@@ -199,6 +204,7 @@ async def test_run_batch_in_progress_written_to_staging(
 async def test_run_batch_merges_in_progress_from_staging(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """
     In-progress points from the previous day's staging blob are merged with new
@@ -262,7 +268,7 @@ async def test_run_batch_merges_in_progress_from_staging(
         tf.addfile(ti, io.BytesIO(trace_bytes))
     (tmp_path / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    count = await run_batch(conn, tmp_path, batch_date_2)
+    count = await run_batch(conn, tmp_path, batch_date_2, mslp=mslp)
     assert count == 1
 
     row = await conn.fetchrow("SELECT icao24 FROM flights WHERE icao24 = 'cc1122'")
@@ -273,6 +279,7 @@ async def test_run_batch_merges_in_progress_from_staging(
 async def test_run_batch_serialization_roundtrip(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """Batch writes correct tgeompoint path and tint path_tracks to DB."""
     from adsb_server.ingestion.batch import run_batch
@@ -280,7 +287,7 @@ async def test_run_batch_serialization_roundtrip(
     tarball_dir = _make_tarball_dir(tmp_path, ["ff1122"])
     batch_date = date(2021, 8, 1)
 
-    count = await run_batch(conn, tarball_dir, batch_date)
+    count = await run_batch(conn, tarball_dir, batch_date, mslp=mslp)
     assert count == 1
 
     row = await conn.fetchrow(
@@ -298,6 +305,7 @@ async def test_run_batch_serialization_roundtrip(
 async def test_run_batch_two_batches_finalizes_in_progress(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """
     A flight left in-progress by batch 1 is in staging.
@@ -323,7 +331,7 @@ async def test_run_batch_two_batches_finalizes_in_progress(
         tf.addfile(ti, io.BytesIO(b))
     (tmp1 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    await run_batch(conn, tmp1, batch_date_1)
+    await run_batch(conn, tmp1, batch_date_1, mslp=mslp)
 
     # Should be in staging after batch 1
     staging_row = await conn.fetchrow(
@@ -348,7 +356,7 @@ async def test_run_batch_two_batches_finalizes_in_progress(
         tf.addfile(ti, io.BytesIO(b))
     (tmp2 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    count = await run_batch(conn, tmp2, batch_date_2)
+    count = await run_batch(conn, tmp2, batch_date_2, mslp=mslp)
     assert count >= 1
 
     # The merged flight exists in flights
@@ -360,6 +368,7 @@ async def test_run_batch_two_batches_finalizes_in_progress(
 async def test_squawk_reconstructed_from_staging(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """
     Squawk codes from batch 1 are preserved in the staging blob and reconstructed
@@ -385,7 +394,7 @@ async def test_squawk_reconstructed_from_staging(
         tf.addfile(ti, io.BytesIO(b))
     (tmp1 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    await run_batch(conn, tmp1, batch_date_1)
+    await run_batch(conn, tmp1, batch_date_1, mslp=mslp)
 
     # Staging should contain the squawk
     from adsb_server.ingestion.batch import _deserialize_staging
@@ -416,7 +425,7 @@ async def test_squawk_reconstructed_from_staging(
         tf.addfile(ti, io.BytesIO(b))
     (tmp2 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    await run_batch(conn, tmp2, batch_date_2)
+    await run_batch(conn, tmp2, batch_date_2, mslp=mslp)
 
     row = await conn.fetchrow(
         "SELECT asText(squawk_seq) AS squawk_seq_text FROM flights WHERE icao24 = 'cc0001'"
@@ -432,6 +441,7 @@ async def test_squawk_reconstructed_from_staging(
 async def test_orphaned_in_progress_finalized_by_next_batch(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """
     A flight left in staging by batch 1 that does NOT appear in batch 2's tarball
@@ -457,7 +467,7 @@ async def test_orphaned_in_progress_finalized_by_next_batch(
         tf.addfile(ti, io.BytesIO(b))
     (tmp1 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    await run_batch(conn, tmp1, batch_date_1)
+    await run_batch(conn, tmp1, batch_date_1, mslp=mslp)
 
     staging_row = await conn.fetchrow(
         "SELECT staging_data FROM flight_staging WHERE batch_date = $1", batch_date_1
@@ -470,7 +480,7 @@ async def test_orphaned_in_progress_finalized_by_next_batch(
     tmp2.mkdir()
     tarball_dir = _make_tarball_dir(tmp2, ["ee0002"])
 
-    await run_batch(conn, tarball_dir, batch_date_2)
+    await run_batch(conn, tarball_dir, batch_date_2, mslp=mslp)
 
     row = await conn.fetchrow("SELECT icao24 FROM flights WHERE icao24 = 'dd0001'")
     assert row is not None, "orphaned in-progress should be finalized by next batch"
@@ -480,6 +490,7 @@ async def test_orphaned_in_progress_finalized_by_next_batch(
 async def test_ground_points_preserved_across_batch_boundary(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """
     An in-progress flight with a ground phase stores the ground points in the staging
@@ -512,7 +523,7 @@ async def test_ground_points_preserved_across_batch_boundary(
         tf.addfile(ti, io.BytesIO(b))
     (tmp1 / "archive.tar.aa").write_bytes(raw_buf.getvalue())
 
-    await run_batch(conn, tmp1, batch_date_1)
+    await run_batch(conn, tmp1, batch_date_1, mslp=mslp)
 
     staging_row = await conn.fetchrow(
         "SELECT staging_data FROM flight_staging WHERE batch_date = $1", batch_date_1
@@ -534,7 +545,7 @@ async def test_ground_points_preserved_across_batch_boundary(
     tmp2.mkdir()
     tarball_dir = _make_tarball_dir(tmp2, ["gg0002"])
 
-    await run_batch(conn, tarball_dir, batch_date_2)
+    await run_batch(conn, tarball_dir, batch_date_2, mslp=mslp)
 
     rows = await conn.fetch("SELECT icao24 FROM flights WHERE icao24 = 'ff0001'")
     assert len(rows) == 1, "ground gap must not produce a spurious split"
@@ -544,6 +555,7 @@ async def test_ground_points_preserved_across_batch_boundary(
 async def test_stale_flights_deleted_on_rerun(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """
     Re-running a batch deletes flights from ingest_batch_date=N that were not
@@ -555,7 +567,7 @@ async def test_stale_flights_deleted_on_rerun(
 
     # First run: two aircraft
     tarball_dir = _make_tarball_dir(tmp_path, ["aa1111", "bb2222"])
-    await run_batch(conn, tarball_dir, batch_date)
+    await run_batch(conn, tarball_dir, batch_date, mslp=mslp)
 
     rows = await conn.fetch("SELECT icao24 FROM flights WHERE ingest_batch_date = $1", batch_date)
     assert {r["icao24"] for r in rows} == {"aa1111", "bb2222"}
@@ -564,7 +576,7 @@ async def test_stale_flights_deleted_on_rerun(
     tmp2 = tmp_path / "rerun"
     tmp2.mkdir()
     tarball_dir2 = _make_tarball_dir(tmp2, ["aa1111"])
-    await run_batch(conn, tarball_dir2, batch_date)
+    await run_batch(conn, tarball_dir2, batch_date, mslp=mslp)
 
     rows = await conn.fetch("SELECT icao24 FROM flights WHERE ingest_batch_date = $1", batch_date)
     assert {r["icao24"] for r in rows} == {"aa1111"}, "bb2222 should have been deleted as stale"
@@ -655,6 +667,7 @@ async def test_cleanup_old_herbie_cache(tmp_path: Path) -> None:
 async def test_run_batch_cleans_old_herbie_cache(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """After a successful run_batch, old herbie cache directories are deleted."""
     from adsb_server.ingestion.batch import run_batch
@@ -669,7 +682,12 @@ async def test_run_batch_cleans_old_herbie_cache(
     tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
 
     await run_batch(
-        conn, tarball_dir, batch_date, herbie_cache_dir=herbie_dir, keep_herbie_cache=False
+        conn,
+        tarball_dir,
+        batch_date,
+        mslp=mslp,
+        herbie_cache_dir=herbie_dir,
+        keep_herbie_cache=False,
     )
 
     assert not old_cache.exists(), "old herbie cache dir should be deleted after successful batch"
@@ -679,6 +697,7 @@ async def test_run_batch_cleans_old_herbie_cache(
 async def test_run_batch_keeps_herbie_cache_when_flag_set(
     conn: asyncpg.Connection,
     tmp_path: Path,
+    mslp: xr.DataArray,
 ) -> None:
     """When keep_herbie_cache=True, old herbie cache directories are preserved."""
     from adsb_server.ingestion.batch import run_batch
@@ -693,7 +712,12 @@ async def test_run_batch_keeps_herbie_cache_when_flag_set(
     tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
 
     await run_batch(
-        conn, tarball_dir, batch_date, herbie_cache_dir=herbie_dir, keep_herbie_cache=True
+        conn,
+        tarball_dir,
+        batch_date,
+        mslp=mslp,
+        herbie_cache_dir=herbie_dir,
+        keep_herbie_cache=True,
     )
 
     assert old_cache.exists(), "old herbie cache dir should be kept when flag is set"
@@ -969,20 +993,11 @@ async def test_run_batch_raises_when_mslp_unavailable(
     conn: asyncpg.Connection,
     tmp_path: Path,
 ) -> None:
-    """run_batch raises RuntimeError when fetch_mslp_for_batch returns None."""
-    from unittest.mock import AsyncMock, patch
-
+    """run_batch raises RuntimeError when mslp=None is passed."""
     from adsb_server.ingestion.batch import run_batch
 
     tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
     batch_date = date(2021, 4, 1)
 
-    with (
-        patch(
-            "adsb_server.ingestion.batch.fetch_mslp_for_batch",
-            new_callable=AsyncMock,
-            return_value=None,
-        ),
-        pytest.raises(RuntimeError, match="MSLP data unavailable"),
-    ):
-        await run_batch(conn, tarball_dir, batch_date)
+    with pytest.raises(RuntimeError, match="MSLP data unavailable"):
+        await run_batch(conn, tarball_dir, batch_date, mslp=None)

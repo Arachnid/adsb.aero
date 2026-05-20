@@ -27,6 +27,7 @@ import asyncpg
 
 from adsb_server.config import get_settings
 from adsb_server.ingestion.batch import run_batch
+from adsb_server.pressure.fetch import fetch_mslp_for_batch
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +70,12 @@ async def _main(args: argparse.Namespace) -> int:
     try:
         print(f"Processing batch for {args.batch_date} from {args.tarball_path}", file=sys.stderr)
 
+        mslp = await fetch_mslp_for_batch(args.batch_date, settings.herbie_cache_dir)
         count = await run_batch(
             conn=conn,
             tarball_path=args.tarball_path,
             batch_date=args.batch_date,
+            mslp=mslp,
             workers=args.workers,
         )
         print(f"Done: {count} flights finalized.", file=sys.stderr)

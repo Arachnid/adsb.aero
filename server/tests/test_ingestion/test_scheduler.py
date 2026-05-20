@@ -2,26 +2,24 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncGenerator  # noqa: TC003
 from datetime import date
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-import pytest
 
 from adsb_server.ingestion.scheduler import (
-    _download_and_process_release,
     _download_asset,
+    _fetch_release_assets,
     _find_tag_for_date,
     _get_errored_dates,
     _get_releases,
     _is_batch_already_processed,
+    _process_downloaded_release,
     _tag_to_date,
     check_and_run_new_batches,
     reimport_specific_dates,
-    scheduler_loop,
 )
 
 # ---------------------------------------------------------------------------
@@ -49,20 +47,23 @@ def _make_stream_client(content: bytes = b"data") -> MagicMock:
     return client
 
 
-def _dapr_collector(
+# Fake return value for _prefetch_release in scheduler loop tests.
+_FAKE_PREFETCH: tuple[str, Path, None] = ("https://api.github.com/fake", Path("/fake"), None)
+
+
+def _dpdr_collector(
     recorded: list[date],
     *,
     fail_on: date | None = None,
 ) -> object:
-    """Return a side_effect for _download_and_process_release that records batch_dates."""
+    """Return a side_effect for _process_downloaded_release that records batch_dates."""
 
     async def _impl(
         conn: object,
-        client: object,
-        year: int,
-        tag: str,
         batch_date: date,
-        cache_dir: object,
+        dest_dir: object,
+        mslp: object,
+        release_api_url: object,
         keep_traces: bool = False,
         workers: int | None = None,
     ) -> bool:
@@ -73,7 +74,7 @@ def _dapr_collector(
 
 
 # ---------------------------------------------------------------------------
-# _tag_to_date (existing tests retained here)
+# _tag_to_date
 # ---------------------------------------------------------------------------
 
 
@@ -304,7 +305,7 @@ class TestDownloadAsset:
 
 
 # ---------------------------------------------------------------------------
-# _download_and_process_release
+# _fetch_release_assets
 # ---------------------------------------------------------------------------
 
 _SAMPLE_TAG = "v2025.04.01-planes-readsb-prod-0"
@@ -330,80 +331,39 @@ def _release_client(release_data: dict) -> MagicMock:  # type: ignore[type-arg]
     return client
 
 
-class TestDownloadAndProcessRelease:
-    async def test_happy_path_downloads_and_runs_batch(self, tmp_path: Path) -> None:
+class TestFetchReleaseAssets:
+    async def test_returns_url_and_dest_dir_on_success(self, tmp_path: Path) -> None:
         client = _release_client(_SAMPLE_RELEASE)
-        conn = AsyncMock()
+        with patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()):
+            result = await _fetch_release_assets(client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path)
+        assert result is not None
+        url, dest_dir = result
+        assert _SAMPLE_TAG in url
+        assert dest_dir == tmp_path / "2025-04-01"
 
-        with (
-            patch(
-                "adsb_server.ingestion.scheduler._download_asset",
-                new=AsyncMock(),
-            ) as mock_dl,
-            patch(
-                "adsb_server.ingestion.scheduler.run_batch",
-                new=AsyncMock(return_value=3),
-            ) as mock_rb,
-        ):
-            result = await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
-            )
+    async def test_returns_url_with_none_dest_for_empty_assets(self, tmp_path: Path) -> None:
+        client = _release_client({"assets": []})
+        result = await _fetch_release_assets(client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path)
+        assert result is not None
+        _url, dest_dir = result
+        assert dest_dir is None
 
-        assert result is True
-        mock_dl.assert_called_once()
-        mock_rb.assert_called_once()
-
-    async def test_release_fetch_failure_returns_false(self, tmp_path: Path) -> None:
+    async def test_returns_none_on_http_error(self, tmp_path: Path) -> None:
         client = MagicMock()
         client.get = AsyncMock(side_effect=httpx.HTTPError("404"))
-        conn = AsyncMock()
+        result = await _fetch_release_assets(client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path)
+        assert result is None
 
-        with patch("adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()) as mock_rb:
-            result = await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
-            )
-
-        assert result is False
-        mock_rb.assert_not_called()
-        conn.execute.assert_called_once()
-        sql: str = conn.execute.call_args[0][0]
-        assert "DELETE" in sql.upper() and "ingest_batches" in sql
-
-    async def test_empty_assets_returns_true(self, tmp_path: Path) -> None:
-        client = _release_client({"assets": []})
-        conn = AsyncMock()
-
-        with patch("adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()) as mock_rb:
-            result = await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
-            )
-
-        assert result is True
-        mock_rb.assert_not_called()
-
-    async def test_asset_download_failure_returns_false(self, tmp_path: Path) -> None:
+    async def test_returns_none_on_download_failure(self, tmp_path: Path) -> None:
         client = _release_client(_SAMPLE_RELEASE)
-        conn = AsyncMock()
-
-        with (
-            patch(
-                "adsb_server.ingestion.scheduler._download_asset",
-                new=AsyncMock(side_effect=OSError("disk full")),
-            ) as mock_dl,
-            patch("adsb_server.ingestion.scheduler.run_batch", new=AsyncMock()) as mock_rb,
+        with patch(
+            "adsb_server.ingestion.scheduler._download_asset",
+            new=AsyncMock(side_effect=OSError("disk full")),
         ):
-            result = await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
-            )
+            result = await _fetch_release_assets(client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path)
+        assert result is None
 
-        assert result is False
-        mock_dl.assert_called_once()
-        mock_rb.assert_not_called()
-        conn.execute.assert_called_once()
-        sql: str = conn.execute.call_args[0][0]
-        assert "DELETE" in sql.upper() and "ingest_batches" in sql
-
-    async def test_asset_without_url_is_skipped(self, tmp_path: Path) -> None:
+    async def test_skips_asset_without_url(self, tmp_path: Path) -> None:
         release_data = {
             "assets": [
                 {"name": "bad.tar.aa", "browser_download_url": "", "size": 0},
@@ -415,138 +375,109 @@ class TestDownloadAndProcessRelease:
             ]
         }
         client = _release_client(release_data)
-        conn = AsyncMock()
-
-        with (
-            patch(
-                "adsb_server.ingestion.scheduler._download_asset",
-                new=AsyncMock(),
-            ) as mock_dl,
-            patch(
-                "adsb_server.ingestion.scheduler.run_batch",
-                new=AsyncMock(return_value=1),
-            ),
-        ):
-            await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
-            )
-
-        # Only the asset with a real URL should be downloaded
+        with patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()) as mock_dl:
+            await _fetch_release_assets(client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path)
         assert mock_dl.call_count == 1
-        call_url = mock_dl.call_args[0][1]
-        assert "good.tar.aa" in call_url
+        assert "good.tar.aa" in mock_dl.call_args[0][1]
 
-    async def test_keep_traces_preserves_dir_after_successful_ingest(self, tmp_path: Path) -> None:
+
+# ---------------------------------------------------------------------------
+# _process_downloaded_release
+# ---------------------------------------------------------------------------
+
+
+class TestProcessDownloadedRelease:
+    async def test_happy_path_runs_batch_and_returns_true(self, tmp_path: Path) -> None:
         dest_dir = tmp_path / "2025-04-01"
         dest_dir.mkdir()
-        (dest_dir / "2025-04-01.tar.aa").write_bytes(b"x" * 10)
-
-        client = _release_client(_SAMPLE_RELEASE)
         conn = AsyncMock()
-
-        with (
-            patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()),
-            patch(
-                "adsb_server.ingestion.scheduler.run_batch",
-                new=AsyncMock(return_value=3),
-            ),
-        ):
-            await _download_and_process_release(
-                conn,
-                client,
-                2025,
-                _SAMPLE_TAG,
-                _SAMPLE_DATE,
-                tmp_path,
-                keep_traces=True,
+        with patch(
+            "adsb_server.ingestion.scheduler.run_batch", new=AsyncMock(return_value=3)
+        ) as mock_rb:
+            result = await _process_downloaded_release(
+                conn, _SAMPLE_DATE, dest_dir, None, "https://example.com/release"
             )
+        assert result is True
+        mock_rb.assert_called_once()
 
-        assert dest_dir.exists()
-
-    async def test_deletes_download_dir_after_successful_ingest(self, tmp_path: Path) -> None:
+    async def test_deletes_dest_dir_on_success(self, tmp_path: Path) -> None:
         dest_dir = tmp_path / "2025-04-01"
         dest_dir.mkdir()
-        (dest_dir / "2025-04-01.tar.aa").write_bytes(b"x" * 10)
-
-        client = _release_client(_SAMPLE_RELEASE)
         conn = AsyncMock()
-
-        with (
-            patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()),
-            patch(
-                "adsb_server.ingestion.scheduler.run_batch",
-                new=AsyncMock(return_value=3),
-            ),
-        ):
-            await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
+        with patch("adsb_server.ingestion.scheduler.run_batch", new=AsyncMock(return_value=3)):
+            await _process_downloaded_release(
+                conn, _SAMPLE_DATE, dest_dir, None, "https://example.com/release"
             )
-
         assert not dest_dir.exists()
 
-    async def test_keeps_download_dir_after_failed_ingest(self, tmp_path: Path) -> None:
+    async def test_keep_traces_preserves_dest_dir(self, tmp_path: Path) -> None:
         dest_dir = tmp_path / "2025-04-01"
         dest_dir.mkdir()
-        (dest_dir / "2025-04-01.tar.aa").write_bytes(b"x" * 10)
-
-        client = _release_client(_SAMPLE_RELEASE)
         conn = AsyncMock()
-
-        with (
-            patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()),
-            patch(
-                "adsb_server.ingestion.scheduler.run_batch",
-                new=AsyncMock(side_effect=RuntimeError("db error")),
-            ),
-        ):
-            await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
+        with patch("adsb_server.ingestion.scheduler.run_batch", new=AsyncMock(return_value=3)):
+            await _process_downloaded_release(
+                conn,
+                _SAMPLE_DATE,
+                dest_dir,
+                None,
+                "https://example.com/release",
+                keep_traces=True,
             )
-
         assert dest_dir.exists()
 
-    async def test_run_batch_failure_marks_batch_errored(self, tmp_path: Path) -> None:
-        client = _release_client(_SAMPLE_RELEASE)
+    async def test_keeps_dest_dir_on_run_batch_failure(self, tmp_path: Path) -> None:
+        dest_dir = tmp_path / "2025-04-01"
+        dest_dir.mkdir()
         conn = AsyncMock()
-
-        with (
-            patch(
-                "adsb_server.ingestion.scheduler._download_asset",
-                new=AsyncMock(),
-            ),
-            patch(
-                "adsb_server.ingestion.scheduler.run_batch",
-                new=AsyncMock(side_effect=RuntimeError("db error")),
-            ),
+        with patch(
+            "adsb_server.ingestion.scheduler.run_batch",
+            new=AsyncMock(side_effect=RuntimeError("db error")),
         ):
-            await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
+            await _process_downloaded_release(
+                conn, _SAMPLE_DATE, dest_dir, None, "https://example.com/release"
             )
+        assert dest_dir.exists()
 
+    async def test_run_batch_failure_marks_errored(self, tmp_path: Path) -> None:
+        dest_dir = tmp_path / "2025-04-01"
+        dest_dir.mkdir()
+        conn = AsyncMock()
+        with patch(
+            "adsb_server.ingestion.scheduler.run_batch",
+            new=AsyncMock(side_effect=RuntimeError("db error")),
+        ):
+            await _process_downloaded_release(
+                conn, _SAMPLE_DATE, dest_dir, None, "https://example.com/release"
+            )
         conn.execute.assert_called_once()
         sql: str = conn.execute.call_args[0][0]
         assert "errored" in sql.lower()
 
     async def test_run_batch_failure_stores_release_url(self, tmp_path: Path) -> None:
-        client = _release_client(_SAMPLE_RELEASE)
+        dest_dir = tmp_path / "2025-04-01"
+        dest_dir.mkdir()
+        release_url = "https://api.github.com/repos/adsblol/releases/tags/v2025.04.01"
         conn = AsyncMock()
-
-        with (
-            patch("adsb_server.ingestion.scheduler._download_asset", new=AsyncMock()),
-            patch(
-                "adsb_server.ingestion.scheduler.run_batch",
-                new=AsyncMock(side_effect=RuntimeError("ingestion error")),
-            ),
+        with patch(
+            "adsb_server.ingestion.scheduler.run_batch",
+            new=AsyncMock(side_effect=RuntimeError("err")),
         ):
-            await _download_and_process_release(
-                conn, client, 2025, _SAMPLE_TAG, _SAMPLE_DATE, tmp_path
-            )
+            await _process_downloaded_release(conn, _SAMPLE_DATE, dest_dir, None, release_url)
+        stored_url: str = conn.execute.call_args[0][3]
+        assert stored_url == release_url
 
-        call_args = conn.execute.call_args[0]
-        # Third positional arg is the release_url
-        stored_url: str = call_args[3]
-        assert "2025" in stored_url
-        assert _SAMPLE_TAG in stored_url
+    async def test_passes_mslp_to_run_batch(self, tmp_path: Path) -> None:
+        dest_dir = tmp_path / "2025-04-01"
+        dest_dir.mkdir()
+        conn = AsyncMock()
+        fake_mslp = MagicMock()
+        with patch(
+            "adsb_server.ingestion.scheduler.run_batch", new=AsyncMock(return_value=0)
+        ) as mock_rb:
+            await _process_downloaded_release(
+                conn, _SAMPLE_DATE, dest_dir, fake_mslp, "https://example.com"
+            )
+        assert mock_rb.call_args[1].get("mslp") is fake_mslp
 
 
 # ---------------------------------------------------------------------------
@@ -585,13 +516,21 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=set()),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                new=AsyncMock(),
-            ) as mock_dapr,
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._prefetch_release",
+                new=AsyncMock(return_value=_FAKE_PREFETCH),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                new=AsyncMock(return_value=True),
+            ) as mock_pdr,
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
 
-        assert mock_dapr.call_count >= 1
+        assert mock_pdr.call_count >= 1
 
     async def test_skips_already_processed_release(self, tmp_path: Path) -> None:
         releases = [{"tag_name": _SAMPLE_TAG}]
@@ -614,13 +553,17 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=set()),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                new=AsyncMock(),
-            ) as mock_dapr,
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                new=AsyncMock(return_value=True),
+            ) as mock_pdr,
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
 
-        mock_dapr.assert_not_called()
+        mock_pdr.assert_not_called()
 
     async def test_skips_releases_with_invalid_tags(self, tmp_path: Path) -> None:
         releases = [{"tag_name": "not-a-valid-tag"}, {"tag_name": ""}]
@@ -639,13 +582,17 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=set()),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                new=AsyncMock(),
-            ) as mock_dapr,
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                new=AsyncMock(return_value=True),
+            ) as mock_pdr,
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
 
-        mock_dapr.assert_not_called()
+        mock_pdr.assert_not_called()
 
     async def test_fetches_second_page_when_first_page_is_full(self, tmp_path: Path) -> None:
         """A release that only appears on page 2 is discovered and processed."""
@@ -678,14 +625,22 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=set()),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                new=AsyncMock(),
-            ) as mock_dapr,
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._prefetch_release",
+                new=AsyncMock(return_value=_FAKE_PREFETCH),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                new=AsyncMock(return_value=True),
+            ) as mock_pdr,
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
 
         assert any(p == 2 for p in pages_fetched), "page 2 was never fetched"
-        assert mock_dapr.call_count >= 1, "release on page 2 was not processed"
+        assert mock_pdr.call_count >= 1, "release on page 2 was not processed"
 
     async def test_stops_fetching_pages_on_processed_batch(self, tmp_path: Path) -> None:
         """Once a processed batch is found on page 2, page 3 is never requested."""
@@ -720,15 +675,19 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=set()),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                new=AsyncMock(),
-            ) as mock_dapr,
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                new=AsyncMock(return_value=True),
+            ) as mock_pdr,
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
 
         assert any(p == 2 for p in pages_fetched), "page 2 was never fetched"
         assert not any(p >= 3 for p in pages_fetched), "page 3 should not have been fetched"
-        mock_dapr.assert_not_called()
+        mock_pdr.assert_not_called()
 
     async def test_processes_in_ascending_date_order(self, tmp_path: Path) -> None:
         """Unprocessed releases are ingested oldest-first regardless of API sort order."""
@@ -764,8 +723,16 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=set()),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=_dapr_collector(processed_dates),
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._prefetch_release",
+                new=AsyncMock(return_value=_FAKE_PREFETCH),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                side_effect=_dpdr_collector(processed_dates),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -805,8 +772,16 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=set()),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=_dapr_collector(processed_dates, fail_on=date(2025, 4, 2)),
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._prefetch_release",
+                new=AsyncMock(return_value=_FAKE_PREFETCH),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                side_effect=_dpdr_collector(processed_dates, fail_on=date(2025, 4, 2)),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -834,9 +809,13 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=set()),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                new=AsyncMock(),
-            ) as mock_dapr,
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                new=AsyncMock(return_value=True),
+            ) as mock_pdr,
             patch("adsb_server.ingestion.scheduler.date") as mock_date,
         ):
             # today=Apr 10, lookback=7 → cutoff=Apr 3 → Apr 1 is before cutoff
@@ -844,7 +823,7 @@ class TestCheckAndRunNewBatches:
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             await check_and_run_new_batches(AsyncMock(), tmp_path, lookback_days=7)
 
-        mock_dapr.assert_not_called()
+        mock_pdr.assert_not_called()
 
     async def test_checks_two_years(self, tmp_path: Path) -> None:
         get_releases_mock = AsyncMock(return_value=[])
@@ -861,6 +840,10 @@ class TestCheckAndRunNewBatches:
             patch(
                 "adsb_server.ingestion.scheduler._get_errored_dates",
                 new=AsyncMock(return_value=set()),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -898,8 +881,12 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value=set()),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                new=AsyncMock(),
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                new=AsyncMock(return_value=True),
             ),
             patch("adsb_server.ingestion.scheduler.date") as mock_date,
         ):
@@ -952,8 +939,16 @@ class TestCheckAndRunNewBatches:
                 new=AsyncMock(return_value={date(2025, 4, 2)}),
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=_dapr_collector(processed_dates),
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._prefetch_release",
+                new=AsyncMock(return_value=_FAKE_PREFETCH),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                side_effect=_dpdr_collector(processed_dates),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -1051,8 +1046,16 @@ class TestReimportSpecificDates:
                 side_effect=mock_fetch,
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=_dapr_collector(processed),
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._prefetch_release",
+                new=AsyncMock(return_value=_FAKE_PREFETCH),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                side_effect=_dpdr_collector(processed),
             ),
         ):
             await reimport_specific_dates(
@@ -1077,16 +1080,24 @@ class TestReimportSpecificDates:
                 side_effect=mock_fetch,
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._prefetch_release",
+                new=AsyncMock(return_value=_FAKE_PREFETCH),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
                 new=AsyncMock(return_value=True),
-            ) as mock_dapr,
+            ) as mock_pdr,
         ):
             await reimport_specific_dates(
                 AsyncMock(), [date(2025, 4, 1), date(2025, 4, 2)], tmp_path
             )
 
-        assert mock_dapr.call_count == 1
-        called_date = mock_dapr.call_args[0][4]
+        assert mock_pdr.call_count == 1
+        called_date: date = mock_pdr.call_args[0][1]
         assert called_date == date(2025, 4, 1)
 
 
@@ -1145,8 +1156,16 @@ class TestCheckAndRunNewBatchesForceGap:
                 side_effect=mock_find,
             ),
             patch(
-                "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=_dapr_collector(processed_dates),
+                "adsb_server.ingestion.scheduler.get_settings",
+                return_value=MagicMock(herbie_cache_dir=tmp_path),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._prefetch_release",
+                new=AsyncMock(return_value=_FAKE_PREFETCH),
+            ),
+            patch(
+                "adsb_server.ingestion.scheduler._process_downloaded_release",
+                side_effect=_dpdr_collector(processed_dates),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -1180,76 +1199,3 @@ class TestGetErroredDates:
         result = await _get_errored_dates(conn)
 
         assert result == set()
-
-
-# ---------------------------------------------------------------------------
-# scheduler_loop
-# ---------------------------------------------------------------------------
-
-
-class TestSchedulerLoop:
-    async def test_calls_check_then_sleeps(self, tmp_path: Path) -> None:
-        check_count = 0
-
-        async def mock_check(
-            conn: object,
-            cache_dir: object,
-            lookback_days: int = 0,
-            keep_traces: bool = False,
-            workers: int | None = None,
-        ) -> None:
-            nonlocal check_count
-            check_count += 1
-
-        async def mock_sleep(seconds: float) -> None:
-            raise asyncio.CancelledError
-
-        conn = AsyncMock()
-        with (
-            patch(
-                "adsb_server.ingestion.scheduler.check_and_run_new_batches",
-                side_effect=mock_check,
-            ),
-            patch("asyncio.sleep", side_effect=mock_sleep),
-            pytest.raises(asyncio.CancelledError),
-        ):
-            await scheduler_loop(conn, tmp_path, interval_seconds=60)
-
-        assert check_count == 1
-
-    async def test_continues_after_check_exception(self, tmp_path: Path) -> None:
-        """Exception from check_and_run_new_batches is caught; loop continues."""
-        check_count = 0
-        sleep_count = 0
-
-        async def mock_check(
-            conn: object,
-            cache_dir: object,
-            lookback_days: int = 0,
-            keep_traces: bool = False,
-            workers: int | None = None,
-        ) -> None:
-            nonlocal check_count
-            check_count += 1
-            if check_count == 1:
-                raise RuntimeError("transient network failure")
-
-        async def mock_sleep(seconds: float) -> None:
-            nonlocal sleep_count
-            sleep_count += 1
-            if sleep_count >= 2:
-                raise asyncio.CancelledError
-
-        conn = AsyncMock()
-        with (
-            patch(
-                "adsb_server.ingestion.scheduler.check_and_run_new_batches",
-                side_effect=mock_check,
-            ),
-            patch("asyncio.sleep", side_effect=mock_sleep),
-            pytest.raises(asyncio.CancelledError),
-        ):
-            await scheduler_loop(conn, tmp_path, interval_seconds=60)
-
-        assert check_count == 2
-        assert sleep_count == 2

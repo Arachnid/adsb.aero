@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     import asyncpg
+    import xarray as xr
 
 from adsb_server.config import get_settings
 from adsb_server.geometry.h3_cells import path_h3_cells
@@ -31,7 +32,6 @@ from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, T
 from adsb_server.ingestion.parser import parse_trace_bytes, stream_tarball_raw
 from adsb_server.ingestion.splitter import finalize_segment, split_flights
 from adsb_server.pressure.correct import build_correction_interpolator, compute_correction_series
-from adsb_server.pressure.fetch import fetch_mslp_for_batch
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +297,8 @@ async def run_batch(
     conn: asyncpg.Connection,
     tarball_path: Path,
     batch_date: date,
+    *,
+    mslp: xr.DataArray | None,
     workers: int | None = None,
     herbie_cache_dir: Path | None = None,
     keep_herbie_cache: bool | None = None,
@@ -370,7 +372,7 @@ async def run_batch(
         keep_herbie_cache if keep_herbie_cache is not None else settings.herbie_keep_cache
     )
 
-    mslp = await fetch_mslp_for_batch(batch_date, effective_cache_dir)
+    mslp = mslp
     if mslp is None:
         raise RuntimeError(
             f"MSLP data unavailable for {batch_date} — cannot compute altitude corrections"

@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, patch
-
 import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
 
 from adsb_server.pressure.correct import _ISA_HPA
 
@@ -29,12 +23,7 @@ def _make_test_mslp() -> xr.DataArray:
     )
 
 
-@pytest.fixture(autouse=True)
-def mock_fetch_mslp() -> Generator[None]:
-    """Patch fetch_mslp_for_batch so batch tests don't hit the network or /data."""
-    with patch(
-        "adsb_server.ingestion.batch.fetch_mslp_for_batch",
-        new_callable=AsyncMock,
-        return_value=_make_test_mslp(),
-    ):
-        yield
+@pytest.fixture
+def mslp() -> xr.DataArray:
+    """ISA-standard MSLP DataArray for use as prefetched_mslp in batch tests."""
+    return _make_test_mslp()
