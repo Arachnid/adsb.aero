@@ -1,4 +1,5 @@
 import {
+  AttributionControl,
   GeoJSONSource,
   Map as MaplibreMap,
   MapMouseEvent,
@@ -571,8 +572,16 @@ export function MapView({
       style: STYLES[basemap],
       center: [0, 30],
       zoom: 2,
-      attributionControl: { compact: true },
+      attributionControl: false,
     });
+    map.addControl(new AttributionControl({ compact: true }), "bottom-right");
+    // MapLibre's _updateCompact() sets `open` + `maplibregl-compact-show` on init
+    // even with compact:true, only collapsing on the first drag event. Close it now.
+    const attribEl = map
+      .getContainer()
+      .querySelector(".maplibregl-ctrl-attrib");
+    attribEl?.removeAttribute("open");
+    attribEl?.classList.remove("maplibregl-compact-show");
 
     // If a shared view was decoded from the URL, fly there immediately.
     // Otherwise try geolocation; skip it if the user pans first.

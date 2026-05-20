@@ -87,6 +87,14 @@ textarea {
   padding: 2px 6px !important;
   border: 1px solid var(--line-1) !important;
 }
+/* Expanded attribution draws over the legend with a translucent background */
+.maplibregl-ctrl-attrib.maplibregl-compact-show {
+  position: relative !important;
+  z-index: 10 !important;
+  background: color-mix(in oklab, var(--bg-1) 92%, transparent) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
 .maplibregl-ctrl-attrib a {
   color: var(--accent) !important;
 }

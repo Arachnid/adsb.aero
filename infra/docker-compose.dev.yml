@@ -28,6 +28,8 @@ services:
   nginx:
     # dev.conf.template shadows prod.conf.template at the same destination path;
     # Docker uses the last mount for duplicate destinations.
+    ports:
+      - "0.0.0.0:80:80"
     volumes:
       - ./nginx/dev.conf.template:/etc/nginx/templates/default.conf.template:ro
     depends_on:

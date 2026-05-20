@@ -1,3 +1,5 @@
+import { useMobile } from "../../hooks/useMobile";
+
 interface SidebarProps {
   side: "left" | "right";
   collapsed: boolean;
@@ -18,12 +20,13 @@ export function Sidebar({
   children,
 }: SidebarProps): React.ReactElement {
   const isLeft = side === "left";
+  const mobile = useMobile();
 
   return (
     <div
       style={{
         position: "absolute",
-        top: 12,
+        top: mobile ? 64 : 12,
         bottom: 12,
         width: 340,
         [isLeft ? "left" : "right"]: 12,

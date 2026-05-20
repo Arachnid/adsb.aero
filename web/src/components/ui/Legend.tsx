@@ -1,17 +1,19 @@
 import type { ColorMode } from "../map/MapView";
+import { useMobile } from "../../hooks/useMobile";
 
 interface LegendProps {
   colorMode: ColorMode;
 }
 
 export function Legend({ colorMode }: LegendProps): React.ReactElement {
+  const mobile = useMobile();
   return (
     <div
       style={{
         position: "absolute",
         bottom: 12,
-        right: 364,
-        zIndex: 9,
+        ...(mobile ? { left: 12 } : { right: 364 }),
+        zIndex: 8,
         background: "color-mix(in oklab, var(--bg-1) 92%, transparent)",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",

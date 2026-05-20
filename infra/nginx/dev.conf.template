@@ -21,9 +21,9 @@ server {
     gzip_vary on;
     gzip_min_length 256;
 
-    # OpenAIP airspaces API proxy (dev — allows localhost referers).
+    # OpenAIP airspaces API proxy (dev — allows localhost and LAN referers).
     location = /api/airspaces {
-        valid_referers blocked server_names "~localhost" "~adsb\.aero";
+        valid_referers blocked server_names "~localhost" "~192\.168\." "~10\." "~172\." "~adsb\.aero";
         if ($invalid_referer) { return 403; }
 
         proxy_cache            openaip;
@@ -48,9 +48,9 @@ server {
         proxy_set_header Cookie             "";
     }
 
-    # OpenAIP chart tile proxy (dev — allows localhost referers).
+    # OpenAIP chart tile proxy (dev — allows localhost and LAN referers).
     location ~ ^/tiles/openaip/(?<tile_path>.+)$ {
-        valid_referers blocked server_names "~localhost" "~adsb\.aero";
+        valid_referers blocked server_names "~localhost" "~192\.168\." "~10\." "~172\." "~adsb\.aero";
         if ($invalid_referer) {
             return 403;
         }

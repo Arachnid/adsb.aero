@@ -13,6 +13,7 @@ const mockMap = {
   setLayoutProperty: vi.fn(),
   setPaintProperty: vi.fn(),
   getCanvas: vi.fn(() => ({ style: {} })),
+  getContainer: vi.fn(() => ({ querySelector: vi.fn(() => null) })),
   getCenter: vi.fn(() => ({ lng: 0, lat: 0 })),
   getZoom: vi.fn(() => 5),
   getBounds: vi.fn(() => ({
@@ -31,6 +32,7 @@ const mockMap = {
 
 export const Map = vi.fn(() => mockMap);
 export const setWorkerUrl = vi.fn();
+export const AttributionControl = vi.fn();
 export const GeoJSONSource = vi.fn();
 export const NavigationControl = vi.fn();
 export const GeolocateControl = vi.fn();
@@ -39,6 +41,7 @@ export const ScaleControl = vi.fn();
 export default {
   Map,
   setWorkerUrl,
+  AttributionControl,
   GeoJSONSource,
   NavigationControl,
   GeolocateControl,

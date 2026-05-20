@@ -101,6 +101,7 @@ function openaipLimit(
 import { anyViewportFilter, collectGeometries } from "./lib/queryGeometry";
 import { Topbar } from "./components/layout/Topbar";
 import { AboutDialog } from "./components/ui/AboutDialog";
+import { useMobile } from "./hooks/useMobile";
 import { Sidebar } from "./components/layout/Sidebar";
 import {
   countPredicates,
@@ -156,12 +157,12 @@ function ToggleButton({
       style={{
         position: "absolute",
         top: "50%",
-        [isLeft ? "left" : "right"]: collapsed ? SIDEBAR_MARGIN : expandedEdge,
+        [isLeft ? "left" : "right"]: collapsed ? 0 : expandedEdge,
         transform: "translateY(-50%)",
         transition:
-          (isLeft ? "left" : "right") + " 240ms cubic-bezier(0.4, 0, 0.2, 1)",
+          (isLeft ? "left" : "right") + " 240ms cubic-bezier(0.4,0,0.2,1)",
         zIndex: 10,
-        width: 22,
+        width: 32,
         height: 44,
         display: "flex",
         alignItems: "center",
@@ -206,7 +207,10 @@ export function App({
   const [basemap, setBasemap] = useState<Basemap>("light");
   const [colorMode, setColorMode] = useState<ColorMode>("alt");
   const [airspaceOn, setAirspaceOn] = useState(true);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const mobile = useMobile();
+  const [leftCollapsed, setLeftCollapsed] = useState(
+    () => window.matchMedia("(max-width: 639px)").matches,
+  );
   const [rightCollapsed, setRightCollapsed] = useState(true);
   const [aboutOpen, setAboutOpen] = useState(false);
 
@@ -275,6 +279,7 @@ export function App({
     (id: string | null) => {
       setSelectedFlightId(id);
       if (id === null) return;
+      if (mobile) setRightCollapsed(true);
       const flight = queryFlights?.find((f) => f.flight_id === id);
       const coords = flight?.path?.coordinates.flat() ?? [];
       if (coords.length === 0) return;
@@ -296,7 +301,7 @@ export function App({
         seq: ++fitBoundsSeqRef.current,
       });
     },
-    [queryFlights],
+    [queryFlights, mobile],
   );
   const queryAbortRef = useRef<AbortController | null>(null);
 
@@ -502,6 +507,7 @@ export function App({
     setSelectedFlightId(null);
     setHoveredPoint(null);
     setRightCollapsed(false);
+    if (mobile) setLeftCollapsed(true);
 
     postQuery(match, { endDate, startFrom, signal: ctrl.signal })
       .then((res) => {
@@ -707,7 +713,10 @@ export function App({
         side="left"
         collapsed={leftCollapsed}
         onToggle={() => {
-          setLeftCollapsed((v) => !v);
+          setLeftCollapsed((v) => {
+            if (v && mobile) setRightCollapsed(true);
+            return !v;
+          });
         }}
       />
 
@@ -742,7 +751,10 @@ export function App({
         side="right"
         collapsed={rightCollapsed}
         onToggle={() => {
-          setRightCollapsed((v) => !v);
+          setRightCollapsed((v) => {
+            if (v && mobile) setLeftCollapsed(true);
+            return !v;
+          });
         }}
       />
 
