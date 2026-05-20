@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { stepValueAt } from "../src/lib/seriesUtils";
 import {
-  stepValueAt,
   projectOntoSegment,
   trackToCompass,
   squawkAt,

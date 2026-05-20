@@ -19,6 +19,7 @@ import {
   iasToColor,
   type RGBA,
 } from "../../lib/colors";
+import { stepValueAt } from "../../lib/seriesUtils";
 
 import workerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 setWorkerUrl(workerUrl);
@@ -47,23 +48,6 @@ type Seg = {
   tsFrom: number;
   tsTo: number;
 };
-
-// Step-interpolate (forward-fill) a [[ts, value], ...] series at a given timestamp.
-export function stepValueAt(
-  series: number[][] | null | undefined,
-  ts: number,
-): number | null {
-  if (!series || series.length === 0) return null;
-  let val: number | null = null;
-  for (const entry of series) {
-    const entryTs = entry[0];
-    const entryVal = entry[1];
-    if (entryTs === undefined || entryVal === undefined) continue;
-    if (entryTs <= ts) val = entryVal;
-    else break;
-  }
-  return val;
-}
 
 // Project cursor (lng/lat) onto segment [from, to], return t in [0, 1].
 export function projectOntoSegment(
@@ -790,17 +774,20 @@ export function MapView({
           const subGs = f.path_gs?.[subIdx] ?? null;
           const subIas = f.path_ias?.[subIdx] ?? null;
           const subTracks = f.path_tracks?.[subIdx] ?? null;
+          const subAltCorr = f.alt_correction_ft?.[subIdx] ?? null;
           return subSeq.slice(0, -1).map((c, j): Seg => {
             // slice(0,-1) guarantees j+1 < subSeq.length
             const next = subSeq[j + 1] ?? c;
             const ts = subTs[j] ?? 0;
             const tsNext = subTs[j + 1] ?? ts;
+            const corrFt = stepValueAt(subAltCorr, ts) ?? 0;
+            const corrFtTo = stepValueAt(subAltCorr, tsNext) ?? 0;
             return {
               from: [c[0], c[1]],
               to: [next[0], next[1]],
-              altMid: (c[2] + next[2]) / 2,
-              altFt: c[2],
-              altFtTo: next[2],
+              altMid: (c[2] + corrFt + next[2] + corrFtTo) / 2,
+              altFt: c[2] + corrFt,
+              altFtTo: next[2] + corrFtTo,
               cat: f.emitter_category ?? null,
               squawk: squawkAt(subRuns, ts),
               flightId: f.flight_id,

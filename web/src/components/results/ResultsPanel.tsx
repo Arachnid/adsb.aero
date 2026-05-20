@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef } from "react";
 import { Plane } from "../Icons";
 import type { FlightDetail } from "../../lib/api";
 import type { HoveredPoint } from "../map/MapView";
+import { stepValueAt } from "../../lib/seriesUtils";
 
 interface ResultsPanelProps {
   flights: FlightDetail[] | null;
@@ -54,15 +55,23 @@ function buildList(flights: FlightDetail[]): ListItem[] {
 function SparklineChart({
   coords,
   timestamps,
+  altCorrFt,
   hoveredIdx,
   onHoverIdx,
 }: {
   coords: [number, number, number][][];
   timestamps: number[][] | null | undefined;
+  altCorrFt: number[][][] | null | undefined;
   hoveredIdx: number | null;
   onHoverIdx: (idx: number | null) => void;
 }): React.ReactElement | null {
-  const flatAlts = coords.flatMap((seq) => seq.map((c) => c[2]));
+  const flatAlts = coords.flatMap((seq, subIdx) => {
+    const subTs = timestamps?.[subIdx];
+    const subCorr = altCorrFt?.[subIdx] ?? null;
+    return seq.map(
+      (c, j) => c[2] + (stepValueAt(subCorr, subTs?.[j] ?? 0) ?? 0),
+    );
+  });
   const flatTs = timestamps?.flat() ?? null;
   const n = flatAlts.length;
   if (n < 2) return null;
@@ -93,18 +102,27 @@ function SparklineChart({
   let flatOffset = 0;
   const fills: React.ReactElement[] = [];
   const lines: React.ReactElement[] = [];
-  for (const subSeq of coords) {
+  for (let subIdx = 0; subIdx < coords.length; subIdx++) {
+    const subSeq = coords[subIdx] ?? [];
+    const subTs = timestamps?.[subIdx];
+    const subCorr = altCorrFt?.[subIdx] ?? null;
+    const corrAlt = (c: [number, number, number], j: number): number =>
+      c[2] + (stepValueAt(subCorr, subTs?.[j] ?? 0) ?? 0);
     if (subSeq.length >= 2) {
       const lastJ = subSeq.length - 1;
+      const first = subSeq[0] ?? [0, 0, 0];
       const fillD =
-        `M ${n2s(toX(flatOffset))},${n2s(toY(subSeq[0]?.[2] ?? 0))} ` +
+        `M ${n2s(toX(flatOffset))},${n2s(toY(corrAlt(first, 0)))} ` +
         subSeq
           .slice(1)
-          .map((c, j) => `L ${n2s(toX(flatOffset + j + 1))},${n2s(toY(c[2]))}`)
+          .map(
+            (c, j) =>
+              `L ${n2s(toX(flatOffset + j + 1))},${n2s(toY(corrAlt(c, j + 1)))}`,
+          )
           .join(" ") +
         ` L ${n2s(toX(flatOffset + lastJ))},${String(H)} L ${n2s(toX(flatOffset))},${String(H)} Z`;
       const polyPoints = subSeq
-        .map((c, j) => `${n2s(toX(flatOffset + j))},${n2s(toY(c[2]))}`)
+        .map((c, j) => `${n2s(toX(flatOffset + j))},${n2s(toY(corrAlt(c, j)))}`)
         .join(" ");
       fills.push(
         <path
@@ -495,6 +513,7 @@ function FlightRow({
         <SparklineChart
           coords={coords}
           timestamps={flight.timestamps}
+          altCorrFt={flight.alt_correction_ft}
           hoveredIdx={hoveredPointIdx}
           onHoverIdx={onHoverPointIdx}
         />
