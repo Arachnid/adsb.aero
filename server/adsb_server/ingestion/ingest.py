@@ -60,13 +60,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="End of date range (inclusive; defaults to today when --from is used).",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Worker processes for CPU-bound trace processing (default: os.cpu_count()).",
+    )
     args = parser.parse_args(argv)
     if args.to_date is not None and args.from_date is None:
         parser.error("--to requires --from")
     return args
 
 
-async def _discover() -> None:
+async def _discover(workers: int | None) -> None:
     settings = get_settings()
     conn: asyncpg.Connection[asyncpg.Record] = await asyncpg.connect(settings.asyncpg_dsn)
     try:
@@ -75,12 +82,13 @@ async def _discover() -> None:
             settings.scheduler_cache_dir,
             lookback_days=settings.scheduler_lookback_days,
             keep_traces=settings.scheduler_keep_traces,
+            workers=workers,
         )
     finally:
         await conn.close()
 
 
-async def _reimport(dates: list[date]) -> None:
+async def _reimport(dates: list[date], workers: int | None) -> None:
     settings = get_settings()
     conn: asyncpg.Connection[asyncpg.Record] = await asyncpg.connect(settings.asyncpg_dsn)
     try:
@@ -89,6 +97,7 @@ async def _reimport(dates: list[date]) -> None:
             dates,
             settings.scheduler_cache_dir,
             keep_traces=settings.scheduler_keep_traces,
+            workers=workers,
         )
     finally:
         await conn.close()
@@ -108,17 +117,17 @@ def main() -> None:
     if args.dates:
         dates = sorted(set(args.dates))
         with sentry_sdk.start_transaction(op="task", name="reimport-dates"):
-            asyncio.run(_reimport(dates))
+            asyncio.run(_reimport(dates, args.workers))
     elif args.from_date is not None:
         to_date = args.to_date if args.to_date is not None else date.today()
         if args.from_date > to_date:
             sys.exit(f"--from {args.from_date} is after --to {to_date}")
         dates = _date_range(args.from_date, to_date)
         with sentry_sdk.start_transaction(op="task", name="reimport-dates"):
-            asyncio.run(_reimport(dates))
+            asyncio.run(_reimport(dates, args.workers))
     else:
         with sentry_sdk.start_transaction(op="task", name="import-traces"):
-            asyncio.run(_discover())
+            asyncio.run(_discover(args.workers))
 
 
 if __name__ == "__main__":

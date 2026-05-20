@@ -36,11 +36,13 @@ from adsb_server.pressure.fetch import fetch_mslp_for_batch
 logger = logging.getLogger(__name__)
 
 # Traces accumulated per DB write.
-_FLUSH_THRESHOLD = 256
+_FLUSH_THRESHOLD = 64
 # Seconds between progress log lines.
 _LOG_INTERVAL_SECS = 5.0
 # Traces per process-pool chunk.
-_POOL_CHUNK_SIZE = 16
+_POOL_CHUNK_SIZE = 4
+# Worker processes are restarted after this many tasks to reclaim heap fragmentation.
+_MAXTASKSPERCHILD = 1000
 
 _UPSERT_ICAO_TYPE_STATS_SQL = """
 INSERT INTO icao_type_stats (day, icao_type, model, flight_count)
@@ -379,6 +381,9 @@ async def run_batch(
     n_workers = workers if workers is not None and workers > 0 else (os.cpu_count() or 1)
     logger.info("Starting batch %s with %d workers", batch_date, n_workers)
 
+    # Capture only the keys so the closure below doesn't retain the full staging dict.
+    staging_icao24s = frozenset(staging)
+
     # Set worker state before fork so all worker processes inherit it.
     _worker_state = _WorkerState(correction_interp, t_min, t_max, batch_date, cutoff_ts, staging)
 
@@ -395,12 +400,12 @@ async def run_batch(
             icao24 = name.rsplit("/", 1)[-1].split(".")[0].removeprefix("trace_full_")
             seen.add(icao24)
             yield name, raw_bytes
-        for icao24 in staging:
+        for icao24 in staging_icao24s:
             if icao24 not in seen:
                 yield icao24, None
 
     mp_ctx = multiprocessing.get_context("fork")
-    with mp_ctx.Pool(n_workers) as pool:
+    with mp_ctx.Pool(n_workers, maxtasksperchild=_MAXTASKSPERCHILD) as pool:
         traces_done = 0
         for batch in itertools.batched(
             pool.imap_unordered(

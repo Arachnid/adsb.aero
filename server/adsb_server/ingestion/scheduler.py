@@ -177,6 +177,7 @@ async def _download_and_process_release(
     batch_date: date,
     cache_dir: Path,
     keep_traces: bool = False,
+    workers: int | None = None,
 ) -> bool:
     """Download all tar parts for a release and run the batch ingestion.
 
@@ -224,7 +225,7 @@ async def _download_and_process_release(
 
     logger.info("Starting batch ingestion for %s", batch_date_str)
     try:
-        count = await run_batch(conn, dest_dir, batch_date)
+        count = await run_batch(conn, dest_dir, batch_date, workers=workers)
         logger.info("Batch %s: %d flights ingested", batch_date_str, count)
         if not keep_traces:
             shutil.rmtree(dest_dir, ignore_errors=True)
@@ -250,6 +251,7 @@ async def check_and_run_new_batches(
     cache_dir: Path,
     lookback_days: int = 0,
     keep_traces: bool = False,
+    workers: int | None = None,
 ) -> None:
     """
     Query the GitHub API for new adsb.lol releases and process any unprocessed ones.
@@ -339,6 +341,7 @@ async def check_and_run_new_batches(
                     batch_date,
                     cache_dir,
                     keep_traces=keep_traces,
+                    workers=workers,
                 )
                 if not ok:
                     logger.warning("Batch %s errored — continuing to next batch", batch_date)
@@ -352,6 +355,7 @@ async def reimport_specific_dates(
     dates: list[date],
     cache_dir: Path,
     keep_traces: bool = False,
+    workers: int | None = None,
 ) -> None:
     """Download and reprocess specific batch dates, bypassing normal discovery.
 
@@ -376,7 +380,14 @@ async def reimport_specific_dates(
                     continue
                 logger.info("Reimporting %s (tag=%s)", batch_date, tag)
                 ok = await _download_and_process_release(
-                    conn, client, year, tag, batch_date, cache_dir, keep_traces=keep_traces
+                    conn,
+                    client,
+                    year,
+                    tag,
+                    batch_date,
+                    cache_dir,
+                    keep_traces=keep_traces,
+                    workers=workers,
                 )
                 if not ok:
                     logger.warning("Reimport of %s failed", batch_date)
@@ -388,6 +399,7 @@ async def scheduler_loop(
     interval_seconds: int = 1800,
     lookback_days: int = 0,
     keep_traces: bool = False,
+    workers: int | None = None,
 ) -> None:
     """
     Loop that calls check_and_run_new_batches every interval_seconds.
@@ -397,7 +409,11 @@ async def scheduler_loop(
     while True:
         try:
             await check_and_run_new_batches(
-                conn, cache_dir, lookback_days=lookback_days, keep_traces=keep_traces
+                conn,
+                cache_dir,
+                lookback_days=lookback_days,
+                keep_traces=keep_traces,
+                workers=workers,
             )
         except Exception:
             logger.error("Error in check_and_run_new_batches", exc_info=True)

@@ -49,6 +49,29 @@ def _make_stream_client(content: bytes = b"data") -> MagicMock:
     return client
 
 
+def _dapr_collector(
+    recorded: list[date],
+    *,
+    fail_on: date | None = None,
+) -> object:
+    """Return a side_effect for _download_and_process_release that records batch_dates."""
+
+    async def _impl(
+        conn: object,
+        client: object,
+        year: int,
+        tag: str,
+        batch_date: date,
+        cache_dir: object,
+        keep_traces: bool = False,
+        workers: int | None = None,
+    ) -> bool:
+        recorded.append(batch_date)
+        return fail_on is None or batch_date != fail_on
+
+    return _impl
+
+
 # ---------------------------------------------------------------------------
 # _tag_to_date (existing tests retained here)
 # ---------------------------------------------------------------------------
@@ -718,18 +741,6 @@ class TestCheckAndRunNewBatches:
 
         processed_dates: list[date] = []
 
-        async def mock_dapr(
-            conn: object,
-            client: object,
-            year: int,
-            tag: str,
-            batch_date: date,
-            cache_dir: object,
-            keep_traces: bool = False,
-        ) -> bool:
-            processed_dates.append(batch_date)
-            return True
-
         async def mock_get_releases(
             client: object, year: int, page: int = 1
         ) -> list[dict[str, object]]:
@@ -754,7 +765,7 @@ class TestCheckAndRunNewBatches:
             ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=mock_dapr,
+                side_effect=_dapr_collector(processed_dates),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -771,18 +782,6 @@ class TestCheckAndRunNewBatches:
         ]
         processed_dates: list[date] = []
 
-        async def mock_dapr(
-            conn: object,
-            client: object,
-            year: int,
-            tag: str,
-            batch_date: date,
-            cache_dir: object,
-            keep_traces: bool = False,
-        ) -> bool:
-            processed_dates.append(batch_date)
-            return batch_date != date(2025, 4, 2)  # Apr 2 fails
-
         async def mock_get_releases(
             client: object, year: int, page: int = 1
         ) -> list[dict[str, object]]:
@@ -807,7 +806,7 @@ class TestCheckAndRunNewBatches:
             ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=mock_dapr,
+                side_effect=_dapr_collector(processed_dates, fail_on=date(2025, 4, 2)),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -925,18 +924,6 @@ class TestCheckAndRunNewBatches:
         ]
         processed_dates: list[date] = []
 
-        async def mock_dapr(
-            conn: object,
-            client: object,
-            year: int,
-            tag: str,
-            batch_date: date,
-            cache_dir: object,
-            keep_traces: bool = False,
-        ) -> bool:
-            processed_dates.append(batch_date)
-            return True
-
         async def mock_get_releases(
             client: object, year: int, page: int = 1
         ) -> list[dict[str, object]]:
@@ -966,7 +953,7 @@ class TestCheckAndRunNewBatches:
             ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=mock_dapr,
+                side_effect=_dapr_collector(processed_dates),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -1050,18 +1037,6 @@ class TestReimportSpecificDates:
     async def test_processes_each_date_in_order(self, tmp_path: Path) -> None:
         processed: list[date] = []
 
-        async def mock_dapr(
-            conn: object,
-            client: object,
-            year: int,
-            tag: str,
-            batch_date: date,
-            cache_dir: object,
-            keep_traces: bool = False,
-        ) -> bool:
-            processed.append(batch_date)
-            return True
-
         async def mock_fetch(client: object, year: int) -> dict[date, str]:
             dates = [date(2025, 4, 1), date(2025, 4, 2), date(2025, 4, 3)]
             return {d: f"v{d.year}.{d.month:02d}.{d.day:02d}-planes-readsb-prod-0" for d in dates}
@@ -1077,7 +1052,7 @@ class TestReimportSpecificDates:
             ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=mock_dapr,
+                side_effect=_dapr_collector(processed),
             ),
         ):
             await reimport_specific_dates(
@@ -1132,18 +1107,6 @@ class TestCheckAndRunNewBatchesForceGap:
         ]
         processed_dates: list[date] = []
 
-        async def mock_dapr(
-            conn: object,
-            client: object,
-            year: int,
-            tag: str,
-            batch_date: date,
-            cache_dir: object,
-            keep_traces: bool = False,
-        ) -> bool:
-            processed_dates.append(batch_date)
-            return True
-
         async def mock_find(client: object, year: int, target: date) -> str | None:
             for r in releases:
                 tag = str(r["tag_name"])
@@ -1183,7 +1146,7 @@ class TestCheckAndRunNewBatchesForceGap:
             ),
             patch(
                 "adsb_server.ingestion.scheduler._download_and_process_release",
-                side_effect=mock_dapr,
+                side_effect=_dapr_collector(processed_dates),
             ),
         ):
             await check_and_run_new_batches(AsyncMock(), tmp_path)
@@ -1229,7 +1192,11 @@ class TestSchedulerLoop:
         check_count = 0
 
         async def mock_check(
-            conn: object, cache_dir: object, lookback_days: int = 0, keep_traces: bool = False
+            conn: object,
+            cache_dir: object,
+            lookback_days: int = 0,
+            keep_traces: bool = False,
+            workers: int | None = None,
         ) -> None:
             nonlocal check_count
             check_count += 1
@@ -1256,7 +1223,11 @@ class TestSchedulerLoop:
         sleep_count = 0
 
         async def mock_check(
-            conn: object, cache_dir: object, lookback_days: int = 0, keep_traces: bool = False
+            conn: object,
+            cache_dir: object,
+            lookback_days: int = 0,
+            keep_traces: bool = False,
+            workers: int | None = None,
         ) -> None:
             nonlocal check_count
             check_count += 1
