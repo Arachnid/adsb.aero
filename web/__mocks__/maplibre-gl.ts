@@ -12,7 +12,12 @@ const mockMap = {
   isStyleLoaded: vi.fn(() => false),
   setLayoutProperty: vi.fn(),
   setPaintProperty: vi.fn(),
-  getCanvas: vi.fn(() => ({ style: {} })),
+  getCanvas: vi.fn(() => ({
+    style: {},
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    getBoundingClientRect: vi.fn(() => ({ left: 0, top: 0 })),
+  })),
   getContainer: vi.fn(() => ({ querySelector: vi.fn(() => null) })),
   getCenter: vi.fn(() => ({ lng: 0, lat: 0 })),
   getZoom: vi.fn(() => 5),

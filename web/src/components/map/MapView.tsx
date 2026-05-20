@@ -611,7 +611,16 @@ export function MapView({
       );
     }
 
+    // Long-press state for finishing polygon drawing on touch devices.
+    // dblclick conflicts with pinch-zoom on mobile, so we use a 600 ms hold instead.
+    let longPressFired = false;
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+
     const onClick = (e: MapMouseEvent): void => {
+      if (longPressFired) {
+        longPressFired = false;
+        return;
+      }
       const { lat, lng } = e.lngLat;
       if (airspacePickingRef.current) {
         onPickAirspaceRef.current(lat, lng, e.point.x, e.point.y);
@@ -639,6 +648,41 @@ export function MapView({
       setSource(map.getSource("draft"), EMPTY_FC);
       if (pts.length >= 3) onDrawRef.current(pts);
     };
+
+    const canvas = map.getCanvas();
+
+    const onTouchStartDraw = (e: TouchEvent): void => {
+      if (!drawingRef.current || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = touch.clientX - rect.left;
+      const y = touch.clientY - rect.top;
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        if (!drawingRef.current) return;
+        longPressFired = true;
+        const lngLat = map.unproject([x, y] as [number, number]);
+        const pts: Coord[] = [
+          ...drawPointsRef.current,
+          [lngLat.lng, lngLat.lat],
+        ];
+        drawPointsRef.current = [];
+        setSource(map.getSource("draft"), EMPTY_FC);
+        if (pts.length >= 3) onDrawRef.current(pts);
+      }, 600);
+    };
+
+    const onTouchCancelDraw = (): void => {
+      if (longPressTimer !== null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    canvas.addEventListener("touchstart", onTouchStartDraw);
+    canvas.addEventListener("touchmove", onTouchCancelDraw);
+    canvas.addEventListener("touchend", onTouchCancelDraw);
 
     const getBounds = (): MapBounds => {
       const b = map.getBounds().toArray();
@@ -754,6 +798,10 @@ export function MapView({
       map.off("click", onClick);
       map.off("dblclick", onDblClick);
       map.off("moveend", onMoveEndHandler);
+      canvas.removeEventListener("touchstart", onTouchStartDraw);
+      canvas.removeEventListener("touchmove", onTouchCancelDraw);
+      canvas.removeEventListener("touchend", onTouchCancelDraw);
+      if (longPressTimer !== null) clearTimeout(longPressTimer);
       map.remove();
       mapRef.current = null;
       deckRef.current = null;

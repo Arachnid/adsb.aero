@@ -18,6 +18,9 @@ interface ResultsPanelProps {
   windowFrom?: string | null;
   /** The end date shown in the query form ("YYYY-MM-DD"), for the range label. */
   queryEndDate?: string | null;
+  /** When true the panel is off-screen; skip scrollIntoView to avoid Chrome
+   *  scrolling the overflow:hidden app container and shifting the map. */
+  collapsed?: boolean;
 }
 
 function fmtTime(iso: string): string {
@@ -246,16 +249,32 @@ export function ResultsPanel({
   onHoverPoint,
   windowFrom,
   queryEndDate,
+  collapsed,
 }: ResultsPanelProps): React.ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const prevCollapsedRef = useRef(collapsed);
 
   useEffect(() => {
-    if (!selectedFlightId || !scrollRef.current) return;
+    const wasCollapsed = prevCollapsedRef.current;
+    prevCollapsedRef.current = collapsed;
+    // Skip when panel is off-screen — scrollIntoView would jolt the map.
+    if (!selectedFlightId || !scrollRef.current || collapsed) return;
     const el = scrollRef.current.querySelector<HTMLElement>(
       `[data-flight-id="${selectedFlightId}"]`,
     );
+    if (wasCollapsed) {
+      // Panel just opened: wait for the 240ms slide-in transition before scrolling,
+      // otherwise Chrome scrolls the overflow:hidden app container mid-animation.
+      const id = setTimeout(() => {
+        el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }, 240);
+      return () => {
+        clearTimeout(id);
+      };
+    }
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [selectedFlightId]);
+    return undefined;
+  }, [selectedFlightId, collapsed]);
 
   if (error) {
     return (

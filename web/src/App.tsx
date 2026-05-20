@@ -140,16 +140,19 @@ function ToggleButton({
   side,
   collapsed,
   onToggle,
+  btnRef,
 }: {
   side: "left" | "right";
   collapsed: boolean;
   onToggle: () => void;
+  btnRef?: React.RefCallback<HTMLButtonElement>;
 }): React.ReactElement {
   const isLeft = side === "left";
   const expandedEdge = SIDEBAR_MARGIN + SIDEBAR_W;
 
   return (
     <button
+      ref={btnRef}
       onClick={onToggle}
       aria-label={
         collapsed ? "Expand " + side + " panel" : "Collapse " + side + " panel"
@@ -208,9 +211,7 @@ export function App({
   const [colorMode, setColorMode] = useState<ColorMode>("alt");
   const [airspaceOn, setAirspaceOn] = useState(true);
   const mobile = useMobile();
-  const [leftCollapsed, setLeftCollapsed] = useState(
-    () => window.matchMedia("(max-width: 639px)").matches,
-  );
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(true);
   const [aboutOpen, setAboutOpen] = useState(false);
 
@@ -274,6 +275,15 @@ export function App({
     useState<FitBoundsTarget | null>(null);
   const fitBoundsSeqRef = useRef(0);
   const [hoveredPoint, setHoveredPoint] = useState<HoveredPoint | null>(null);
+  const pickerAutoCollapseRef = useRef(false);
+
+  const handleSelectFlightFromMap = useCallback(
+    (id: string | null) => {
+      setSelectedFlightId(id);
+      if (id !== null && !mobile) setRightCollapsed(false);
+    },
+    [mobile],
+  );
 
   const handleSelectFlightFromPanel = useCallback(
     (id: string | null) => {
@@ -329,6 +339,26 @@ export function App({
         /* non-critical */
       });
   }, []);
+
+  // On mobile, collapse the left sidebar while any picker/draw mode is active,
+  // then reopen it automatically when the mode ends.
+  const anyPickerActive =
+    pickingId !== null ||
+    drawingId !== null ||
+    airspacePickingId !== null ||
+    airspaceMenu !== null;
+  useEffect(() => {
+    if (!mobile) return;
+    if (anyPickerActive) {
+      setLeftCollapsed((v) => {
+        if (!v) pickerAutoCollapseRef.current = true;
+        return true;
+      });
+    } else if (pickerAutoCollapseRef.current) {
+      pickerAutoCollapseRef.current = false;
+      setLeftCollapsed(false);
+    }
+  }, [anyPickerActive, mobile]);
 
   const handleTheme = (): void => {
     setTheme((t) => {
@@ -522,7 +552,14 @@ export function App({
       .finally(() => {
         setQueryLoading(false);
       });
-  }, [rootGroup, mapBounds, viewportVersion, globalDateRange, mapViewState]);
+  }, [
+    rootGroup,
+    mapBounds,
+    viewportVersion,
+    globalDateRange,
+    mapViewState,
+    mobile,
+  ]);
 
   const handleLoadMore = useCallback((): void => {
     if (!queryCursor || queryLoading) return;
@@ -617,7 +654,7 @@ export function App({
         flights={queryFlights}
         colorMode={colorMode}
         selectedFlightId={selectedFlightId}
-        onSelectFlight={setSelectedFlightId}
+        onSelectFlight={handleSelectFlightFromMap}
         hoveredPoint={hoveredPoint}
         onHoverPoint={setHoveredPoint}
         fitBoundsTarget={fitBoundsTarget}
@@ -745,6 +782,7 @@ export function App({
           onHoverPoint={setHoveredPoint}
           windowFrom={queryWindowFrom}
           queryEndDate={globalDateRange.to || null}
+          collapsed={rightCollapsed}
         />
       </Sidebar>
       <ToggleButton

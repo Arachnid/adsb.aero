@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ResultsPanel } from "../src/components/results/ResultsPanel";
 import type { FlightDetail } from "../src/lib/api";
@@ -447,6 +447,99 @@ describe("ResultsPanel", () => {
     expect(onHoverPoint).toHaveBeenCalledWith({
       flightId: flight.flight_id,
       pointIdx: expect.any(Number),
+    });
+  });
+
+  it("shows registration, model, year, and operator when present", () => {
+    const flight = makeFlight({
+      registration: "G-EUUU",
+      model: "Boeing 737-800",
+      year: 2010,
+      operator: "British Airways",
+    });
+    render(
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+        selectedFlightId={flight.flight_id}
+      />,
+    );
+    expect(screen.getByText("G-EUUU")).toBeInTheDocument();
+    expect(screen.getByText("Boeing 737-800")).toBeInTheDocument();
+    expect(screen.getByText("2010")).toBeInTheDocument();
+    expect(screen.getByText("British Airways")).toBeInTheDocument();
+  });
+
+  describe("scrollIntoView behaviour", () => {
+    let scrollIntoView: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      scrollIntoView = vi.fn();
+      window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("scrolls immediately when panel is already open and selectedFlightId changes", () => {
+      const flight = makeFlight();
+      const { rerender } = render(
+        <ResultsPanel
+          flights={[flight]}
+          loading={false}
+          error={null}
+          hasMore={false}
+          onLoadMore={() => {}}
+          collapsed={false}
+          selectedFlightId={null}
+        />,
+      );
+      rerender(
+        <ResultsPanel
+          flights={[flight]}
+          loading={false}
+          error={null}
+          hasMore={false}
+          onLoadMore={() => {}}
+          collapsed={false}
+          selectedFlightId={flight.flight_id}
+        />,
+      );
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+    });
+
+    it("defers scrollIntoView until after the slide-in transition when panel opens", () => {
+      const flight = makeFlight();
+      const { rerender } = render(
+        <ResultsPanel
+          flights={[flight]}
+          loading={false}
+          error={null}
+          hasMore={false}
+          onLoadMore={() => {}}
+          collapsed={true}
+          selectedFlightId={flight.flight_id}
+        />,
+      );
+      rerender(
+        <ResultsPanel
+          flights={[flight]}
+          loading={false}
+          error={null}
+          hasMore={false}
+          onLoadMore={() => {}}
+          collapsed={false}
+          selectedFlightId={flight.flight_id}
+        />,
+      );
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(240);
+      expect(scrollIntoView).toHaveBeenCalledOnce();
     });
   });
 });
