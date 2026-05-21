@@ -73,6 +73,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
+@sentry_sdk.monitor(  # type: ignore[misc]
+    monitor_slug="import-traces",
+    monitor_config={
+        "schedule": {"type": "crontab", "value": "0 */12 * * *"},
+        "timezone": "UTC",
+        "checkin_margin": 60,
+        "max_runtime": 720,
+    },
+)
 async def _discover(workers: int | None) -> None:
     settings = get_settings()
     conn: asyncpg.Connection[asyncpg.Record] = await asyncpg.connect(settings.asyncpg_dsn)
@@ -126,8 +135,7 @@ def main() -> None:
         with sentry_sdk.start_transaction(op="task", name="reimport-dates"):
             asyncio.run(_reimport(dates, args.workers))
     else:
-        with sentry_sdk.start_transaction(op="task", name="import-traces"):
-            asyncio.run(_discover(args.workers))
+        asyncio.run(_discover(args.workers))
 
 
 if __name__ == "__main__":

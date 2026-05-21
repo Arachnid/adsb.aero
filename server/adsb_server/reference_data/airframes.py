@@ -116,7 +116,16 @@ async def _upsert_batch(
     )
 
 
-async def _main() -> int:
+@sentry_sdk.monitor(  # type: ignore[misc]
+    monitor_slug="import-airframes",
+    monitor_config={
+        "schedule": {"type": "crontab", "value": "0 3 * * 0"},
+        "timezone": "UTC",
+        "checkin_margin": 60,
+        "max_runtime": 60,
+    },
+)
+async def _main() -> None:
     settings = get_settings()
     print(f"Fetching {CSV_URL} ...", file=sys.stderr)
     data = await _fetch_csv()
@@ -133,11 +142,9 @@ async def _main() -> int:
 
         count: int = await conn.fetchval("SELECT COUNT(*) FROM airframes")
         print(f"Done. {count:,} rows in airframes table.", file=sys.stderr)
-        return 0
-    except Exception as exc:
+    except Exception:
         logger.exception("Import failed")
-        sentry_sdk.capture_exception(exc)
-        return 1
+        raise
     finally:
         await conn.close()
 
@@ -150,8 +157,10 @@ def main() -> None:
     )
     settings = get_settings()
     settings.init_sentry()
-    with sentry_sdk.start_transaction(op="task", name="import-airframes"):
-        sys.exit(asyncio.run(_main()))
+    try:
+        asyncio.run(_main())
+    except Exception:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
