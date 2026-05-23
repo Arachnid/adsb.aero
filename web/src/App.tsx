@@ -276,6 +276,7 @@ export function App({
   const fitBoundsSeqRef = useRef(0);
   const [hoveredPoint, setHoveredPoint] = useState<HoveredPoint | null>(null);
   const pickerAutoCollapseRef = useRef(false);
+  const autoRunDoneRef = useRef(false);
 
   const handleSelectFlightFromMap = useCallback(
     (id: string | null) => {
@@ -331,13 +332,15 @@ export function App({
     getDataRange()
       .then((dr) => {
         setDataRange(dr);
-        if (dr.last_date) {
+        // Don't overwrite a date range that was restored from a share URL.
+        if (dr.last_date && initialShare === null) {
           setGlobalDateRange({ to: dr.last_date });
         }
       })
       .catch(() => {
         /* non-critical */
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // On mobile, collapse the left sidebar while any picker/draw mode is active,
@@ -560,6 +563,15 @@ export function App({
     mapViewState,
     mobile,
   ]);
+
+  // When the page loads from a shared link, run the query automatically as
+  // soon as the map reports its initial bounds (needed for viewport filters).
+  useEffect(() => {
+    if (initialShare === null || mapBounds === null || autoRunDoneRef.current)
+      return;
+    autoRunDoneRef.current = true;
+    handleRun();
+  }, [initialShare, mapBounds, handleRun]);
 
   const handleLoadMore = useCallback((): void => {
     if (!queryCursor || queryLoading) return;
