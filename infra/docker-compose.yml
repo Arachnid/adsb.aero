@@ -22,6 +22,18 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no --maxmemory 2gb --maxmemory-policy allkeys-lru
+    networks:
+      - cache
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api:
     build:
       context: ../server
@@ -33,6 +45,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-adsb}
       POSTGRES_USER: ${POSTGRES_USER:-adsb}
       LOG_QUERIES: ${LOG_QUERIES:-false}
+      REDIS_URL: redis://redis:6379
     secrets:
       - sentry_dsn
     volumes:
@@ -40,8 +53,11 @@ services:
     networks:
       - default
       - db
+      - cache
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\""]
@@ -101,3 +117,5 @@ networks:
   db:
     # Not marked internal: job containers need outbound internet access to download
     # traces from GitHub. Postgres is secured by the absence of port mappings.
+  cache:
+    internal: true  # Redis has no need for outbound internet access.

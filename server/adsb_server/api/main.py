@@ -15,6 +15,7 @@ from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse  # noqa: TC002
 from scalar_fastapi import get_scalar_api_reference
 
+from adsb_server.cache import FLIGHT_TTL, QUERY_TTL, ResultCache
 from adsb_server.config import get_settings
 from adsb_server.db.pool import create_pool
 from adsb_server.query.compiler import (
@@ -71,11 +72,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     owned = not hasattr(app.state, "pool")
     if owned:
         app.state.pool = await create_pool(settings.asyncpg_dsn)
+
+    cache: ResultCache | None = None
+    if settings.redis_url:
+        from redis.asyncio import Redis
+
+        cache = ResultCache(Redis.from_url(settings.redis_url, decode_responses=False))
+    app.state.redis = cache
+
     try:
         yield
     finally:
         if owned:
             await app.state.pool.close()
+        if cache is not None:
+            await cache.close()
 
 
 app = FastAPI(
@@ -115,6 +126,10 @@ async def scalar_docs() -> HTMLResponse:
 async def get_pool(request: Request) -> asyncpg.Pool:
     pool: asyncpg.Pool = request.app.state.pool
     return pool
+
+
+def get_cache(request: Request) -> ResultCache | None:
+    return getattr(request.app.state, "redis", None)
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +528,12 @@ async def query_flights(
     request: Request,
 ) -> QueryResponse:
     pool = await get_pool(request)
+    cache = get_cache(request)
+
+    cache_key = ResultCache.query_key(body.model_dump_json()) if cache else ""
+    if cache and (cached := await cache.get(cache_key)):
+        return QueryResponse.model_validate_json(cached)
+
     params: list[Any] = []
 
     # Decode cursor to get its timestamp, used both for keyset dedup and window anchoring.
@@ -642,11 +663,14 @@ async def query_flights(
         if not floored_by_start:
             next_cursor = encode_cursor(window_floor, "")
 
-    return QueryResponse(
+    response = QueryResponse(
         flights=[_row_to_detail(r, include_path=body.include_path) for r in result_rows],
         cursor=next_cursor,
         window_from=window_floor,
     )
+    if cache:
+        await cache.set(cache_key, response.model_dump_json().encode(), QUERY_TTL)
+    return response
 
 
 @router.get(
@@ -671,6 +695,11 @@ async def get_flight(
     request: Request,
 ) -> FlightDetail:
     pool = await get_pool(request)
+    cache = get_cache(request)
+
+    cache_key = ResultCache.flight_key(flight_id)
+    if cache and (cached := await cache.get(cache_key)):
+        return FlightDetail.model_validate_json(cached)
 
     # Parse flight_id: "icao24:ISO8601"
     colon_idx = flight_id.find(":")
@@ -695,7 +724,10 @@ async def get_flight(
     if row is None:
         raise HTTPException(status_code=404, detail="Flight not found")
 
-    return _row_to_detail(row)
+    detail = _row_to_detail(row)
+    if cache:
+        await cache.set(cache_key, detail.model_dump_json().encode(), FLIGHT_TTL)
+    return detail
 
 
 app.include_router(router)

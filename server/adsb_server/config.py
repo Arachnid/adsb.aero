@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     log_queries: bool = False
     sentry_dsn: str = ""
     environment: str = "production"
+    redis_url: str = ""  # empty = cache disabled
 
     scheduler_cache_dir: Path = Path("/data/cache")
     scheduler_lookback_days: int = 0  # 0 = unlimited; set to e.g. 7 in dev
