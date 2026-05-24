@@ -73,7 +73,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-@sentry_sdk.monitor(  # type: ignore[misc]
+@sentry_sdk.monitor(
     monitor_slug="import-traces",
     monitor_config={
         "schedule": {"type": "crontab", "value": "0 */12 * * *"},
@@ -135,7 +135,7 @@ def main() -> None:
         with sentry_sdk.start_transaction(op="task", name="reimport-dates"):
             asyncio.run(_reimport(dates, args.workers))
     else:
-        asyncio.run(_discover(args.workers))
+        asyncio.run(_discover(args.workers))  # type: ignore[arg-type]  # sentry decorator loses Coroutine type
 
 
 if __name__ == "__main__":

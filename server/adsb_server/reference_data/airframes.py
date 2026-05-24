@@ -116,7 +116,7 @@ async def _upsert_batch(
     )
 
 
-@sentry_sdk.monitor(  # type: ignore[misc]
+@sentry_sdk.monitor(
     monitor_slug="import-airframes",
     monitor_config={
         "schedule": {"type": "crontab", "value": "0 3 * * 0"},
@@ -158,7 +158,7 @@ def main() -> None:
     settings = get_settings()
     settings.init_sentry()
     try:
-        asyncio.run(_main())
+        asyncio.run(_main())  # type: ignore[arg-type]  # sentry decorator loses Coroutine type
     except Exception:
         sys.exit(1)
 

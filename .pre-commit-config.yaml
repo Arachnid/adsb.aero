@@ -27,7 +27,7 @@ repos:
         files: ^server/
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+    rev: v2.1.0
     hooks:
       - id: mypy
         files: ^server/adsb_server/
@@ -39,6 +39,8 @@ repos:
           - "scalar-fastapi>=1.0"
           - "httpx>=0.28"
           - "orjson>=3.10"
+          - "sentry-sdk[fastapi]>=2.0"
+          - "redis>=5.0"
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
