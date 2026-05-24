@@ -58,12 +58,13 @@ def _sample_tile(
     v01 = data_feet[r0, c1].astype(np.float64)
     v10 = data_feet[r1, c0].astype(np.float64)
     v11 = data_feet[r1, c1].astype(np.float64)
-    return (
+    result: npt.NDArray[np.float64] = (
         (1.0 - dr) * (1.0 - dc) * v00
         + (1.0 - dr) * dc * v01
         + dr * (1.0 - dc) * v10
         + dr * dc * v11
     )
+    return result
 
 
 class TileManager:
