@@ -38,6 +38,10 @@ make migrate
 # 7. Seed airframe reference data (registration, model, operator, etc.)
 #    Takes ~2 min; re-run any time to pull the latest tar1090-db snapshot.
 make import-airframes
+
+# 8. Download terrain tiles for AGL height computation (optional)
+#    Takes 30–60 min; safe to interrupt and resume. See "Terrain data" section below.
+make download-terrain
 ```
 
 ## Starting the dev stack
@@ -104,11 +108,41 @@ make import-airframes
 
 This downloads `aircraft.csv.gz` from the tar1090-db GitHub release, upserts ~600k rows into `airframes`, and exits. It takes about 2 minutes. The dev stack must be up (`make dev`) so that postgres is reachable.
 
-Re-run any time to pull the latest snapshot from upstream.
+Re-run any time to pull the latest snapshot from upstream. In production, ofelia runs `import-airframes` automatically every Sunday at 03:00.
+
+## Terrain data (AGL height)
+
+AGL (above-ground-level) height is computed per-flight vertex by sampling the Copernicus GLO-90 90m DEM. Tiles are stored as int16-feet `.npy` files in the `terrain_data` Docker volume. Terrain data is optional — flights without it simply have `path_agl_ft = NULL`.
+
+### Downloading tiles
+
+```bash
+make download-terrain
+# expands to: docker exec infra-api-1 download-terrain
+```
+
+Downloads ~26,000 1°×1° tiles from the Copernicus AWS Open Data bucket, converts each from float32-metres GeoTIFF to int16-feet `.npy` in memory, and writes to `/data/terrain`. Takes 30–60 minutes depending on connection speed. Safe to interrupt and resume — tiles with an existing `.npy` or `.missing` sentinel are skipped.
+
+Pass `--workers N` to control concurrency (default 16):
+
+```bash
+docker exec infra-api-1 download-terrain --workers 32
+```
+
+### Backfilling historical flights
+
+Flights ingested before AGL was added have `path_agl_ft IS NULL`. To populate them:
+
+```bash
+make backfill-agl
+# expands to: docker exec infra-api-1 backfill-agl
+```
+
+Processes one `ingest_batch_date` at a time. Pass `--workers N` to control thread-pool parallelism (default 8) and `--batch-size N` for DB fetch/update batch size (default 500).
 
 ## Importing flight traces
 
-The ingestion process downloads ADS-B trace archives from adsb.lol and stores them in the database. In production, this runs automatically every 12 hours via the `ofelia` container. For manual imports:
+The ingestion process downloads ADS-B trace archives from adsb.lol and stores them in the database. In production, ofelia runs `import-traces` every 12 hours by spinning up a fresh container from the API image (`job-run`), connecting it to the `infra_db` network, and mounting the `infra_scheduler_cache` volume. For manual imports:
 
 ```bash
 # Import any new dates not yet in the database (discovery mode)
@@ -116,11 +150,11 @@ make import-traces
 
 # Import specific dates
 cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm import-traces \
-    python -m adsb_server.ingestion.ingest --dates 2026-04-28 2026-04-29
+    import-traces --dates 2026-04-28 2026-04-29
 
 # Import a date range (--to defaults to today)
 cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm import-traces \
-    python -m adsb_server.ingestion.ingest --from 2026-01-01 --to 2026-01-31
+    import-traces --from 2026-01-01 --to 2026-01-31
 ```
 
 ## Accessing postgres from the host

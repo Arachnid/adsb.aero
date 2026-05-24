@@ -53,6 +53,7 @@ Key columns:
 - `path_vr` tint — vertical rate in fpm (MobilityDB stepwise temporal integer). Null if not broadcast.
 - `path_ias` tint — indicated airspeed in knots (MobilityDB stepwise temporal integer). Sparse: present for ~27% of flights that broadcast IAS.
 - `alt_correction_ft` tfloat — QNH altitude correction timeseries in feet (MobilityDB stepwise temporal float). Computed at ingest from GFS MSLP. Null if GFS data was not available for the flight's time window.
+- `path_agl_ft` tfloat — above-ground-level height in feet (MobilityDB stepwise temporal float). Derived at ingest from the Copernicus GLO-90 DEM: `agl_ft = pressure_alt_ft + alt_correction_ft - terrain_elevation_ft`. Null if terrain tiles are not available.
 - `squawk_seq` ttext — transponder squawk code timeseries (MobilityDB stepwise temporal text). Each instant marks the start of a new code. Run-length encoded; most flights have 1–3 distinct runs.
 - `alt_min_pressure_ft`, `alt_max_pressure_ft` FLOAT4 — min/max pressure altitude over the trajectory. Stored as generated columns derived from `getZ(path)`.
 - `alt_min_qnh_ft`, `alt_max_qnh_ft` FLOAT4 — min/max QNH-corrected altitude. Stored as generated columns (`getZ(path) + alt_correction_ft`, falling back to pressure altitude if correction is unavailable).
@@ -158,6 +159,20 @@ After all aircraft have been processed, all in-progress flight state is serialis
 - **Idempotent**: re-running the same batch produces the same `flights` rows (the primary key `(icao24, start_ts)` is deterministic). The staging blob is also reproducible because it derives from the same input.
 - **Parallel by construction**: the map/reduce shape means per-aircraft work runs in a ProcessPoolExecutor. The unit of work is small (a few thousand points typically), so a pool of 8–16 workers on the OVH box keeps everything busy.
 - **No global transaction**: each finalised flight commits independently. A crash mid-batch loses only in-flight reducer work; already-committed flights persist. The batch is marked succeeded only when all reducers complete; retrying re-runs idempotently.
+
+### AGL height computation
+
+Per-vertex above-ground-level height is computed at ingest by sampling the Copernicus GLO-90 90m DEM against each trajectory vertex.
+
+**Formula**: `agl_ft = (pressure_alt_ft + alt_correction_ft) - terrain_elevation_ft`
+
+Where `alt_correction_ft` is the QNH correction for that instant (interpolated from the stored correction series), and `terrain_elevation_ft` is read from the DEM tile at the vertex's lat/lon. The result is stored as `path_agl_ft tfloat` (MobilityDB stepwise temporal float), matching the same instant structure as the path.
+
+**Tile storage**: GLO-90 tiles cover 1°×1° each. Each tile is stored as an int16-feet `.npy` file (not `.tif`) in the `terrain_data` volume at `/data/terrain`. Conversion from float32-metres GeoTIFF happens in memory via `rasterio.MemoryFile` during the initial download — no `.tif` files are kept on disk. `TileManager` reads `.npy` directly via `np.load()` at runtime; rasterio is not a runtime dependency.
+
+**Null behaviour**: if a tile is absent (ocean, or not yet downloaded), the corresponding vertices get no terrain correction and the series is null. Flights over entirely untiled areas have `path_agl_ft = NULL`.
+
+**Backfill**: flights ingested before AGL was added can be backfilled with `backfill-agl` (or `make backfill-agl`). The backfill tool reads stored path + correction data from the database and uses a `ThreadPoolExecutor` to parallelize AGL computation across flights in each batch (numpy and `np.load` both release the GIL, so threads genuinely overlap).
 
 ### Ingestion (streaming, future)
 
@@ -299,6 +314,7 @@ adsb-aero/
 │   │   ├── query/             # DSL Pydantic models + SQL compiler
 │   │   ├── db/                # asyncpg connection pool
 │   │   ├── pressure/          # GFS MSLP fetch (Herbie/cfgrib) + QNH correction computation
+│   │   ├── terrain/           # GLO-90 DEM tile download, TileManager, AGL computation, backfill
 │   │   ├── era5/              # ERA5 integration (stub)
 │   │   ├── reference_data/    # Doc 8643, airspace, airports loaders
 │   │   └── config.py          # Pydantic settings
@@ -328,7 +344,7 @@ adsb-aero/
 
 ## Operational concerns
 
-- **Errors**: Sentry SDK in every backend entry point (API server and all scheduled tasks — add to any new background task or cron job). Free tier sufficient. DSN stored as a Docker secret (`infra/secrets/sentry_dsn`); read via `settings.effective_sentry_dsn`.
+- **Errors**: Sentry SDK in every backend entry point (API server and all scheduled tasks). Free tier sufficient. DSN stored as a Docker secret (`infra/secrets/sentry_dsn`); read via `settings.effective_sentry_dsn` (checks `SENTRY_DSN` env var first, then the secret file). The ofelia service mounts the secret and uses `start.sh` to substitute the DSN into `config.ini.template` at startup, passing it as `SENTRY_DSN` env var to each `job-run` container.
 - **Logs**: stdout from each container, captured by Docker's json-file driver.
 - **Secrets**: Plain text files in `infra/secrets/` (gitignored), mounted by Docker Compose at `/run/secrets/<name>`. Current secrets: `sentry_dsn` (Sentry DSN), `openaip_api_key` (OpenAIP tile/airspace proxy), `origin.crt` and `origin.key` (TLS certificates, prod only). Migrate to `sops` if collaborators are added.
 - **CI/CD**: GitHub Actions builds and pushes `api`, `web`, and `postgres` images to GitHub Container Registry on every push to `main`. Deployment to OVH is `git pull && make prod` (which runs `docker compose pull && docker compose up -d` in `infra/`). Static assets are baked into the web image; no local build step is needed on the server. No Kubernetes.
@@ -355,11 +371,12 @@ The compose file becomes the dev config; cloud deploys use Helm charts or Terraf
 4. **API v1** ✓ — query endpoint with the JSON DSL, flight detail endpoint, data-range endpoint, health check.
 5. **Reference data** ✓ — Doc 8643 type designators, OpenAIP airspace (overlay + zone selection in query builder). OpenSky aircraft metadata and OurAirports airports not yet loaded.
 6. **GFS altitude correction** ✓ — GFS MSLP fetch via Herbie/cfgrib, per-vertex QNH correction computed at ingest and stored as `alt_correction_ft` tfloat. Query compiler applies stored corrections for altitude-based predicates. Altitude bounds accept ft or FL references.
-7. **Frontend** ✓ — full query builder (all DSL predicates, polygon drawing, airspace selection, altitude/time/squawk/dwell/distance optional filters), map with multiple colour modes (alt/cat/VS/GS/IAS/squawk), results panel with altitude sparklines, rich hover infobox, flight selection with trace dimming.
+7. **AGL height** ✓ — Copernicus GLO-90 DEM tiles downloaded as int16-feet `.npy` files; `path_agl_ft tfloat` computed at ingest and stored per-vertex. `download-terrain` downloads tiles; `backfill-agl` populates historical flights.
 
 ### Remaining
 
-8. **OurAirports integration**: radius-from-airfield pickers in the query builder. Requires loading OurAirports data and a typeahead search UI.
-9. **OpenSky aircraft metadata**: enrich callsign and registration from the OpenSky aircraft database. Requires periodic-refresh loader.
-10. **Scale up**: ingest whole-world data, validate performance under load, tune indexes and query plans.
-12. **Future**: VFR/IFR classification (separate column or table), streaming ingest from adsb.lol live feed, public launch, CI with GitHub Actions, hardening.
+8. **Frontend**: map UI with query builder, results panel, flight detail.
+9. **OurAirports integration**: radius-from-airfield pickers in the query builder. Requires loading OurAirports data and a typeahead search UI.
+10. **OpenSky aircraft metadata**: enrich callsign and registration from the OpenSky aircraft database. Requires periodic-refresh loader.
+11. **Scale up**: ingest whole-world data, validate performance under load, tune indexes and query plans.
+12. **Future**: VFR/IFR classification, streaming ingest from adsb.lol live feed, public launch, CI with GitHub Actions, hardening.

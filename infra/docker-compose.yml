@@ -50,6 +50,7 @@ services:
       - sentry_dsn
     volumes:
       - scheduler_cache:/data/cache
+      - terrain_data:/data/terrain
     networks:
       - default
       - db
@@ -90,10 +91,13 @@ services:
   ofelia:
     image: mcuadros/ofelia:latest
     restart: unless-stopped
-    command: daemon --config=/etc/ofelia/config.ini
+    entrypoint: ["/bin/sh", "/etc/ofelia/start.sh"]
+    secrets:
+      - sentry_dsn
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./ofelia/config.ini:/etc/ofelia/config.ini:ro
+      - ./ofelia/config.ini.template:/etc/ofelia/config.ini.template:ro
+      - ./ofelia/start.sh:/etc/ofelia/start.sh:ro
     depends_on:
       api:
         condition: service_healthy
@@ -101,6 +105,7 @@ services:
 volumes:
   postgres_data:
   scheduler_cache:
+  terrain_data:
   openaip_cache:
 
 secrets:

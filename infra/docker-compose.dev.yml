@@ -14,6 +14,8 @@ services:
   api:
     # Hot-reload: uvicorn watches for source changes
     command: ["uvicorn", "adsb_server.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
     volumes:
       - ../server/adsb_server:/app/adsb_server
 
@@ -45,14 +47,16 @@ services:
   # One-shot import services for manual dev use (not started by `docker compose up`).
   # Run with: docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm import-traces
   import-traces:
-    image: ghcr.io/arachnid/adsb.aero/api:latest
+    build:
+      context: ../server
     profiles: ["tools"]
-    command: ["python", "-m", "adsb_server.ingestion.ingest"]
+    command: ["import-traces"]
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: ${POSTGRES_DB:-adsb}
       POSTGRES_USER: ${POSTGRES_USER:-adsb}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       SCHEDULER_CACHE_DIR: /data/cache
       SCHEDULER_LOOKBACK_DAYS: "80"
       SCHEDULER_KEEP_TRACES: "true"
@@ -60,7 +64,9 @@ services:
     secrets:
       - sentry_dsn
     volumes:
+      - ../server/adsb_server:/app/adsb_server
       - dev_scheduler_cache:/data/cache
+      - terrain_data:/data/terrain
     networks:
       - db
     depends_on:
@@ -70,7 +76,7 @@ services:
   import-airframes:
     image: ghcr.io/arachnid/adsb.aero/api:latest
     profiles: ["tools"]
-    command: ["python", "-m", "adsb_server.reference_data.airframes"]
+    command: ["import-airframes"]
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"

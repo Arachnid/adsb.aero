@@ -738,13 +738,21 @@ class TestProcessAndCorrect:
     ):
         from unittest.mock import MagicMock
 
+        import numpy as np
+
         import adsb_server.ingestion.batch as batch_mod
+        from adsb_server.terrain.tiles import TileManager
 
         batch_date = date(2021, 1, 1)
         ct = (
             cutoff_ts
             if cutoff_ts is not None
             else datetime.combine(batch_date, dt_time.max, tzinfo=UTC).timestamp()
+        )
+        mock_tm = MagicMock(spec=TileManager)
+        # Return sea-level (0 m) for all points — correct shape, valid numpy array.
+        mock_tm.sample_elevations.side_effect = lambda lons, lats: np.zeros(
+            len(lons), dtype=np.float64
         )
         return batch_mod._WorkerState(
             correction_interp=MagicMock(),
@@ -753,6 +761,7 @@ class TestProcessAndCorrect:
             batch_date=batch_date,
             cutoff_ts=ct,
             staging=staging or {},
+            tile_manager=mock_tm,
         )
 
     def test_valid_trace_produces_finalized_flight(self, monkeypatch):

@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     herbie_cache_dir: Path = Path("/data/cache/herbie")
     herbie_keep_cache: bool = False  # keep GRIB files after ingestion (useful for debugging)
 
+    terrain_data_dir: Path = Path("/data/terrain")
+
     @property
     def effective_sentry_dsn(self) -> str:
         """SENTRY_DSN env var, or /run/secrets/sentry_dsn Docker secret, or empty."""

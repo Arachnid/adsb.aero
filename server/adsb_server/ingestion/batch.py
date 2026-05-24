@@ -32,6 +32,8 @@ from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, T
 from adsb_server.ingestion.parser import parse_trace_bytes, stream_tarball_raw
 from adsb_server.ingestion.splitter import finalize_segment, split_flights
 from adsb_server.pressure.correct import build_correction_interpolator, compute_correction_series
+from adsb_server.terrain.agl import compute_agl_series
+from adsb_server.terrain.tiles import TileManager
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +76,12 @@ INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
     start_ts, end_ts, path, path_tracks,
     squawk_seq, alt_correction_ft,
     path_gs, path_vr, path_ias,
-    raw_point_count, ingest_batch_date, path_h3, squawk_codes)
+    raw_point_count, ingest_batch_date, path_h3, squawk_codes, path_agl_ft)
 VALUES ($1,$2,$3,$4,$5,$6,
     $7::tgeompoint, $8::tint,
     $9::ttext, $10::tfloat,
     $11::tint, $12::tint, $13::tint,
-    $14, $15, $16::h3index[], $17::text[])
+    $14, $15, $16::h3index[], $17::text[], $18::tfloat)
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
@@ -91,7 +93,8 @@ ON CONFLICT (icao24, start_ts) DO UPDATE SET
     raw_point_count=EXCLUDED.raw_point_count,
     ingest_batch_date=EXCLUDED.ingest_batch_date,
     path_h3=EXCLUDED.path_h3,
-    squawk_codes=EXCLUDED.squawk_codes
+    squawk_codes=EXCLUDED.squawk_codes,
+    path_agl_ft=EXCLUDED.path_agl_ft
 """
 
 _FlightParams = tuple[
@@ -112,6 +115,7 @@ _FlightParams = tuple[
     date,
     list[str],
     list[str],
+    str | None,  # path_agl_ft
 ]
 
 
@@ -122,6 +126,7 @@ class _WorkerState(NamedTuple):
     batch_date: date
     cutoff_ts: float
     staging: dict[str, RawFlight]
+    tile_manager: TileManager
 
 
 # Set in run_batch before Pool creation; inherited by forked workers.
@@ -167,6 +172,7 @@ def _flight_to_params(
     flight: FinalizedFlight,
     batch_date: date,
     alt_correction_ft: str | None,
+    path_agl_ft: str | None,
 ) -> _FlightParams:
     """Convert a FinalizedFlight into the parameter tuple for the UPSERT SQL."""
     return (
@@ -187,6 +193,7 @@ def _flight_to_params(
         batch_date,
         path_h3_cells(flight.vertex_sequences),
         list({code for seq in flight.squawk_runs for _, code in seq}),
+        path_agl_ft,
     )
 
 
@@ -273,6 +280,8 @@ def _process_and_correct(
             flat_verts, state.correction_interp, state.t_min, state.t_max
         )
         wkt: str | None = None
+        corr_ts: list[float] | None = None
+        corr_vals: list[float] | None = None
         if series is not None:
             corr_ts, corr_vals = series
             # Split the flat correction arrays back into per-sub-sequence pairs.
@@ -288,7 +297,11 @@ def _process_and_correct(
                 )
                 offset += n
             wkt = tfloat_stepwise_seqset(per_seq)
-        params_list.append(_flight_to_params(flight, state.batch_date, wkt))
+
+        agl = compute_agl_series(flight.vertex_sequences, corr_ts, corr_vals, state.tile_manager)
+        agl_wkt = tfloat_stepwise_seqset(agl) if agl is not None else None
+
+        params_list.append(_flight_to_params(flight, state.batch_date, wkt, agl_wkt))
 
     return params_list, in_progress, total_dropped, icao24
 
@@ -386,8 +399,12 @@ async def run_batch(
     # Capture only the keys so the closure below doesn't retain the full staging dict.
     staging_icao24s = frozenset(staging)
 
+    tile_manager = TileManager(settings.terrain_data_dir)
+
     # Set worker state before fork so all worker processes inherit it.
-    _worker_state = _WorkerState(correction_interp, t_min, t_max, batch_date, cutoff_ts, staging)
+    _worker_state = _WorkerState(
+        correction_interp, t_min, t_max, batch_date, cutoff_ts, staging, tile_manager
+    )
 
     flight_count = 0
     t_start = _time.monotonic()

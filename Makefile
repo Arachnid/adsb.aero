@@ -1,4 +1,4 @@
-.PHONY: dev dev-down prod prod-down logs build-web migrate import-airframes import-traces gen-cert
+.PHONY: dev dev-down prod prod-down logs build-web migrate import-airframes import-traces download-terrain backfill-agl gen-cert
 
 # ── Dev stack ────────────────────────────────────────────────────────────────
 # Brings up postgres, redis, api (--reload), vite dev server, and nginx.
@@ -28,10 +28,20 @@ migrate:
 	cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm api alembic upgrade head
 
 import-airframes:
-	cd server && .venv/bin/python -m adsb_server.reference_data.airframes
+	docker exec infra-api-1 import-airframes
 
 import-traces:
 	cd infra && docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm import-traces
+
+# Download Copernicus GLO-90 DEM tiles as .npy files into the terrain_data volume.
+# Safe to interrupt and resume — already-downloaded tiles are skipped.
+# Takes 30–60 min on first run.
+download-terrain:
+	docker exec infra-api-1 download-terrain
+
+# Populate path_agl_ft for any flights ingested before AGL was added.
+backfill-agl:
+	docker exec infra-api-1 backfill-agl
 
 # ── Code generation ───────────────────────────────────────────────────────────
 # Export the OpenAPI spec from the server and regenerate web TypeScript types.

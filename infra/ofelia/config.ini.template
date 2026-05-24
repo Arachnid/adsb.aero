@@ -1,0 +1,18 @@
+[job-run "import-traces"]
+schedule    = @every 12h
+image       = ghcr.io/arachnid/adsb.aero/api:latest
+command     = import-traces
+no-overlap  = true
+delete      = true
+network     = infra_db
+environment = POSTGRES_HOST=postgres,POSTGRES_PORT=5432,POSTGRES_DB=adsb,POSTGRES_USER=adsb,SCHEDULER_CACHE_DIR=/data/cache,SENTRY_DSN=__SENTRY_DSN__
+volume      = infra_scheduler_cache:/data/cache
+
+[job-run "import-airframes"]
+schedule    = 0 0 3 * * 0
+image       = ghcr.io/arachnid/adsb.aero/api:latest
+command     = import-airframes
+no-overlap  = true
+delete      = true
+network     = infra_db
+environment = POSTGRES_HOST=postgres,POSTGRES_PORT=5432,POSTGRES_DB=adsb,POSTGRES_USER=adsb,SENTRY_DSN=__SENTRY_DSN__

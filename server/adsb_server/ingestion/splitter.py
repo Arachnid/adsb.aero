@@ -55,6 +55,12 @@ _MAX_STITCH_SPEED_MPS = 350.0
 # apparent bursts slightly above airliner speeds on very short intervals.
 _MAX_POINT_SPEED_MPS = 500.0
 
+# Hard cap on implied barometric altitude rate between consecutive points.
+# 300 ft/s = 18,000 fpm — safely above any aircraft in normal ADS-B-equipped
+# flight (fast business jets climb at ~200 ft/s) but well below the
+# thousands of ft/s seen from faulty barometric encoders.
+_MAX_POINT_ALT_RATE_FTPS = 300.0
+
 # Minimum implied average speed for an aircraft to be considered continuously
 # airborne across a gap.  Below this the aircraft was almost certainly stationary
 # (parked at an airfield whose baro elevation is non-zero, so alt_baro is not
@@ -253,10 +259,12 @@ def _should_flight_split(prev: RawPoint, curr: RawPoint, flight_start_ts: float)
 
 
 def _drop_implausible_positions(icao24: str, points: list[RawPoint]) -> tuple[list[RawPoint], int]:
-    """Drop position reports that imply speed > _MAX_STITCH_SPEED_MPS from the previous kept point.
+    """Drop position reports with implausible horizontal speed or altitude rate.
 
-    Corrupted ADS-B receivers occasionally emit garbage coordinates for a real
-    aircraft, producing planet-spanning linestrings that cause GEOS to error.
+    Corrupted ADS-B receivers occasionally emit garbage coordinates or altitude
+    readings for a real aircraft.  Both are caught here:
+    - Horizontal speed > _MAX_POINT_SPEED_MPS: garbage lat/lon.
+    - Altitude rate > _MAX_POINT_ALT_RATE_FTPS: faulty barometric encoder.
 
     Returns (kept_points, dropped_count).
     """
@@ -268,11 +276,17 @@ def _drop_implausible_positions(icao24: str, points: list[RawPoint]) -> tuple[li
         if dt <= 0.0:
             kept.append(curr)
             continue
-        speed = _haversine_m(prev, curr) / dt
-        if speed <= _MAX_POINT_SPEED_MPS:
-            kept.append(curr)
-        else:
+        if _haversine_m(prev, curr) / dt > _MAX_POINT_SPEED_MPS:
             dropped += 1
+            continue
+        if (
+            prev.alt_baro is not None
+            and curr.alt_baro is not None
+            and abs(curr.alt_baro - prev.alt_baro) / dt > _MAX_POINT_ALT_RATE_FTPS
+        ):
+            dropped += 1
+            continue
+        kept.append(curr)
     return kept, dropped
 
 

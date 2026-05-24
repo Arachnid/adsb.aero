@@ -601,3 +601,27 @@ class TestImplausiblePositions:
         ]
         flight, _ = finalize_segment("aabbcc", points, icao_type=None)
         assert flight is None
+
+    def test_implausible_altitude_rate_dropped(self) -> None:
+        """A point with altitude change > 300 ft/s from the previous is dropped."""
+        points = [
+            _make_point(ts=0.0, alt_baro=10000.0),
+            _make_point(ts=1.0, alt_baro=13500.0),  # 3500 ft/s — dropped
+            _make_point(ts=60.0, alt_baro=10100.0),  # normal — kept
+        ]
+        flight, dropped = finalize_segment("aabbcc", points, icao_type=None)
+        assert flight is not None
+        assert dropped == 1
+        alts = [v[2] for v in flight.vertex_sequences[0]]
+        assert 13500.0 not in alts
+
+    def test_plausible_altitude_rate_kept(self) -> None:
+        """Normal climb rates (well under 300 ft/s) are never filtered."""
+        # 1000 ft in 60 s = ~16.7 ft/s — typical airliner climb
+        points = [
+            _make_point(ts=0.0, alt_baro=10000.0),
+            _make_point(ts=60.0, alt_baro=11000.0),
+        ]
+        flight, dropped = finalize_segment("aabbcc", points, icao_type=None)
+        assert flight is not None
+        assert dropped == 0
