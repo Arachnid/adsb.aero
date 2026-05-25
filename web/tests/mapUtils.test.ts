@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stepValueAt } from "../src/lib/seriesUtils";
+import { stepValueAt, linearValueAt } from "../src/lib/seriesUtils";
 import {
   projectOntoSegment,
   trackToCompass,
@@ -61,6 +61,55 @@ describe("stepValueAt", () => {
       [3000, 30],
     ];
     expect(stepValueAt(series, 1500)).toBe(10);
+  });
+});
+
+describe("linearValueAt", () => {
+  it("returns null for null/undefined/empty series", () => {
+    expect(linearValueAt(null, 1000)).toBeNull();
+    expect(linearValueAt(undefined, 1000)).toBeNull();
+    expect(linearValueAt([], 1000)).toBeNull();
+  });
+
+  it("returns null when timestamp is before the first entry", () => {
+    expect(linearValueAt([[1000, 100]], 500)).toBeNull();
+  });
+
+  it("returns the exact value at a known entry timestamp", () => {
+    const series = [
+      [1000, 0],
+      [2000, 1000],
+    ];
+    expect(linearValueAt(series, 1000)).toBe(0);
+    expect(linearValueAt(series, 2000)).toBe(1000);
+  });
+
+  it("interpolates linearly between two entries", () => {
+    const series = [
+      [0, 0],
+      [1000, 1000],
+    ];
+    expect(linearValueAt(series, 500)).toBeCloseTo(500);
+    expect(linearValueAt(series, 250)).toBeCloseTo(250);
+    expect(linearValueAt(series, 750)).toBeCloseTo(750);
+  });
+
+  it("returns the last value when timestamp is after all entries", () => {
+    const series = [
+      [1000, 42],
+      [2000, 99],
+    ];
+    expect(linearValueAt(series, 9999)).toBe(99);
+  });
+
+  it("picks the correct bracket for a multi-entry series", () => {
+    const series = [
+      [0, 0],
+      [100, 100],
+      [200, 0],
+    ];
+    expect(linearValueAt(series, 50)).toBeCloseTo(50);
+    expect(linearValueAt(series, 150)).toBeCloseTo(50);
   });
 });
 

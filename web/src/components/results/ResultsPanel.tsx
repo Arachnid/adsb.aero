@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef } from "react";
 import { Plane } from "../Icons";
 import type { FlightDetail } from "../../lib/api";
 import type { HoveredPoint } from "../map/MapView";
-import { stepValueAt } from "../../lib/seriesUtils";
+import { stepValueAt, linearValueAt } from "../../lib/seriesUtils";
 
 interface ResultsPanelProps {
   flights: FlightDetail[] | null;
@@ -59,15 +59,18 @@ function SparklineChart({
   coords,
   timestamps,
   altCorrFt,
+  aglFt,
   hoveredIdx,
   onHoverIdx,
 }: {
   coords: [number, number, number][][];
   timestamps: number[][] | null | undefined;
   altCorrFt: number[][][] | null | undefined;
+  aglFt: number[][][] | null | undefined;
   hoveredIdx: number | null;
   onHoverIdx: (idx: number | null) => void;
 }): React.ReactElement | null {
+  // Corrected altitude for each flat point.
   const flatAlts = coords.flatMap((seq, subIdx) => {
     const subTs = timestamps?.[subIdx];
     const subCorr = altCorrFt?.[subIdx] ?? null;
@@ -75,6 +78,27 @@ function SparklineChart({
       (c, j) => c[2] + (stepValueAt(subCorr, subTs?.[j] ?? 0) ?? 0),
     );
   });
+  // Ground elevation (alt - AGL) per sub-sequence; null when no AGL data for that sub-sequence.
+  const groundAltsBySubSeq: (number[] | null)[] = coords.map((seq, subIdx) => {
+    const subTs = timestamps?.[subIdx];
+    const subCorr = altCorrFt?.[subIdx] ?? null;
+    const subAgl = aglFt?.[subIdx] ?? null;
+    if (subAgl === null) return null;
+    return seq.map((c, j) => {
+      const ts = subTs?.[j] ?? 0;
+      const corrFt = stepValueAt(subCorr, ts) ?? 0;
+      const aglVal = linearValueAt(subAgl, ts) ?? 0;
+      return c[2] + corrFt - aglVal;
+    });
+  });
+  // Flat ground alts aligned 1:1 with flatAlts; null where no AGL data for that sub-sequence.
+  const flatGroundAlts: (number | null)[] = groundAltsBySubSeq.flatMap(
+    (g, subIdx) => g ?? (coords[subIdx] ?? []).map(() => null),
+  );
+  const flatGroundAltsForScale = flatGroundAlts.filter(
+    (v): v is number => v !== null,
+  );
+
   const flatTs = timestamps?.flat() ?? null;
   const n = flatAlts.length;
   if (n < 2) return null;
@@ -82,9 +106,11 @@ function SparklineChart({
   const W = 200,
     H = 28,
     PAD = 2;
-  const minAlt = Math.min(...flatAlts);
-  const maxAlt = Math.max(...flatAlts);
-  const range = maxAlt - minAlt || 1;
+
+  // Y scale: bottom fixed at 0 ft AMSL so terrain height is proportionally accurate.
+  const minVal = 0;
+  const maxVal = Math.max(...flatAlts, ...flatGroundAltsForScale, 1);
+  const range = maxVal;
 
   // X is time-proportional when timestamps are available, index-based otherwise.
   const t0 = flatTs?.[0] ?? 0;
@@ -97,48 +123,98 @@ function SparklineChart({
     }
     return PAD + (flatIdx / (n - 1)) * (W - PAD * 2);
   };
-  const toY = (alt: number): number =>
-    PAD + (1 - (alt - minAlt) / range) * (H - PAD * 2);
+  const toY = (val: number): number =>
+    PAD + (1 - (val - minVal) / range) * (H - PAD * 2);
   const n2s = (x: number): string => x.toFixed(3);
 
   // Build per-sub-sequence fills and polylines; no line crosses a coverage gap.
   let flatOffset = 0;
-  const fills: React.ReactElement[] = [];
+  const greenFills: React.ReactElement[] = [];
+  const blueFills: React.ReactElement[] = [];
   const lines: React.ReactElement[] = [];
+
   for (let subIdx = 0; subIdx < coords.length; subIdx++) {
     const subSeq = coords[subIdx] ?? [];
     const subTs = timestamps?.[subIdx];
     const subCorr = altCorrFt?.[subIdx] ?? null;
+    const groundAlts = groundAltsBySubSeq[subIdx] ?? null;
     const corrAlt = (c: [number, number, number], j: number): number =>
       c[2] + (stepValueAt(subCorr, subTs?.[j] ?? 0) ?? 0);
+
     if (subSeq.length >= 2) {
       const lastJ = subSeq.length - 1;
       const first = subSeq[0] ?? [0, 0, 0];
-      const fillD =
-        `M ${n2s(toX(flatOffset))},${n2s(toY(corrAlt(first, 0)))} ` +
-        subSeq
-          .slice(1)
-          .map(
-            (c, j) =>
-              `L ${n2s(toX(flatOffset + j + 1))},${n2s(toY(corrAlt(c, j + 1)))}`,
-          )
-          .join(" ") +
-        ` L ${n2s(toX(flatOffset + lastJ))},${String(H)} L ${n2s(toX(flatOffset))},${String(H)} Z`;
-      const polyPoints = subSeq
-        .map((c, j) => `${n2s(toX(flatOffset + j))},${n2s(toY(corrAlt(c, j)))}`)
-        .join(" ");
-      fills.push(
-        <path
-          key={flatOffset}
-          d={fillD}
-          fill="rgba(110,168,255,0.15)"
-          stroke="none"
-        />,
+      const altPoints = subSeq.map(
+        (c, j) => `${n2s(toX(flatOffset + j))},${n2s(toY(corrAlt(c, j)))}`,
       );
+
+      if (groundAlts !== null) {
+        // Green fill: ground line down to chart bottom.
+        const groundFwdPoints = subSeq.map(
+          (_, j) =>
+            `${n2s(toX(flatOffset + j))},${n2s(toY(groundAlts[j] ?? 0))}`,
+        );
+        const greenD =
+          `M ${groundFwdPoints.join(" L ")} ` +
+          `L ${n2s(toX(flatOffset + lastJ))},${String(H)} ` +
+          `L ${n2s(toX(flatOffset))},${String(H)} Z`;
+        greenFills.push(
+          <path
+            key={flatOffset}
+            d={greenD}
+            fill="rgba(74,222,128,0.3)"
+            stroke="none"
+          />,
+          <polyline
+            key={String(flatOffset) + "-top"}
+            points={groundFwdPoints.join(" ")}
+            fill="none"
+            stroke="rgba(74,222,128,0.75)"
+            strokeWidth="1"
+          />,
+        );
+
+        // Blue fill: polygon between altitude curve and ground curve.
+        const groundRevPoints = subSeq.map(
+          (_, j) =>
+            `${n2s(toX(flatOffset + lastJ - j))},${n2s(toY(groundAlts[lastJ - j] ?? 0))}`,
+        );
+        const blueD = `M ${altPoints.join(" L ")} L ${groundRevPoints.join(" L ")} Z`;
+        blueFills.push(
+          <path
+            key={flatOffset}
+            d={blueD}
+            fill="rgba(110,168,255,0.2)"
+            stroke="none"
+          />,
+        );
+      } else {
+        // No AGL data: original blue fill from altitude to chart bottom.
+        const fillD =
+          `M ${n2s(toX(flatOffset))},${n2s(toY(corrAlt(first, 0)))} ` +
+          subSeq
+            .slice(1)
+            .map(
+              (c, j) =>
+                `L ${n2s(toX(flatOffset + j + 1))},${n2s(toY(corrAlt(c, j + 1)))}`,
+            )
+            .join(" ") +
+          ` L ${n2s(toX(flatOffset + lastJ))},${String(H)} L ${n2s(toX(flatOffset))},${String(H)} Z`;
+        blueFills.push(
+          <path
+            key={flatOffset}
+            d={fillD}
+            fill="rgba(110,168,255,0.15)"
+            stroke="none"
+          />,
+        );
+      }
+
+      // Altitude polyline.
       lines.push(
         <polyline
           key={flatOffset}
-          points={polyPoints}
+          points={altPoints.join(" ")}
           fill="none"
           stroke="rgba(110,168,255,0.8)"
           strokeWidth="1.5"
@@ -153,10 +229,18 @@ function SparklineChart({
       ? hoveredIdx
       : null;
   const activeAlt = activeIdx !== null ? (flatAlts[activeIdx] ?? 0) : 0;
+  const activeGroundAlt =
+    activeIdx !== null ? (flatGroundAlts[activeIdx] ?? null) : null;
+  const activeAgl =
+    activeGroundAlt !== null ? Math.round(activeAlt - activeGroundAlt) : null;
   const activeHx = activeIdx !== null ? toX(activeIdx) : 0;
   const activeHy = activeIdx !== null ? toY(activeAlt) : 0;
   const tooltipLeft =
     activeIdx !== null ? `${((toX(activeIdx) / W) * 100).toFixed(2)}%` : "0%";
+  const tooltipText =
+    activeAgl !== null
+      ? `${Math.round(activeAlt).toLocaleString()} ft / ${activeAgl.toLocaleString()} agl`
+      : `${Math.round(activeAlt).toLocaleString()} ft`;
 
   return (
     <div style={{ position: "relative", marginTop: 5 }}>
@@ -180,7 +264,7 @@ function SparklineChart({
             boxShadow: "var(--shadow-1)",
           }}
         >
-          {Math.round(activeAlt).toLocaleString()} ft
+          {tooltipText}
         </div>
       )}
       <svg
@@ -206,7 +290,8 @@ function SparklineChart({
           onHoverIdx(null);
         }}
       >
-        {fills}
+        {greenFills}
+        {blueFills}
         {lines}
         {activeIdx !== null && (
           <g>
@@ -533,6 +618,7 @@ function FlightRow({
           coords={coords}
           timestamps={flight.timestamps}
           altCorrFt={flight.alt_correction_ft}
+          aglFt={flight.path_agl_ft}
           hoveredIdx={hoveredPointIdx}
           onHoverIdx={onHoverPointIdx}
         />

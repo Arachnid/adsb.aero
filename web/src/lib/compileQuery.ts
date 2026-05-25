@@ -119,6 +119,8 @@ function compilePred(
         ...(pred.distanceMaxNm !== null
           ? { distance_max_m: pred.distanceMaxNm * 1852 }
           : {}),
+        ...(pred.aglMin !== null ? { agl_min_ft: pred.aglMin } : {}),
+        ...(pred.aglMax !== null ? { agl_max_ft: pred.aglMax } : {}),
       };
       return { trajectory_intersects: v };
     }
@@ -148,6 +150,8 @@ function compilePred(
         ...(pred.distanceMaxNm !== null
           ? { distance_max_m: pred.distanceMaxNm * 1852 }
           : {}),
+        ...(pred.aglMin !== null ? { agl_min_ft: pred.aglMin } : {}),
+        ...(pred.aglMax !== null ? { agl_max_ft: pred.aglMax } : {}),
       };
       return { trajectory_within: v };
     }

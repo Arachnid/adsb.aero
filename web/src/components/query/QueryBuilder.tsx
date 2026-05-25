@@ -86,6 +86,8 @@ interface IntersectsPred extends BasePred {
   dwellMaxMin: number | null;
   distanceMinNm: number | null;
   distanceMaxNm: number | null;
+  aglMin: number | null;
+  aglMax: number | null;
 }
 interface AlwaysWithinPred extends BasePred {
   kind: "always_within";
@@ -108,6 +110,8 @@ interface AlwaysWithinPred extends BasePred {
   dwellMaxMin: number | null;
   distanceMinNm: number | null;
   distanceMaxNm: number | null;
+  aglMin: number | null;
+  aglMax: number | null;
 }
 interface CallsignPred extends BasePred {
   kind: "callsign";
@@ -197,6 +201,8 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
       dwellMaxMin: null,
       distanceMinNm: null,
       distanceMaxNm: null,
+      aglMin: null,
+      aglMax: null,
     };
   }
   if (kind === "aircraft") {
@@ -1224,6 +1230,7 @@ function RegionCard({
     pred.dwellMaxMin !== null ||
     pred.distanceMinNm !== null ||
     pred.distanceMaxNm !== null;
+  const hasAglData = pred.aglMin !== null || pred.aglMax !== null;
 
   const [altOpenLocal, setAltOpenLocal] = useState(hasAltData);
   const [timeOpenLocal, setTimeOpenLocal] = useState(hasTimeData);
@@ -1231,6 +1238,7 @@ function RegionCard({
   const [squawkInput, setSquawkInput] = useState("");
   const [dwellDistOpenLocal, setDwellDistOpenLocal] =
     useState(hasDwellDistData);
+  const [aglOpenLocal, setAglOpenLocal] = useState(hasAglData);
 
   // A section is open if the user has explicitly opened it OR if there is already data in it.
   // This prevents data set externally (e.g. altitude bounds from airspace selection) from
@@ -1239,6 +1247,7 @@ function RegionCard({
   const timeOpen = timeOpenLocal || hasTimeData;
   const squawkOpen = squawkOpenLocal || hasSquawkData;
   const dwellDistOpen = dwellDistOpenLocal || hasDwellDistData;
+  const aglOpen = aglOpenLocal || hasAglData;
 
   const handleShapeChange = (s: Shape): void => {
     onChange({ ...pred, shape: s });
@@ -1276,6 +1285,11 @@ function RegionCard({
         distanceMaxNm: null,
       });
     setDwellDistOpenLocal(checked);
+  };
+
+  const toggleAgl = (checked: boolean): void => {
+    if (!checked) onChange({ ...pred, aglMin: null, aglMax: null });
+    setAglOpenLocal(checked);
   };
 
   const addSquawkCode = (raw: string): void => {
@@ -1509,6 +1523,52 @@ function RegionCard({
           )}
         </div>
       )}
+      <div className="optional-group" style={{ marginTop: 4 }}>
+        <label className="optional-group-label">
+          <input
+            type="checkbox"
+            checked={aglOpen}
+            onChange={(e) => {
+              toggleAgl(e.target.checked);
+            }}
+          />
+          AGL range
+        </label>
+        {aglOpen && (
+          <div className="pred-row optional-group-body">
+            <div>
+              <FieldLabel>AGL min (ft)</FieldLabel>
+              <input
+                className="text-field mono"
+                type="number"
+                placeholder="0"
+                value={pred.aglMin ?? ""}
+                onChange={(e) => {
+                  onChange({
+                    ...pred,
+                    aglMin: e.target.value === "" ? null : +e.target.value,
+                  });
+                }}
+              />
+            </div>
+            <div>
+              <FieldLabel>AGL max (ft)</FieldLabel>
+              <input
+                className="text-field mono"
+                type="number"
+                placeholder="∞"
+                value={pred.aglMax ?? ""}
+                onChange={(e) => {
+                  onChange({
+                    ...pred,
+                    aglMax: e.target.value === "" ? null : +e.target.value,
+                  });
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
       <div className="optional-group" style={{ marginTop: 4 }}>
         <label className="optional-group-label">
           <input

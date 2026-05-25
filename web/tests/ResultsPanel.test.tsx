@@ -289,12 +289,14 @@ describe("ResultsPanel", () => {
   it("renders a sparkline SVG when the flight has path coordinates", () => {
     const flight = makeFlight({
       path: {
-        type: "LineString",
+        type: "MultiLineString",
         coordinates: [
-          [0, 51, 1000],
-          [1, 52, 5000],
-          [2, 53, 8000],
-        ] as [number, number, number][],
+          [
+            [0, 51, 1000],
+            [1, 52, 5000],
+            [2, 53, 8000],
+          ],
+        ] as [number, number, number][][],
       },
     });
     const { container } = render(
@@ -307,6 +309,79 @@ describe("ResultsPanel", () => {
       />,
     );
     expect(container.querySelector("svg")).not.toBeNull();
+  });
+
+  it("renders green terrain fill when path_agl_ft is provided", () => {
+    const flight = makeFlight({
+      path: {
+        type: "MultiLineString",
+        coordinates: [
+          [
+            [0, 51, 5000],
+            [1, 52, 10000],
+            [2, 53, 15000],
+          ],
+        ] as [number, number, number][][],
+      },
+      timestamps: [[1000, 2000, 3000]],
+      path_agl_ft: [
+        [
+          [1000, 2000],
+          [2000, 3000],
+          [3000, 4000],
+        ],
+      ],
+    });
+    const { container } = render(
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
+    const paths = container.querySelectorAll("path");
+    const greenPath = Array.from(paths).find((p) =>
+      p.getAttribute("fill")?.includes("74,222,128"),
+    );
+    expect(greenPath).not.toBeUndefined();
+  });
+
+  it("shows altitude and AGL in sparkline hover tooltip when AGL data is present", () => {
+    const flight = makeFlight({
+      flight_id: "aabbcc:2025-01-01T10:00:00Z",
+      path: {
+        type: "MultiLineString",
+        coordinates: [
+          [
+            [0, 51, 5000],
+            [1, 52, 10000],
+            [2, 53, 15000],
+          ],
+        ] as [number, number, number][][],
+      },
+      timestamps: [[1000, 2000, 3000]],
+      path_agl_ft: [
+        [
+          [1000, 2000],
+          [2000, 3000],
+          [3000, 4000],
+        ],
+      ],
+    });
+    const { container } = render(
+      <ResultsPanel
+        flights={[flight]}
+        loading={false}
+        error={null}
+        hasMore={false}
+        onLoadMore={() => {}}
+        hoveredPoint={{ flightId: flight.flight_id, pointIdx: 1 }}
+      />,
+    );
+    expect(container.querySelector("line")).not.toBeNull();
+    expect(screen.getByText(/agl/)).toBeInTheDocument();
   });
 
   it("does not render a sparkline when path is absent", () => {
@@ -361,12 +436,14 @@ describe("ResultsPanel", () => {
     const flight = makeFlight({
       flight_id: "aabbcc:2025-01-01T10:00:00Z",
       path: {
-        type: "LineString",
+        type: "MultiLineString",
         coordinates: [
-          [0, 51, 1000],
-          [1, 52, 5000],
-          [2, 53, 8000],
-        ] as [number, number, number][],
+          [
+            [0, 51, 1000],
+            [1, 52, 5000],
+            [2, 53, 8000],
+          ],
+        ] as [number, number, number][][],
       },
     });
     const { container } = render(
@@ -387,11 +464,13 @@ describe("ResultsPanel", () => {
     const onHoverPoint = vi.fn();
     const flight = makeFlight({
       path: {
-        type: "LineString",
+        type: "MultiLineString",
         coordinates: [
-          [0, 51, 1000],
-          [1, 52, 5000],
-        ] as [number, number, number][],
+          [
+            [0, 51, 1000],
+            [1, 52, 5000],
+          ],
+        ] as [number, number, number][][],
       },
     });
     const { container } = render(
@@ -413,12 +492,14 @@ describe("ResultsPanel", () => {
     const onHoverPoint = vi.fn();
     const flight = makeFlight({
       path: {
-        type: "LineString",
+        type: "MultiLineString",
         coordinates: [
-          [0, 51, 1000],
-          [1, 52, 5000],
-          [2, 53, 8000],
-        ] as [number, number, number][],
+          [
+            [0, 51, 1000],
+            [1, 52, 5000],
+            [2, 53, 8000],
+          ],
+        ] as [number, number, number][][],
       },
     });
     const { container } = render(

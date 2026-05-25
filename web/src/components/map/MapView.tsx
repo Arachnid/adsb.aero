@@ -20,7 +20,7 @@ import {
   iasToColor,
   type RGBA,
 } from "../../lib/colors";
-import { stepValueAt } from "../../lib/seriesUtils";
+import { stepValueAt, linearValueAt } from "../../lib/seriesUtils";
 
 import workerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 setWorkerUrl(workerUrl);
@@ -43,6 +43,8 @@ type Seg = {
   gs: number | null;
   ias: number | null;
   track: number | null;
+  aglFrom: number | null;
+  aglTo: number | null;
   callsign: string | null;
   icao24: string;
   icaoType: string | null;
@@ -489,6 +491,7 @@ export function MapView({
     y: number;
     dotPos: [number, number];
     altFt: number;
+    agl: number | null;
     ts: number;
     callsign: string | null;
     icao24: string;
@@ -759,6 +762,10 @@ export function MapView({
           const t = cursor ? projectOntoSegment(seg.from, seg.to, cursor) : 0;
           const altFt = Math.round(seg.altFt + t * (seg.altFtTo - seg.altFt));
           const ts = seg.tsFrom + t * (seg.tsTo - seg.tsFrom);
+          const agl =
+            seg.aglFrom !== null && seg.aglTo !== null
+              ? seg.aglFrom + t * (seg.aglTo - seg.aglFrom)
+              : null;
           const dotPos: [number, number] = [
             seg.from[0] + t * (seg.to[0] - seg.from[0]),
             seg.from[1] + t * (seg.to[1] - seg.from[1]),
@@ -772,6 +779,7 @@ export function MapView({
             y: info.y,
             dotPos,
             altFt,
+            agl,
             ts,
             callsign: seg.callsign,
             icao24: seg.icao24,
@@ -832,6 +840,7 @@ export function MapView({
           const subIas = f.path_ias?.[subIdx] ?? null;
           const subTracks = f.path_tracks?.[subIdx] ?? null;
           const subAltCorr = f.alt_correction_ft?.[subIdx] ?? null;
+          const subAgl = f.path_agl_ft?.[subIdx] ?? null;
           return subSeq.slice(0, -1).map((c, j): Seg => {
             // slice(0,-1) guarantees j+1 < subSeq.length
             const next = subSeq[j + 1] ?? c;
@@ -853,6 +862,8 @@ export function MapView({
               gs: stepValueAt(subGs, ts),
               ias: stepValueAt(subIas, ts),
               track: stepValueAt(subTracks, ts),
+              aglFrom: linearValueAt(subAgl, ts),
+              aglTo: linearValueAt(subAgl, tsNext),
               callsign: f.callsign ?? null,
               icao24: f.icao24,
               icaoType: f.icao_type ?? null,
@@ -1063,6 +1074,19 @@ export function MapView({
                   {mapTooltip.altFt.toLocaleString()} ft
                 </td>
               </tr>
+              {mapTooltip.agl !== null && (
+                <tr>
+                  <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>AGL</td>
+                  <td
+                    style={{
+                      fontFamily: "JetBrains Mono, monospace",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {Math.round(mapTooltip.agl).toLocaleString()} ft
+                  </td>
+                </tr>
+              )}
               {mapTooltip.vs !== null && (
                 <tr>
                   <td style={{ color: "var(--fg-3)", paddingRight: 8 }}>VS</td>
