@@ -329,10 +329,16 @@ def _compile_spatial_path(
 
             if spatial_fn == "ST_Within":
                 parts.append(f"{clipped_stbox} IS NOT NULL")
-                if has_fl_alt:
-                    parts.append(f"atvalues(getZ(path), {fl_span_sql}) IS NOT NULL")
-                if has_ft_alt:
-                    parts.append(f"atvalues({_CORR_ALT}, {ft_span_sql}) IS NOT NULL")
+                # always semantics: entire path must have altitude within bounds.
+                # Stored btree columns give exact O(log n) checks without atvalues().
+                if fl_alt_min_p is not None:
+                    parts.append(f"alt_min_pressure_ft >= {fl_alt_min_p}::float4")
+                if fl_alt_max_p is not None:
+                    parts.append(f"alt_max_pressure_ft <= {fl_alt_max_p}::float4")
+                if ft_alt_min_p is not None:
+                    parts.append(f"alt_min_qnh_ft >= {ft_alt_min_p}::float4")
+                if ft_alt_max_p is not None:
+                    parts.append(f"alt_max_qnh_ft <= {ft_alt_max_p}::float4")
                 parts.append(f"ST_Within(trajectory(path), {cte_name}.geom)")
             else:
                 parts.append(f"eIntersects({clipped_full}, {cte_name}.geom)")
@@ -371,14 +377,26 @@ def _compile_spatial_path(
 
     # Altitude when no geometry: btree indexes on stored generated columns for all refs.
     if v.geometry is None:
-        if fl_alt_min_p is not None:
-            parts.append(f"alt_max_pressure_ft >= {fl_alt_min_p}::float4")
-        if fl_alt_max_p is not None:
-            parts.append(f"alt_min_pressure_ft <= {fl_alt_max_p}::float4")
-        if ft_alt_min_p is not None:
-            parts.append(f"alt_max_qnh_ft >= {ft_alt_min_p}::float4")
-        if ft_alt_max_p is not None:
-            parts.append(f"alt_min_qnh_ft <= {ft_alt_max_p}::float4")
+        if spatial_fn == "ST_Within":
+            # always semantics: flight never went outside the altitude bounds.
+            if fl_alt_min_p is not None:
+                parts.append(f"alt_min_pressure_ft >= {fl_alt_min_p}::float4")
+            if fl_alt_max_p is not None:
+                parts.append(f"alt_max_pressure_ft <= {fl_alt_max_p}::float4")
+            if ft_alt_min_p is not None:
+                parts.append(f"alt_min_qnh_ft >= {ft_alt_min_p}::float4")
+            if ft_alt_max_p is not None:
+                parts.append(f"alt_max_qnh_ft <= {ft_alt_max_p}::float4")
+        else:
+            # ever semantics: flight was at some point within the altitude range.
+            if fl_alt_min_p is not None:
+                parts.append(f"alt_max_pressure_ft >= {fl_alt_min_p}::float4")
+            if fl_alt_max_p is not None:
+                parts.append(f"alt_min_pressure_ft <= {fl_alt_max_p}::float4")
+            if ft_alt_min_p is not None:
+                parts.append(f"alt_max_qnh_ft >= {ft_alt_min_p}::float4")
+            if ft_alt_max_p is not None:
+                parts.append(f"alt_min_qnh_ft <= {ft_alt_max_p}::float4")
 
     # Btree time bounds for partition pruning and activity-window filtering.
     if time_from_p is not None:

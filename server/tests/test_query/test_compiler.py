@@ -615,7 +615,9 @@ class TestTrajectoryWithin:
         assert "ST_Within(trajectory(path)," in sql
         assert "atStbox" not in sql
 
-    def test_altitude_bounds_fl_uses_atvalues_cte(self) -> None:
+    def test_altitude_bounds_fl_uses_always_semantics(self) -> None:
+        # always: entire path must never go below altitude_min.
+        # Uses alt_min_pressure_ft (stored btree column), not atvalues IS NOT NULL.
         params: list = []
         pred = TrajectoryWithin(
             trajectory_within=SpatioTemporalAltitudeValue(
@@ -627,15 +629,67 @@ class TestTrajectoryWithin:
         compiled = compile_predicate(pred, params)
         assert compiled.ctes
         cte_body = compiled.ctes[0][1]
-        assert "ST_3DMakeBox(" in cte_body  # in sb_idx
+        assert "ST_3DMakeBox(" in cte_body  # sb_idx still built for && pre-filter
         assert "sb_idx" in cte_body
         assert "path && " in compiled
-        assert "sb_idx" in compiled  # && uses 3D+T sb_idx
+        assert "sb_idx" in compiled
         assert "atStbox(path," in compiled
-        assert "atvalues(getZ(path)," in compiled
-        assert "IS NOT NULL" in compiled
+        assert "alt_min_pressure_ft >=" in compiled  # always: min >= lower bound
+        assert "alt_max_pressure_ft >=" not in compiled  # not ever semantics
+        assert "IS NOT NULL" in compiled  # still from clipped_stbox IS NOT NULL
         assert "ST_Within(trajectory(path)," in compiled
         assert "ST_ZMax(trajectory(path)::box3d)" not in compiled
+
+    def test_altitude_bounds_ft_with_geometry_uses_always_semantics(self) -> None:
+        # always: entire path must stay below altitude_max (ft/QNH).
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON,
+                altitude_max=10000,  # ft, default ref
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        assert "alt_max_qnh_ft <=" in compiled  # always: max <= upper bound
+        assert "alt_min_qnh_ft <=" not in compiled  # not ever semantics
+        assert "atvalues(" not in compiled
+        assert "ST_Within(trajectory(path)," in compiled
+
+    def test_altitude_no_geometry_always_semantics_fl_min(self) -> None:
+        # No geometry, always: flight never went below FL050.
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(
+                altitude_min=50,
+                altitude_min_ref="fl",
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "alt_min_pressure_ft >=" in sql  # always: min >= lower bound
+        assert "alt_max_pressure_ft >=" not in sql  # not ever semantics
+        assert "eIntersects" not in sql
+
+    def test_altitude_no_geometry_always_semantics_ft_max(self) -> None:
+        # No geometry, always: flight never exceeded 10000 ft.
+        params: list = []
+        pred = TrajectoryWithin(trajectory_within=SpatioTemporalAltitudeValue(altitude_max=10000))
+        sql = compile_predicate(pred, params)
+        assert "alt_max_qnh_ft <=" in sql  # always: max <= upper bound
+        assert "alt_min_qnh_ft <=" not in sql  # not ever semantics
+        assert "eIntersects" not in sql
+        assert 10000.0 in params
+
+    def test_altitude_no_geometry_always_semantics_ft_range(self) -> None:
+        # No geometry, always: flight stayed between 5000 and 15000 ft the whole time.
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(altitude_min=5000, altitude_max=15000)
+        )
+        sql = compile_predicate(pred, params)
+        assert "alt_min_qnh_ft >=" in sql
+        assert "alt_max_qnh_ft <=" in sql
+        assert "alt_max_qnh_ft >=" not in sql  # not ever semantics
+        assert "alt_min_qnh_ft <=" not in sql  # not ever semantics
 
     def test_time_bounds_uses_stbox_cte(self) -> None:
         params: list = []

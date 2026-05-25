@@ -62,12 +62,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     settings.init_sentry()
     if settings.log_queries:
-        # Uvicorn only configures its own loggers; root stays at WARNING.
-        # Attach uvicorn's handler to adsb_server so INFO messages are visible.
+        # Root logger stays at WARNING in uvicorn; add a handler directly so
+        # INFO messages from adsb_server reach stderr without relying on
+        # uvicorn's internal logger structure.
         adsb_logger = logging.getLogger("adsb_server")
         adsb_logger.setLevel(logging.INFO)
-        for handler in logging.getLogger("uvicorn").handlers:
-            adsb_logger.addHandler(handler)
+        if not adsb_logger.handlers:
+            adsb_logger.addHandler(logging.StreamHandler())
 
     owned = not hasattr(app.state, "pool")
     if owned:
