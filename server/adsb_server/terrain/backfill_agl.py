@@ -2,11 +2,14 @@
 
 Reads each flight's simplified path and QNH correction series from the database,
 runs the same AGL pipeline as batch ingestion, and writes the result back.
-Processes one ingest_batch_date at a time so progress is stable.
 
-AGL computation per flight is CPU+I/O bound (numpy densification + np.load tile reads).
-A ThreadPoolExecutor runs all flights in a batch concurrently; numpy and file I/O
-both release the GIL so threads genuinely overlap.
+Streams all NULL-AGL flights in reverse chronological order via a single
+PostgreSQL server-side cursor (no keyset pagination).  A dedicated read
+connection holds the cursor open inside a read transaction; a separate write
+connection commits each batch independently so a crash loses at most one batch.
+
+Each row is submitted to a thread pool as it arrives; when batch_size futures
+have accumulated they are awaited together and committed.
 
 Usage:
     backfill-agl
@@ -27,7 +30,7 @@ from typing import TYPE_CHECKING
 import asyncpg
 
 if TYPE_CHECKING:
-    from datetime import date, datetime
+    from datetime import datetime
 
 from adsb_server.config import get_settings
 from adsb_server.geometry.wkt import tfloat_stepwise_seqset
@@ -39,10 +42,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_BATCH_SIZE = 500
 _DEFAULT_WORKERS = 8
 
-# Fetch one batch of flights with missing AGL for a given ingest_batch_date.
-# path_points: 2D float8 array, each row = [seq_n, lon, lat, alt_ft, ts_epoch]
-# correction_pairs: 2D float8 array, each row = [ts_epoch, correction_ft], or NULL
-# $3/$4: keyset cursor (cursor_ts, cursor_icao) — NULL on first page to fetch from the start.
 _FETCH_SQL = """
 SELECT
     f.icao24,
@@ -72,11 +71,8 @@ SELECT
         FROM unnest(instants(f.alt_correction_ft)) AS inst
     ) AS correction_pairs
 FROM flights f
-WHERE f.ingest_batch_date = $1
-  AND f.path_agl_ft IS NULL
-  AND ($3::timestamptz IS NULL OR (f.start_ts, f.icao24) > ($3, $4))
-ORDER BY f.start_ts, f.icao24
-LIMIT $2
+WHERE f.path_agl_ft IS NULL
+ORDER BY f.start_ts DESC, f.icao24 DESC
 """
 
 _UPDATE_SQL = """
@@ -116,91 +112,28 @@ def _compute_agl_row(
     return tfloat_stepwise_seqset(agl) if agl is not None else None
 
 
-async def backfill_date(
+async def _flush(
     conn: asyncpg.Connection,
-    tile_manager: TileManager,
-    batch_date: date,
-    batch_size: int,
-    executor: ThreadPoolExecutor,
+    pending: list[tuple[asyncpg.Record, asyncio.Future[str | None]]],
 ) -> int:
-    """Backfill path_agl_ft for all flights on batch_date. Returns count of updated flights."""
-    loop = asyncio.get_running_loop()
-    total = 0
-    cursor_ts: datetime | None = None
-    cursor_icao: str = ""
-
-    while True:
-        rows = await conn.fetch(_FETCH_SQL, batch_date, batch_size, cursor_ts, cursor_icao)
-        if not rows:
-            break
-
-        # Dispatch all flights in the batch to the thread pool concurrently.
-        # return_exceptions=True ensures one failed flight doesn't abort the batch.
-        raw_results: list[str | None | BaseException] = list(
-            await asyncio.gather(
-                *[
-                    loop.run_in_executor(
-                        executor,
-                        _compute_agl_row,
-                        row["path_points"],
-                        row["correction_pairs"],
-                        tile_manager,
-                    )
-                    for row in rows
-                ],
-                return_exceptions=True,
+    """Await pending AGL futures, write results to the DB, return updated flight count."""
+    raw: list[str | None | BaseException] = list(
+        await asyncio.gather(*[f for _, f in pending], return_exceptions=True)
+    )
+    updates: list[tuple[str, datetime, str]] = []
+    for (row, _), result in zip(pending, raw, strict=True):
+        if isinstance(result, BaseException):
+            logger.warning(
+                "AGL computation raised for %s %s: %s",
+                row["icao24"],
+                row["start_ts"],
+                result,
             )
-        )
-
-        updates: list[tuple[str, datetime, str]] = []
-        skipped = 0
-        for row, result in zip(rows, raw_results, strict=True):
-            if isinstance(result, BaseException):
-                logger.warning(
-                    "AGL computation raised for %s %s: %s",
-                    row["icao24"],
-                    row["start_ts"],
-                    result,
-                )
-                skipped += 1
-            elif not row["path_points"]:
-                logger.warning(
-                    "Flight %s %s has no path points; skipping", row["icao24"], row["start_ts"]
-                )
-                skipped += 1
-            elif result is None:
-                logger.warning(
-                    "AGL computation produced no data for %s %s; skipping",
-                    row["icao24"],
-                    row["start_ts"],
-                )
-                skipped += 1
-            else:
-                updates.append((row["icao24"], row["start_ts"], result))
-
-        if updates:
-            await conn.executemany(_UPDATE_SQL, updates)
-        total += len(updates)
-
-        logger.info(
-            "date=%s  batch=%d  updated=%d  skipped=%d  date_total=%d",
-            batch_date,
-            len(rows),
-            len(updates),
-            skipped,
-            total,
-        )
-
-        # Advance the keyset cursor past all rows we just fetched, whether they
-        # succeeded or failed.  This prevents failed (still-NULL) flights from
-        # being re-fetched in subsequent iterations of the same run.
-        cursor_ts = rows[-1]["start_ts"]
-        cursor_icao = rows[-1]["icao24"]
-
-        if len(rows) < batch_size:
-            break
-
-    return total
+        elif result is not None:
+            updates.append((row["icao24"], row["start_ts"], result))
+    if updates:
+        await conn.executemany(_UPDATE_SQL, updates)
+    return len(updates)
 
 
 async def run_backfill(
@@ -209,35 +142,57 @@ async def run_backfill(
     batch_size: int = _DEFAULT_BATCH_SIZE,
     workers: int = _DEFAULT_WORKERS,
 ) -> None:
-    """Connect to DB and backfill all dates with missing AGL data."""
+    """Connect to the DB and backfill all flights with missing AGL data."""
     tile_manager = TileManager(data_dir)
-    conn: asyncpg.Connection = await asyncpg.connect(dsn)
+    # Two connections: read_conn holds the server-side cursor in a read transaction;
+    # write_conn commits each batch independently so crashes lose at most one batch.
+    read_conn: asyncpg.Connection = await asyncpg.connect(dsn)
+    write_conn: asyncpg.Connection = await asyncpg.connect(dsn)
+    loop = asyncio.get_running_loop()
+
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
-            dates = await conn.fetch(
-                "SELECT DISTINCT ingest_batch_date FROM flights "
-                "WHERE path_agl_ft IS NULL ORDER BY ingest_batch_date"
-            )
-            if not dates:
-                logger.info("No flights missing AGL data.")
-                return
+            total = 0
+            pending: list[tuple[asyncpg.Record, asyncio.Future[str | None]]] = []
 
-            logger.info("Backfilling %d dates with missing AGL data", len(dates))
-            grand_total = 0
-            for date_row in dates:
-                batch_date: date = date_row["ingest_batch_date"]
-                count = await backfill_date(conn, tile_manager, batch_date, batch_size, executor)
-                grand_total += count
+            async with read_conn.transaction():
+                async for row in read_conn.cursor(_FETCH_SQL, prefetch=batch_size):
+                    fut: asyncio.Future[str | None] = loop.run_in_executor(
+                        executor,
+                        _compute_agl_row,
+                        row["path_points"],
+                        row["correction_pairs"],
+                        tile_manager,
+                    )
+                    pending.append((row, fut))
+
+                    if len(pending) >= batch_size:
+                        n = await _flush(write_conn, pending)
+                        total += n
+                        logger.info(
+                            "back to %s | batch=%d | updated=%d | total=%d",
+                            pending[-1][0]["start_ts"].date(),
+                            len(pending),
+                            n,
+                            total,
+                        )
+                        pending = []
+
+            if pending:
+                n = await _flush(write_conn, pending)
+                total += n
                 logger.info(
-                    "date=%s  completed  updated=%d  running_total=%d",
-                    batch_date,
-                    count,
-                    grand_total,
+                    "back to %s | batch=%d | updated=%d | total=%d",
+                    pending[-1][0]["start_ts"].date(),
+                    len(pending),
+                    n,
+                    total,
                 )
 
-            logger.info("Backfill complete: %d flights updated", grand_total)
+            logger.info("Backfill complete: %d flights updated", total)
         finally:
-            await conn.close()
+            await read_conn.close()
+            await write_conn.close()
 
 
 def main() -> None:
@@ -255,7 +210,7 @@ def main() -> None:
         type=int,
         default=_DEFAULT_BATCH_SIZE,
         metavar="N",
-        help=f"Flights per DB fetch/update batch (default: {_DEFAULT_BATCH_SIZE})",
+        help=f"Flights per thread-pool flush and DB commit (default: {_DEFAULT_BATCH_SIZE})",
     )
     parser.add_argument(
         "--workers",
