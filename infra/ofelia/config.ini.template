@@ -12,6 +12,7 @@ environment = POSTGRES_USER=adsb
 environment = SCHEDULER_CACHE_DIR=/data/cache
 environment = SENTRY_DSN=__SENTRY_DSN__
 volume      = infra_scheduler_cache:/data/cache
+volume      = infra_terrain_data:/data/terrain
 
 [job-run "import-airframes"]
 schedule    = 0 0 3 * * 0
