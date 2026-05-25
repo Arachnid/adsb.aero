@@ -59,6 +59,17 @@ def tint_from_series(series: list[tuple[float, float]]) -> str | None:
     return f"[{', '.join(instants)}]"
 
 
+def tfloat_seq(values: list[float], timestamps: list[float]) -> str:
+    """Return a MobilityDB tfloat linear-interpolation sequence string.
+
+    values: float values at each instant.
+    timestamps: corresponding unix epoch floats, same length as values.
+    Output: '[val@ts, ...]'
+    """
+    instants = [f"{v:.4f}@{_fmt_ts(ts)}" for v, ts in zip(values, timestamps, strict=True)]
+    return f"[{', '.join(instants)}]"
+
+
 def tfloat_stepwise_seq(values: list[float], timestamps: list[float]) -> str | None:
     """Return a MobilityDB tfloat stepwise sequence string, or None if empty.
 

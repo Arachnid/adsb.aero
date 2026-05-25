@@ -160,6 +160,7 @@ _FLIGHT_COLS = f"""
     asText(f.path_ias) AS path_ias_text,
     asText(f.squawk_seq) AS squawk_seq_text,
     asText(f.alt_correction_ft) AS alt_correction_ft_text,
+    asText(f.path_agl_ft) AS path_agl_ft_text,
     f.raw_point_count,
     f.ingest_batch_date,
     numInstants(f.path) AS point_count
@@ -184,6 +185,7 @@ _INNER_COLS = """
     f.path_ias,
     f.squawk_seq,
     f.alt_correction_ft,
+    f.path_agl_ft,
     f.raw_point_count,
     f.ingest_batch_date,
     af.registration,
@@ -215,6 +217,7 @@ _FLIGHT_COLS_OUTER = f"""
     asText(f.path_ias) AS path_ias_text,
     asText(f.squawk_seq) AS squawk_seq_text,
     asText(f.alt_correction_ft) AS alt_correction_ft_text,
+    asText(f.path_agl_ft) AS path_agl_ft_text,
     f.raw_point_count,
     f.ingest_batch_date,
     numInstants(f.path) AS point_count
@@ -327,6 +330,7 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
         path_ias = _parse_tint_series(row["path_ias_text"])
         squawk_runs = _parse_squawk_seq(row["squawk_seq_text"])
     alt_correction_ft = _parse_alt_correction(row["alt_correction_ft_text"])
+    path_agl_ft = _parse_alt_correction(row["path_agl_ft_text"])
     return FlightDetail(
         flight_id=row["flight_id"],
         icao24=row["icao24"],
@@ -350,6 +354,7 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
         path_ias=path_ias,
         squawk_runs=squawk_runs,
         alt_correction_ft=alt_correction_ft,
+        path_agl_ft=path_agl_ft,
         raw_point_count=row["raw_point_count"],
         ingest_batch_date=row["ingest_batch_date"],
     )

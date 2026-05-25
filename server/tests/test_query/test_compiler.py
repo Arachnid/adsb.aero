@@ -1102,7 +1102,7 @@ class TestDwellDistance:
             )
         )
         compiled = compile_predicate(pred, params)
-        assert any("length(trajectory(" in p for p in compiled.outer_parts)
+        assert any("ST_Length(trajectory(" in p for p in compiled.outer_parts)
         assert any("::geography)" in p for p in compiled.outer_parts)
         assert any(">= " in p for p in compiled.outer_parts)
         assert 50000.0 in params
@@ -1115,7 +1115,7 @@ class TestDwellDistance:
             )
         )
         compiled = compile_predicate(pred, params)
-        assert any("length(trajectory(" in p for p in compiled.outer_parts)
+        assert any("ST_Length(trajectory(" in p for p in compiled.outer_parts)
         assert any("<= " in p for p in compiled.outer_parts)
         assert 200000.0 in params
 
@@ -1133,7 +1133,7 @@ class TestDwellDistance:
         compiled = compile_predicate(pred, params)
         outer = " ".join(compiled.outer_parts)
         assert outer.count("EXTRACT(EPOCH FROM duration(getTime(") == 2
-        assert outer.count("length(trajectory(") == 2
+        assert outer.count("ST_Length(trajectory(") == 2
         assert 300.0 in params
         assert 3600.0 in params
         assert 10000.0 in params
@@ -1164,4 +1164,215 @@ class TestDwellDistance:
         sql = compile_predicate(pred, params)
         assert "ST_Within(trajectory(path)," in sql
         assert "EXTRACT(EPOCH FROM duration(getTime(" in sql
-        assert 120.0 in params
+
+
+# ---------------------------------------------------------------------------
+# AGL height filter on trajectory_intersects / trajectory_within
+# ---------------------------------------------------------------------------
+
+
+class TestAglFilter:
+    def test_agl_min_no_geometry_intersects_uses_index_expression(self) -> None:
+        # No geometry, ever semantics: uses maxvalue() expression index (exact condition).
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(agl_min_ft=500.0)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "maxvalue(path_agl_ft)::float4 >=" in sql
+        assert 500.0 in params
+
+    def test_agl_max_no_geometry_intersects_uses_index_expression(self) -> None:
+        # No geometry, ever semantics: uses minvalue() expression index (exact condition).
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(agl_max_ft=200.0)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "minvalue(path_agl_ft)::float4 <=" in sql
+        assert 200.0 in params
+
+    def test_agl_both_no_geometry_intersects_uses_expressions_plus_atvalues(self) -> None:
+        # Both bounds without geometry: expression pre-filters + atvalues exact range check.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(agl_min_ft=100.0, agl_max_ft=500.0)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "maxvalue(path_agl_ft)::float4 >=" in sql
+        assert "minvalue(path_agl_ft)::float4 <=" in sql
+        assert "atvalues(path_agl_ft," in sql
+        assert "floatspan(" in sql
+        assert 100.0 in params
+        assert 500.0 in params
+
+    def test_agl_min_no_geometry_within_uses_index_expression(self) -> None:
+        # No geometry, always semantics: uses minvalue() expression index (exact condition).
+        params: list = []
+        pred = TrajectoryWithin(trajectory_within=SpatioTemporalAltitudeValue(agl_min_ft=300.0))
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "minvalue(path_agl_ft)::float4 >=" in sql
+        assert 300.0 in params
+
+    def test_agl_max_no_geometry_within_uses_index_expression(self) -> None:
+        # No geometry, always semantics: uses maxvalue() expression index (exact condition).
+        params: list = []
+        pred = TrajectoryWithin(trajectory_within=SpatioTemporalAltitudeValue(agl_max_ft=1000.0))
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "maxvalue(path_agl_ft)::float4 <=" in sql
+        assert 1000.0 in params
+
+    def test_agl_with_geometry_intersects_uses_effective_clipped_is_not_null(self) -> None:
+        # With geometry (intersects): existence proved by _effective_clipped IS NOT NULL,
+        # and pre-filtered by expression index conditions.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON, agl_min_ft=200.0)
+        )
+        compiled = compile_predicate(pred, params)
+        all_sql = " ".join([compiled, *compiled.outer_parts])
+        assert "path_agl_ft IS NOT NULL" in compiled
+        assert (
+            "maxvalue(path_agl_ft)::float4 >=" in compiled
+        )  # expression pre-filter in inner query
+        assert "atvalues(path_agl_ft," in all_sql  # doubly-clipped path
+        assert "IS NOT NULL" in all_sql
+
+    def test_agl_with_geometry_intersects_dwell_uses_doubly_clipped_path(self) -> None:
+        # Dwell is measured over path inside geometry AND at right AGL simultaneously.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, agl_min_ft=200.0, dwell_min_s=60.0
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        all_sql = " ".join([compiled, *compiled.outer_parts])
+        # Duration expression must reference the AGL-restricted (doubly-clipped) path.
+        assert "EXTRACT(EPOCH FROM duration(getTime(atTime(" in all_sql
+        assert "atvalues(path_agl_ft," in all_sql
+
+    def test_agl_with_geometry_within_scoped_to_clipped_path(self) -> None:
+        # With geometry (within): always semantics uses un-AGL-restricted clipped path
+        # so min/max reflects ALL instants in the geometry, not only AGL-satisfying ones.
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(geometry=_POLYGON, agl_min_ft=200.0)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "maxvalue(path_agl_ft)::float4 >=" in sql  # expression index pre-filter
+        assert "minValue(atTime(path_agl_ft, getTime(" in sql
+
+    def test_agl_both_no_geometry_within(self) -> None:
+        # always semantics, both bounds, no geometry: minvalue >= agl_min AND maxvalue <= agl_max.
+        # Both are exact conditions (the expression indexes are sufficient; no atvalues needed).
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(agl_min_ft=100.0, agl_max_ft=500.0)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "minvalue(path_agl_ft)::float4 >=" in sql
+        assert "maxvalue(path_agl_ft)::float4 <=" in sql
+        assert "atvalues" not in sql
+        assert 100.0 in params
+        assert 500.0 in params
+
+    def test_agl_both_with_geometry_intersects(self) -> None:
+        # ever semantics, both bounds, with geometry: expression pre-filters in inner query;
+        # _effective_clipped IS NOT NULL (doubly-clipped path) deferred to outer_parts.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, agl_min_ft=100.0, agl_max_ft=500.0
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        all_sql = " ".join([compiled, *compiled.outer_parts])
+        assert "path_agl_ft IS NOT NULL" in compiled
+        assert "maxvalue(path_agl_ft)::float4 >=" in compiled
+        assert "minvalue(path_agl_ft)::float4 <=" in compiled
+        assert "atvalues(path_agl_ft," in all_sql
+        assert "IS NOT NULL" in all_sql
+        assert 100.0 in params
+        assert 500.0 in params
+
+    def test_agl_both_with_geometry_within(self) -> None:
+        # always semantics, both bounds, with geometry: expression pre-filters (necessary)
+        # plus minValue/maxValue checks on AGL restricted to geometry instants.
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, agl_min_ft=100.0, agl_max_ft=500.0
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "maxvalue(path_agl_ft)::float4 >=" in sql
+        assert "minvalue(path_agl_ft)::float4 <=" in sql
+        assert "minValue(atTime(path_agl_ft, getTime(" in sql
+        assert "maxValue(atTime(path_agl_ft, getTime(" in sql
+        assert 100.0 in params
+        assert 500.0 in params
+
+    def test_agl_with_altitude_no_geometry(self) -> None:
+        # AGL and barometric altitude filters must coexist in the same query fragment.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                altitude_min=350, altitude_min_ref="fl", agl_min_ft=500.0
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "alt_max_pressure_ft >=" in sql
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "maxvalue(path_agl_ft)::float4 >=" in sql
+        assert 35000.0 in params
+        assert 500.0 in params
+
+    def test_agl_with_time_no_geometry(self) -> None:
+        # AGL filter and time window must both appear when combined without geometry.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                agl_min_ft=500.0, time_from=_T1, time_to=_T2
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft IS NOT NULL" in sql
+        assert "maxvalue(path_agl_ft)::float4 >=" in sql
+        assert "end_ts >=" in sql
+        assert "start_ts <" in sql
+        assert 500.0 in params
+
+    def test_agl_dwell_trajectory_within(self) -> None:
+        # trajectory_within + geometry + AGL + dwell: dwell measured over path inside
+        # the geometry AND within the AGL range simultaneously (doubly-clipped).
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(
+                geometry=_POLYGON, agl_min_ft=200.0, dwell_min_s=60.0
+            )
+        )
+        sql = compile_predicate(pred, params)
+        assert "ST_Within(trajectory(path)," in sql
+        assert "EXTRACT(EPOCH FROM duration(getTime(atTime(" in sql
+        assert "atvalues(path_agl_ft," in sql
+        assert 60.0 in params
+        assert 200.0 in params
+
+    def test_agl_not_emitted_when_absent(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(altitude_min=100.0)
+        )
+        sql = compile_predicate(pred, params)
+        assert "path_agl_ft" not in sql
+        assert "agl_min_ft" not in sql
+        assert "agl_max_ft" not in sql

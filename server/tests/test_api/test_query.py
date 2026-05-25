@@ -593,3 +593,250 @@ async def test_dwell_min_s_excludes_flight_below_threshold(api_client: AsyncClie
     assert resp.status_code == 200
     data = resp.json()
     assert data["flights"] == []
+
+
+# ---------------------------------------------------------------------------
+# AGL height filter integration tests
+#
+# Flight A (London→Manchester): path_agl_ft min=34800, max=35700 ft AGL
+# Flight B (Paris→Rome):        path_agl_ft min=36800, max=37300 ft AGL
+# ---------------------------------------------------------------------------
+
+
+async def test_agl_intersects_min_no_geometry(api_client: AsyncClient) -> None:
+    # ever: agl_min_ft=36000 → only Flight B qualifies (maxvalue 37300 ≥ 36000).
+    # Flight A maxvalue is 35700 < 36000 so it is excluded.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_intersects": {"agl_min_ft": 36000}}),
+    )
+    assert resp.status_code == 200
+    ids = {f["flight_id"] for f in resp.json()["flights"]}
+    assert "ddeeff:2025-04-01T06:00:00Z" in ids
+    assert "aabbcc:2025-04-01T10:00:00Z" not in ids
+
+
+async def test_agl_intersects_min_no_match(api_client: AsyncClient) -> None:
+    # ever: agl_min_ft=38000 → no flight ever reaches this AGL.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_intersects": {"agl_min_ft": 38000}}),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["flights"] == []
+
+
+async def test_agl_within_min_no_geometry(api_client: AsyncClient) -> None:
+    # always: agl_min_ft=34000 → both flights qualify (A min 34800, B min 36800, both ≥ 34000).
+    # always: agl_min_ft=35000 → only Flight B (A min 34800 < 35000).
+    resp_34k = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_within": {"agl_min_ft": 34000}}),
+    )
+    assert resp_34k.status_code == 200
+    ids_34k = {f["flight_id"] for f in resp_34k.json()["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in ids_34k
+    assert "ddeeff:2025-04-01T06:00:00Z" in ids_34k
+
+    resp_35k = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_within": {"agl_min_ft": 35000}}),
+    )
+    assert resp_35k.status_code == 200
+    ids_35k = {f["flight_id"] for f in resp_35k.json()["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" not in ids_35k
+    assert "ddeeff:2025-04-01T06:00:00Z" in ids_35k
+
+
+async def test_agl_within_max_no_geometry(api_client: AsyncClient) -> None:
+    # always: agl_max_ft=36000 → only Flight A (max 35700 ≤ 36000; B max 37300 > 36000).
+    # always: agl_max_ft=34000 → no flight qualifies (A max 35700 > 34000).
+    resp_36k = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_within": {"agl_max_ft": 36000}}),
+    )
+    assert resp_36k.status_code == 200
+    ids_36k = {f["flight_id"] for f in resp_36k.json()["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in ids_36k
+    assert "ddeeff:2025-04-01T06:00:00Z" not in ids_36k
+
+    resp_34k = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_within": {"agl_max_ft": 34000}}),
+    )
+    assert resp_34k.status_code == 200
+    assert resp_34k.json()["flights"] == []
+
+
+async def test_agl_with_geometry_intersects(api_client: AsyncClient) -> None:
+    # ever + UK_CORRIDOR: Flight A path is entirely inside the corridor.
+    # agl_min_ft=35000: Flight A has instants ≥ 35000 ft AGL inside the corridor → matches.
+    # agl_min_ft=36000: Flight A max AGL is 35700 < 36000 → no qualifying instant → excluded.
+    resp_match = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_intersects": {"geometry": UK_CORRIDOR, "agl_min_ft": 35000}}),
+    )
+    assert resp_match.status_code == 200
+    ids_match = {f["flight_id"] for f in resp_match.json()["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in ids_match
+
+    resp_excl = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_intersects": {"geometry": UK_CORRIDOR, "agl_min_ft": 36000}}),
+    )
+    assert resp_excl.status_code == 200
+    ids_excl = {f["flight_id"] for f in resp_excl.json()["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" not in ids_excl
+
+
+# ---------------------------------------------------------------------------
+# AGL + geometry + dwell/distance/squawk combined tests
+#
+# "Nearly matching" means the flight satisfies the dwell/distance/squawk bound
+# globally AND satisfies the AGL bound somewhere inside the geometry, but the
+# two conditions do not overlap at the same instants — so the combined query
+# must NOT return the flight.
+#
+# Flight A (London→Manchester, 10:00-12:00, UK_CORRIDOR):
+#   path_agl_ft min=34800 max=35700 ft AGL; AGL ≥ 35000 for ~5950 s (10:13-11:49)
+#   total dwell in corridor = 7200 s; AGL-clipped dwell = 5950 s
+#   total distance in corridor ≈ 261 km; AGL-clipped distance ≈ 216 km
+#   squawk "1234" active throughout — concurrent with AGL ≥ 35000 window
+#
+# Flight C (inside UK_CORRIDOR, 13:00-15:00):
+#   path_agl_ft peaks at 35500 ft AGL only around 13:48-14:12
+#   squawk "5555" active only 13:00-13:30 (entirely before the high-AGL window)
+# ---------------------------------------------------------------------------
+
+
+async def test_agl_dwell_geometry_match(api_client: AsyncClient) -> None:
+    # AGL-clipped dwell ~5950 s > 5000 s → Flight A matches.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_CORRIDOR,
+                    "agl_min_ft": 35000,
+                    "dwell_min_s": 5000,
+                }
+            }
+        ),
+    )
+    assert resp.status_code == 200
+    assert "aabbcc:2025-04-01T10:00:00Z" in {f["flight_id"] for f in resp.json()["flights"]}
+
+
+async def test_agl_dwell_geometry_near_miss(api_client: AsyncClient) -> None:
+    # Flight A's total dwell in the corridor is 7200 s (would pass a plain dwell_min_s=6500
+    # check).  Its AGL-clipped dwell is only ~5950 s, which is below 6500 s → must not match.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_CORRIDOR,
+                    "agl_min_ft": 35000,
+                    "dwell_min_s": 6500,
+                }
+            }
+        ),
+    )
+    assert resp.status_code == 200
+    assert "aabbcc:2025-04-01T10:00:00Z" not in {f["flight_id"] for f in resp.json()["flights"]}
+
+
+async def test_agl_distance_geometry_match(api_client: AsyncClient) -> None:
+    # AGL-clipped distance ≈ 216 km > 180 km → Flight A matches.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_CORRIDOR,
+                    "agl_min_ft": 35000,
+                    "distance_min_m": 180000,
+                }
+            }
+        ),
+    )
+    assert resp.status_code == 200
+    assert "aabbcc:2025-04-01T10:00:00Z" in {f["flight_id"] for f in resp.json()["flights"]}
+
+
+async def test_agl_distance_geometry_near_miss(api_client: AsyncClient) -> None:
+    # Flight A's total corridor distance ≈ 261 km (would pass a plain distance_min_m=230000
+    # check).  Its AGL-clipped distance ≈ 216 km, which is below 230 km → must not match.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_CORRIDOR,
+                    "agl_min_ft": 35000,
+                    "distance_min_m": 230000,
+                }
+            }
+        ),
+    )
+    assert resp.status_code == 200
+    assert "aabbcc:2025-04-01T10:00:00Z" not in {f["flight_id"] for f in resp.json()["flights"]}
+
+
+async def test_agl_squawk_geometry_match(api_client: AsyncClient) -> None:
+    # Flight A: squawk "1234" active throughout, AGL ≥ 35000 during 10:13-11:49 → concurrent.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_CORRIDOR,
+                    "agl_min_ft": 35000,
+                    "squawk_codes": ["1234"],
+                }
+            }
+        ),
+    )
+    assert resp.status_code == 200
+    assert "aabbcc:2025-04-01T10:00:00Z" in {f["flight_id"] for f in resp.json()["flights"]}
+
+
+async def test_agl_squawk_geometry_near_miss(api_client: AsyncClient) -> None:
+    # Flight C: inside the corridor, AGL ≥ 35000 during 13:48-14:12, squawk "5555" only
+    # during 13:00-13:30.  Pre-filters all pass (maxvalue ≥ 35000, squawk_codes GIN matches)
+    # but the correlated EXISTS check finds no squawk instants during the AGL window → no match.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(
+            match={
+                "trajectory_intersects": {
+                    "geometry": UK_CORRIDOR,
+                    "agl_min_ft": 35000,
+                    "squawk_codes": ["5555"],
+                }
+            }
+        ),
+    )
+    assert resp.status_code == 200
+    assert "112233:2025-04-01T13:00:00Z" not in {f["flight_id"] for f in resp.json()["flights"]}
+
+
+async def test_agl_with_geometry_within(api_client: AsyncClient) -> None:
+    # always + UK_CORRIDOR: the entire Flight A path lies inside the corridor.
+    # agl_min_ft=34000: min AGL inside corridor = 34800 ≥ 34000 → matches.
+    # agl_min_ft=35000: min AGL = 34800 < 35000 → excluded.
+    resp_match = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_within": {"geometry": UK_CORRIDOR, "agl_min_ft": 34000}}),
+    )
+    assert resp_match.status_code == 200
+    ids_match = {f["flight_id"] for f in resp_match.json()["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in ids_match
+
+    resp_excl = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_within": {"geometry": UK_CORRIDOR, "agl_min_ft": 35000}}),
+    )
+    assert resp_excl.status_code == 200
+    ids_excl = {f["flight_id"] for f in resp_excl.json()["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" not in ids_excl

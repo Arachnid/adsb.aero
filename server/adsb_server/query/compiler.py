@@ -242,6 +242,16 @@ def _compile_spatial_path(
     time_from_p = _p(params, v.time_from) if v.time_from is not None else None
     time_to_p = _p(params, v.time_to) if v.time_to is not None else None
 
+    # Compute AGL params here so _effective_clipped (built after the geometry block)
+    # can incorporate them without requiring a second params append pass.
+    agl_min_p: str | None = None
+    agl_max_p: str | None = None
+    if v.agl_min_ft is not None:
+        agl_min_p = _p(params, float(v.agl_min_ft))
+    if v.agl_max_ft is not None:
+        agl_max_p = _p(params, float(v.agl_max_ft))
+    has_agl = agl_min_p is not None or agl_max_p is not None
+
     has_fl_alt = fl_alt_min_p is not None or fl_alt_max_p is not None
     has_ft_alt = ft_alt_min_p is not None or ft_alt_max_p is not None
     has_alt = has_fl_alt or has_ft_alt
@@ -348,6 +358,17 @@ def _compile_spatial_path(
                 outer_parts.append(f"eIntersects(path, {cte_name}.geom)")
                 clipped_path_expr = f"atgeometry(path, {cte_name}.geom)"
 
+    # _effective_clipped: clipped_path_expr further restricted to AGL-satisfying instants.
+    # When AGL bounds are present alongside a geometry, dwell, distance, and squawk
+    # all operate on this doubly-clipped path so they measure the portion of the
+    # flight that satisfies geometry + AGL simultaneously (not independently).
+    _effective_clipped = clipped_path_expr
+    if has_agl and clipped_path_expr is not None:
+        agl_clip_span = _float_span_sql(agl_min_p, agl_max_p)
+        _effective_clipped = (
+            f"atTime({clipped_path_expr}, getTime(atvalues(path_agl_ft, {agl_clip_span})))"
+        )
+
     # Altitude when no geometry: btree indexes on stored generated columns for all refs.
     if v.geometry is None:
         if fl_alt_min_p is not None:
@@ -377,16 +398,20 @@ def _compile_spatial_path(
         # pre-filter that eliminates short flights before the expensive atgeometry
         # + duration computation.  Safe to add unconditionally (inner or outer plan).
         parts.append(f"EXTRACT(EPOCH FROM (end_ts - start_ts)) >= {dmin_p}")
-        _expensive.append(f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) >= {dmin_p}")
+        _expensive.append(
+            f"EXTRACT(EPOCH FROM duration(getTime({_effective_clipped}))) >= {dmin_p}"
+        )
     if v.dwell_max_s is not None:
         dmax_p = _p(params, v.dwell_max_s)
-        _expensive.append(f"EXTRACT(EPOCH FROM duration(getTime({clipped_path_expr}))) <= {dmax_p}")
+        _expensive.append(
+            f"EXTRACT(EPOCH FROM duration(getTime({_effective_clipped}))) <= {dmax_p}"
+        )
     if v.distance_min_m is not None:
         distmin_p = _p(params, v.distance_min_m)
-        _expensive.append(f"length(trajectory({clipped_path_expr})::geography) >= {distmin_p}")
+        _expensive.append(f"ST_Length(trajectory({_effective_clipped})::geography) >= {distmin_p}")
     if v.distance_max_m is not None:
         distmax_p = _p(params, v.distance_max_m)
-        _expensive.append(f"length(trajectory({clipped_path_expr})::geography) <= {distmax_p}")
+        _expensive.append(f"ST_Length(trajectory({_effective_clipped})::geography) <= {distmax_p}")
 
     # Squawk filter: GIN pre-filter then precise temporal check.
     # squawk_codes (text[] GIN) eliminates flights that never had any of the
@@ -397,12 +422,13 @@ def _compile_spatial_path(
         codes_p = _p(params, v.squawk_codes)
         parts.append(f"squawk_codes && {codes_p}::text[]")
         parts.append("squawk_seq IS NOT NULL")
-        if clipped_path_expr is not None:
-            # Correlate: squawk must match during the instants the path was in the region.
+        if _effective_clipped is not None:
+            # Correlate: squawk must match during the instants the path was in the
+            # geometry+AGL region.
             _expensive.append(
                 f"EXISTS ("
                 f"SELECT 1 FROM unnest(instants("
-                f"atTime(squawk_seq, getTime({clipped_path_expr}))"
+                f"atTime(squawk_seq, getTime({_effective_clipped}))"
                 f")) AS _inst"
                 f" WHERE getValue(_inst) = ANY({codes_p}::text[])"
                 f")"
@@ -415,6 +441,62 @@ def _compile_spatial_path(
                 f" WHERE getValue(_inst) = ANY({codes_p}::text[])"
                 f")"
             )
+
+    # AGL height filter.
+    if has_agl:
+        parts.append("path_agl_ft IS NOT NULL")
+        if clipped_path_expr is not None:
+            # Geometry present.  Expression index pre-filters (necessary conditions
+            # on the global flight min/max) before the expensive geometry-scoped checks.
+            if agl_min_p is not None:
+                parts.append(f"maxvalue(path_agl_ft)::float4 >= {agl_min_p}::float4")
+            if agl_max_p is not None:
+                parts.append(f"minvalue(path_agl_ft)::float4 <= {agl_max_p}::float4")
+            if spatial_fn == "ST_Within":
+                # always semantics: every AGL instant inside the geometry must satisfy
+                # the bound.  Use the un-AGL-restricted clipped path so min/max reflects
+                # all geometry instants, not only the AGL-satisfying ones.
+                if agl_min_p is not None:
+                    _expensive.append(
+                        f"minValue(atTime(path_agl_ft, getTime({clipped_path_expr})))"
+                        f" >= {agl_min_p}::float8"
+                    )
+                if agl_max_p is not None:
+                    _expensive.append(
+                        f"maxValue(atTime(path_agl_ft, getTime({clipped_path_expr})))"
+                        f" <= {agl_max_p}::float8"
+                    )
+            else:
+                # ever semantics: _effective_clipped IS NOT NULL means the flight was
+                # inside the geometry at the right AGL at some instant.  This single
+                # check replaces the min/max/atvalues pattern since the doubly-clipped
+                # path is non-NULL iff an in-range instant exists.
+                _expensive.append(f"{_effective_clipped} IS NOT NULL")
+        else:
+            # No geometry: expression indexes on minvalue/maxvalue provide cheap exact
+            # conditions — the planner matches these to flights_agl_min_ft / _max_ft.
+            if spatial_fn == "ST_Within":
+                # always semantics: globally, AGL was never outside the bounds.
+                if agl_min_p is not None:
+                    parts.append(f"minvalue(path_agl_ft)::float4 >= {agl_min_p}::float4")
+                if agl_max_p is not None:
+                    parts.append(f"maxvalue(path_agl_ft)::float4 <= {agl_max_p}::float4")
+            else:
+                # ever semantics: for single bounds the expression is the exact condition;
+                # for both bounds the expressions are necessary pre-filters and atvalues
+                # is the precise range-intersection check.
+                if agl_min_p is not None and agl_max_p is not None:
+                    parts.append(f"maxvalue(path_agl_ft)::float4 >= {agl_min_p}::float4")
+                    parts.append(f"minvalue(path_agl_ft)::float4 <= {agl_max_p}::float4")
+                    parts.append(
+                        f"atvalues(path_agl_ft,"
+                        f" floatspan({agl_min_p}::float8, {agl_max_p}::float8, true, true))"
+                        f" IS NOT NULL"
+                    )
+                elif agl_min_p is not None:
+                    parts.append(f"maxvalue(path_agl_ft)::float4 >= {agl_min_p}::float4")
+                else:
+                    parts.append(f"minvalue(path_agl_ft)::float4 <= {agl_max_p}::float4")
 
     where = " AND ".join(parts) if parts else "TRUE"
     return CompiledPredicate(where, ctes=ctes, outer_parts=outer_parts)

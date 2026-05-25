@@ -536,6 +536,23 @@ export interface components {
        */
       alt_correction_ft?: number[][][] | null;
       /**
+       * Path Agl Ft
+       * @description Above-ground-level (AGL) height timeseries, structured as a list of sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. Computed from pressure altitude + QNH correction − GLO-90 terrain elevation. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when terrain data was unavailable at ingestion time.
+       * @example [
+       *       [
+       *         [
+       *           1743501600,
+       *           1200
+       *         ],
+       *         [
+       *           1743505200,
+       *           850
+       *         ]
+       *       ]
+       *     ]
+       */
+      path_agl_ft?: number[][][] | null;
+      /**
        * Raw Point Count
        * @description Number of raw ADS-B messages ingested for this leg, including ground-roll points not present in the simplified path geometry.
        */
@@ -990,6 +1007,16 @@ export interface components {
        * @description Maximum distance the flight may cover inside the geometry (metres, inclusive). Requires `geometry`.
        */
       distance_max_m?: number | null;
+      /**
+       * Agl Min Ft
+       * @description Lower AGL height bound (inclusive) in feet. In `trajectory_intersects`: flight was ever at AGL ≥ this value (scoped to the geometry when one is provided). In `trajectory_within`: AGL was never below this value. Only matches flights for which AGL data was computed.
+       */
+      agl_min_ft?: number | null;
+      /**
+       * Agl Max Ft
+       * @description Upper AGL height bound (inclusive) in feet. In `trajectory_intersects`: flight ever had AGL ≤ this value (scoped to the geometry when one is provided). In `trajectory_within`: AGL never exceeded this value. Only matches flights for which AGL data was computed.
+       */
+      agl_max_ft?: number | null;
     };
     /**
      * TrajectoryIntersects

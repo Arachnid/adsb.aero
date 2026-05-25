@@ -1112,6 +1112,41 @@
               ]
             ]
           },
+          "path_agl_ft": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Agl Ft",
+            "description": "Above-ground-level (AGL) height timeseries, structured as a list of sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. Computed from pressure altitude + QNH correction \u2212 GLO-90 terrain elevation. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when terrain data was unavailable at ingestion time.",
+            "examples": [
+              [
+                [
+                  [
+                    1743501600.0,
+                    1200.0
+                  ],
+                  [
+                    1743505200.0,
+                    850.0
+                  ]
+                ]
+              ]
+            ]
+          },
           "raw_point_count": {
             "type": "integer",
             "title": "Raw Point Count",
@@ -2026,6 +2061,30 @@
             ],
             "title": "Distance Max M",
             "description": "Maximum distance the flight may cover inside the geometry (metres, inclusive). Requires `geometry`."
+          },
+          "agl_min_ft": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agl Min Ft",
+            "description": "Lower AGL height bound (inclusive) in feet. In `trajectory_intersects`: flight was ever at AGL \u2265 this value (scoped to the geometry when one is provided). In `trajectory_within`: AGL was never below this value. Only matches flights for which AGL data was computed."
+          },
+          "agl_max_ft": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agl Max Ft",
+            "description": "Upper AGL height bound (inclusive) in feet. In `trajectory_intersects`: flight ever had AGL \u2264 this value (scoped to the geometry when one is provided). In `trajectory_within`: AGL never exceeded this value. Only matches flights for which AGL data was computed."
           }
         },
         "type": "object",

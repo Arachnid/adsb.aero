@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 from adsb_server.api.main import app
 from adsb_server.geometry.h3_cells import path_h3_cells
-from adsb_server.geometry.wkt import tgeompoint_seq, tint_seq, ttext_seq
+from adsb_server.geometry.wkt import tfloat_seq, tgeompoint_seq, tint_seq, ttext_seq
 
 # ---------------------------------------------------------------------------
 # Test flight data
@@ -75,6 +75,39 @@ INSERT_AIRFRAME = """
     ON CONFLICT (icao24) DO NOTHING
 """
 
+# AGL data for integration tests (linear interpolation over baro-altitude waypoints).
+# Flight A: London(34800)→midpoint(35700)→Manchester(34900) — min 34800, max 35700 ft AGL
+# Flight B: Paris(37300)→Rome(36800) — min 36800, max 37300 ft AGL
+FLIGHT_A_AGL = tfloat_seq([34800.0, 35700.0, 34900.0], [v[3] for v in _A_VERTS])
+FLIGHT_B_AGL = tfloat_seq([37300.0, 36800.0], [v[3] for v in _B_VERTS])
+
+_AGL_UPDATE = "UPDATE flights SET path_agl_ft = $1::tfloat WHERE icao24 = $2 AND start_ts = $3"
+
+# Flight C: inside UK_CORRIDOR, 13:00-15:00.
+# AGL peaks above 35000 ft only around 13:48-14:12 (the high-AGL window).
+# Squawk "5555" is active only 13:00-13:30, which is BEFORE the high-AGL window.
+# This makes Flight C a "nearly matching" case for squawk+AGL+geometry queries:
+# the pre-filters all pass but the correlated EXISTS check fails.
+FLIGHT_C_ICAO = "112233"
+FLIGHT_C_CALLSIGN = "RYR456"
+FLIGHT_C_TYPE = "B738"
+FLIGHT_C_EMITTER = "A3"
+FLIGHT_C_START_TS = datetime(2025, 4, 1, 13, 0, 0, tzinfo=UTC)
+FLIGHT_C_END_TS = datetime(2025, 4, 1, 15, 0, 0, tzinfo=UTC)
+
+_C_VERTS = [
+    (-1.0, 51.5, 35000.0, 1743512400.0),  # 13:00
+    (-1.5, 52.5, 35000.0, 1743516000.0),  # 14:00 — AGL peak
+    (-2.0, 53.5, 35000.0, 1743519600.0),  # 15:00
+]
+FLIGHT_C_PATH = tgeompoint_seq(_C_VERTS)
+FLIGHT_C_TRACKS = tint_seq([315, 315, 315], [v[3] for v in _C_VERTS])
+
+# AGL ≥ 35000 window: ~13:48-14:12 (computed from linear interpolation between 33000→35500→33000)
+# Squawk "5555" window: 13:00-13:30 — entirely before the high-AGL window, so never concurrent
+FLIGHT_C_AGL = tfloat_seq([33000.0, 35500.0, 33000.0], [v[3] for v in _C_VERTS])
+_FLIGHT_C_SQUAWK_END = 1743514200.0  # 13:30
+
 FLIGHT_A_REGISTRATION = "G-TESTA"
 FLIGHT_A_MODEL = "BOEING 737-800"
 FLIGHT_A_YEAR = 2010
@@ -116,6 +149,25 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
         path_h3_cells([_B_VERTS]),
         [],  # no squawk data for flight B
     )
+    await pool.execute(
+        INSERT_FLIGHT,
+        FLIGHT_C_ICAO,
+        FLIGHT_C_CALLSIGN,
+        FLIGHT_C_TYPE,
+        FLIGHT_C_EMITTER,
+        FLIGHT_C_START_TS,
+        FLIGHT_C_END_TS,
+        FLIGHT_C_PATH,
+        FLIGHT_C_TRACKS,
+        ttext_seq([(1743512400.0, "5555"), (_FLIGHT_C_SQUAWK_END, "5555")]),
+        20,
+        date(2025, 4, 1),
+        path_h3_cells([_C_VERTS]),
+        ["5555"],
+    )
+    await pool.execute(_AGL_UPDATE, FLIGHT_A_AGL, FLIGHT_A_ICAO, FLIGHT_A_START_TS)
+    await pool.execute(_AGL_UPDATE, FLIGHT_B_AGL, FLIGHT_B_ICAO, FLIGHT_B_START_TS)
+    await pool.execute(_AGL_UPDATE, FLIGHT_C_AGL, FLIGHT_C_ICAO, FLIGHT_C_START_TS)
     # Airframe data for flight A only; flight B tests the null case.
     await pool.execute(
         INSERT_AIRFRAME,

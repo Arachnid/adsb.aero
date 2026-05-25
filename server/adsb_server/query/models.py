@@ -214,6 +214,15 @@ class FlightDetail(FlightSummary):
         "Null when no correction data was available at ingestion time.",
         examples=[[[[1743501600.0, 14.5], [1743505200.0, 14.5]]]],
     )
+    path_agl_ft: list[list[list[float]]] | None = Field(
+        default=None,
+        description="Above-ground-level (AGL) height timeseries, structured as a list of "
+        "sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. "
+        "Computed from pressure altitude + QNH correction - GLO-90 terrain elevation. "
+        "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
+        "Null when terrain data was unavailable at ingestion time.",
+        examples=[[[[1743501600.0, 1200.0], [1743505200.0, 850.0]]]],
+    )
     raw_point_count: int = Field(
         description="Number of raw ADS-B messages ingested for this leg, "
         "including ground-roll points not present in the simplified path geometry."
@@ -520,6 +529,22 @@ class SpatioTemporalAltitudeValue(BaseModel):
             "(metres, inclusive). Requires `geometry`."
         ),
     )
+    agl_min_ft: float | None = Field(
+        default=None,
+        description="Lower AGL height bound (inclusive) in feet. "
+        "In `trajectory_intersects`: flight was ever at AGL ≥ this value "
+        "(scoped to the geometry when one is provided). "
+        "In `trajectory_within`: AGL was never below this value. "
+        "Only matches flights for which AGL data was computed.",
+    )
+    agl_max_ft: float | None = Field(
+        default=None,
+        description="Upper AGL height bound (inclusive) in feet. "
+        "In `trajectory_intersects`: flight ever had AGL ≤ this value "
+        "(scoped to the geometry when one is provided). "
+        "In `trajectory_within`: AGL never exceeded this value. "
+        "Only matches flights for which AGL data was computed.",
+    )
 
     @model_validator(mode="after")
     def _require_at_least_one(self) -> SpatioTemporalAltitudeValue:
@@ -534,6 +559,8 @@ class SpatioTemporalAltitudeValue(BaseModel):
             and self.dwell_max_s is None
             and self.distance_min_m is None
             and self.distance_max_m is None
+            and self.agl_min_ft is None
+            and self.agl_max_ft is None
         ):
             raise ValueError("at least one constraint must be set")
         return self
