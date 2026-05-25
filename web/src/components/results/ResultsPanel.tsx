@@ -235,22 +235,52 @@ function SparklineChart({
     activeGroundAlt !== null ? Math.round(activeAlt - activeGroundAlt) : null;
   const activeHx = activeIdx !== null ? toX(activeIdx) : 0;
   const activeHy = activeIdx !== null ? toY(activeAlt) : 0;
-  const tooltipLeft =
-    activeIdx !== null ? `${((toX(activeIdx) / W) * 100).toFixed(2)}%` : "0%";
+  const tooltipPct = activeIdx !== null ? (toX(activeIdx) / W) * 100 : 0;
+  const tooltipLeft = activeIdx !== null ? `${tooltipPct.toFixed(2)}%` : "0%";
+  // Anchor left near left edge, right near right edge, centered elsewhere,
+  // so the tooltip doesn't overflow the sparkline container.
+  const tooltipTransform =
+    tooltipPct < 15
+      ? "translateX(0)"
+      : tooltipPct > 85
+        ? "translateX(-100%)"
+        : "translateX(-50%)";
   const tooltipText =
     activeAgl !== null
       ? `${Math.round(activeAlt).toLocaleString()} ft / ${activeAgl.toLocaleString()} agl`
       : `${Math.round(activeAlt).toLocaleString()} ft`;
 
+  const handleTouchMove = (e: React.TouchEvent<SVGSVGElement>): void => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const svgX = ((touch.clientX - rect.left) / rect.width) * W;
+    let best = 0,
+      bestDist = Infinity;
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(toX(i) - svgX);
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    onHoverIdx(best);
+  };
+
   return (
-    <div style={{ position: "relative", marginTop: 5 }}>
+    <div
+      style={{ position: "relative", marginTop: 5 }}
+      onClick={(e): void => {
+        e.stopPropagation();
+      }}
+    >
       {activeIdx !== null && (
         <div
           style={{
             position: "absolute",
             left: tooltipLeft,
             bottom: "100%",
-            transform: "translateX(-50%)",
+            transform: tooltipTransform,
             marginBottom: 2,
             background: "var(--bg-1)",
             border: "1px solid var(--line-1)",
@@ -271,6 +301,11 @@ function SparklineChart({
         viewBox="0 0 200 28"
         preserveAspectRatio="none"
         style={{ width: "100%", height: 20, display: "block" }}
+        onTouchStart={handleTouchMove}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={(): void => {
+          onHoverIdx(null);
+        }}
         onMouseMove={(e): void => {
           const rect = e.currentTarget.getBoundingClientRect();
           const svgX = ((e.clientX - rect.left) / rect.width) * W;
