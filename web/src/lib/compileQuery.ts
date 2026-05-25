@@ -23,11 +23,12 @@ export function compileGroup(
   bounds: MapBounds | null,
 ): Predicate | null {
   const children = group.items
-    .map((item) =>
-      item.kind === "group"
-        ? compileGroup(item, bounds)
-        : compilePred(item, bounds),
-    )
+    .map((item) => {
+      if (item.kind === "group") return compileGroup(item, bounds);
+      const compiled = compilePred(item, bounds);
+      if (compiled === null) return null;
+      return item.negated ? { not: compiled } : compiled;
+    })
     .filter((p): p is Predicate => p !== null);
 
   if (children.length === 0) return null;

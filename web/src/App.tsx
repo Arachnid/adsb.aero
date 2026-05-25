@@ -224,6 +224,7 @@ export function App({
         {
           id: makeId(),
           kind: "endpoint_within",
+          negated: false,
           mode: "either",
           shape: "viewport",
           lat: null,

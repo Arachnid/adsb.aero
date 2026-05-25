@@ -44,6 +44,7 @@ export type GroupMode = "all" | "any";
 
 interface BasePred {
   id: string;
+  negated: boolean;
 }
 interface AircraftPred extends BasePred {
   kind: "aircraft";
@@ -164,6 +165,7 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
     return {
       id,
       kind,
+      negated: false,
       mode: "either" as const,
       shape: "circle" as const,
       lat: null,
@@ -182,6 +184,7 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
     return {
       id,
       kind,
+      negated: false,
       regionName: "Region " + String(regionCount + 1),
       shape: "polygon",
       polygon: null,
@@ -206,11 +209,13 @@ function makeItem(kind: AddKind, regionCount = 0): QueryItem {
     };
   }
   if (kind === "aircraft") {
-    return { id, kind, icaoTypes: [], emitters: [] };
+    return { id, kind, negated: false, icaoTypes: [], emitters: [] };
   }
-  if (kind === "registration") return { id, kind: "registration", prefix: "" };
-  if (kind === "icao24") return { id, kind: "icao24", addresses: [] };
-  return { id, kind: "callsign", pattern: "" };
+  if (kind === "registration")
+    return { id, kind: "registration", negated: false, prefix: "" };
+  if (kind === "icao24")
+    return { id, kind: "icao24", negated: false, addresses: [] };
+  return { id, kind: "callsign", negated: false, pattern: "" };
 }
 
 // ===== Reference data =====
@@ -502,20 +507,38 @@ function PredCard({
   icon,
   name,
   onRemove,
+  negated,
+  onToggleNegate,
   children,
   invalid,
 }: {
   icon: React.ReactNode;
   name: string;
   onRemove: () => void;
+  negated: boolean;
+  onToggleNegate: () => void;
   children: React.ReactNode;
   invalid?: boolean;
 }): React.ReactElement {
+  const classes =
+    "pred" +
+    (invalid ? " pred--invalid" : "") +
+    (negated && !invalid ? " pred--negated" : "");
   return (
-    <div className={"pred" + (invalid ? " pred--invalid" : "")}>
+    <div className={classes}>
       <div className="pred-head">
         <span className="pred-icon">{icon}</span>
-        <span className="pred-name">{name}</span>
+        <span className="pred-name">
+          {negated && <span className="pred-not-badge">NOT</span>}
+          {name}
+        </span>
+        <button
+          className={"pred-not-toggle" + (negated ? " active" : "")}
+          onClick={onToggleNegate}
+          title={negated ? "Remove NOT" : "Negate filter"}
+        >
+          ¬
+        </button>
         <button className="pred-x" onClick={onRemove} title="Remove filter">
           <X size={12} />
         </button>
@@ -870,6 +893,10 @@ function AircraftCard({
       icon={<Plane />}
       name="Aircraft"
       onRemove={onRemove}
+      negated={pred.negated}
+      onToggleNegate={() => {
+        onChange({ ...pred, negated: !pred.negated });
+      }}
       invalid={!isPredValid(pred)}
     >
       <ChipMultiSelect
@@ -950,6 +977,10 @@ function PointRadiusCard({
       icon={<Pin />}
       name={name}
       onRemove={onRemove}
+      negated={pred.negated}
+      onToggleNegate={() => {
+        onChange({ ...pred, negated: !pred.negated });
+      }}
       invalid={!isPredValid(pred)}
     >
       <div className="shape-toggle">
@@ -1307,6 +1338,10 @@ function RegionCard({
       icon={<Polygon />}
       name={name}
       onRemove={onRemove}
+      negated={pred.negated}
+      onToggleNegate={() => {
+        onChange({ ...pred, negated: !pred.negated });
+      }}
       invalid={!isPredValid(pred)}
     >
       <ShapeToggle shape={pred.shape} onChange={handleShapeChange} />
@@ -1765,6 +1800,10 @@ function CallsignCard({
       icon={<Text />}
       name="Callsign"
       onRemove={onRemove}
+      negated={pred.negated}
+      onToggleNegate={() => {
+        onChange({ ...pred, negated: !pred.negated });
+      }}
       invalid={!isPredValid(pred)}
     >
       <div>
@@ -1796,6 +1835,10 @@ function RegistrationCard({
       icon={<Text />}
       name="Registration"
       onRemove={onRemove}
+      negated={pred.negated}
+      onToggleNegate={() => {
+        onChange({ ...pred, negated: !pred.negated });
+      }}
       invalid={!isPredValid(pred)}
     >
       <div>
@@ -1839,6 +1882,10 @@ function Icao24Card({
       icon={<Text />}
       name="ICAO Address"
       onRemove={onRemove}
+      negated={pred.negated}
+      onToggleNegate={() => {
+        onChange({ ...pred, negated: !pred.negated });
+      }}
       invalid={!isPredValid(pred)}
     >
       <div>

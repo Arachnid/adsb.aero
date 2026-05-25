@@ -207,6 +207,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(false);
     });
@@ -228,6 +229,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(true);
     });
@@ -249,6 +251,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(true);
     });
@@ -270,6 +273,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(false);
     });
@@ -291,6 +295,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(true);
     });
@@ -312,6 +317,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(false);
     });
@@ -333,6 +339,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(true);
     });
@@ -354,6 +361,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(false);
     });
@@ -375,6 +383,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(true);
     });
@@ -396,6 +405,7 @@ describe("isPredValid", () => {
           squawkCodes: [],
           aglMin: null,
           aglMax: null,
+          negated: false,
         }),
       ).toBe(true);
     });
@@ -514,6 +524,7 @@ describe("computeLabels", () => {
         squawkCodes: [],
         aglMin: null,
         aglMax: null,
+        negated: false,
       },
       {
         id: "r2",
@@ -531,6 +542,7 @@ describe("computeLabels", () => {
         squawkCodes: [],
         aglMin: null,
         aglMax: null,
+        negated: false,
       },
     );
     const labels = computeLabels(g);
@@ -576,6 +588,7 @@ describe("computeLabels", () => {
         squawkCodes: [],
         aglMin: null,
         aglMax: null,
+        negated: false,
       },
       {
         id: "s1",
@@ -726,6 +739,7 @@ describe("collectGeometries", () => {
       distanceMaxNm: null,
       aglMin: null,
       aglMax: null,
+      negated: false,
     });
     const [geom] = collectGeometries(g);
     expect(geom.label).toBe("Ever 1");
@@ -754,6 +768,7 @@ describe("collectGeometries", () => {
       distanceMaxNm: null,
       aglMin: null,
       aglMax: null,
+      negated: false,
     });
     const [geom] = collectGeometries(g);
     expect(geom.label).toBe("Always 1");
@@ -805,6 +820,7 @@ describe("anyViewportFilter", () => {
       distanceMaxNm: null,
       aglMin: null,
       aglMax: null,
+      negated: false,
     });
     expect(anyViewportFilter(group(inner))).toBe(true);
   });
@@ -832,6 +848,7 @@ describe("anyViewportFilter", () => {
       distanceMaxNm: null,
       aglMin: null,
       aglMax: null,
+      negated: false,
     });
     expect(anyViewportFilter(g)).toBe(true);
   });

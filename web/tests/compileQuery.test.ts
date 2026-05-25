@@ -655,3 +655,45 @@ describe("toIso (via time fields)", () => {
     expect(result.endpoint_within.start_time_from).toBe("2025-01-01T12:00:00Z");
   });
 });
+
+// ---- negation --------------------------------------------------------------
+
+describe("negation", () => {
+  it("wraps a negated callsign pred in { not: ... }", () => {
+    const g = group({
+      id: "1",
+      kind: "callsign",
+      negated: true,
+      pattern: "BAW",
+    });
+    expect(compileGroup(g, null)).toEqual({ not: { callsign_prefix: "BAW" } });
+  });
+
+  it("does not wrap when negated is false", () => {
+    const g = group({
+      id: "1",
+      kind: "callsign",
+      negated: false,
+      pattern: "BAW",
+    });
+    expect(compileGroup(g, null)).toEqual({ callsign_prefix: "BAW" });
+  });
+
+  it("negated pred inside AND group composes correctly", () => {
+    const g = group(
+      { id: "1", kind: "callsign", negated: false, pattern: "BAW" },
+      { id: "2", kind: "callsign", negated: true, pattern: "EZY" },
+    );
+    expect(compileGroup(g, null)).toEqual({
+      and: [{ callsign_prefix: "BAW" }, { not: { callsign_prefix: "EZY" } }],
+    });
+  });
+
+  it("negated pred that compiles to null is dropped", () => {
+    const g = group(
+      { id: "1", kind: "callsign", negated: false, pattern: "BAW" },
+      { id: "2", kind: "callsign", negated: true, pattern: "" },
+    );
+    expect(compileGroup(g, null)).toEqual({ callsign_prefix: "BAW" });
+  });
+});
