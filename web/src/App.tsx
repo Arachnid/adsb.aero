@@ -436,7 +436,12 @@ export function App({
                 number,
               ][],
             }))
-            .filter((c) => c.polygon.length >= 3);
+            .filter((c) => c.polygon.length >= 3)
+            .sort((a, b) => {
+              const toFt = (l: AltLimit | null): number =>
+                l === null ? 0 : l.ref === "fl" ? l.value * 100 : l.value;
+              return toFt(a.lowerLimit) - toFt(b.lowerLimit);
+            });
           if (candidates.length === 0) {
             setAirspaceMenu(null);
           } else if (candidates.length === 1) {
