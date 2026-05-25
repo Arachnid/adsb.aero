@@ -465,6 +465,8 @@ export function isPredValid(pred: UIPredicate): boolean {
         pred.timeTo !== "" ||
         pred.altMin !== null ||
         pred.altMax !== null ||
+        pred.aglMin !== null ||
+        pred.aglMax !== null ||
         pred.squawkCodes.length > 0;
       if (pred.shape === "none") return hasConstraint;
       if (pred.shape === "viewport") return true;

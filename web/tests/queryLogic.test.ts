@@ -205,6 +205,8 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(false);
     });
@@ -224,6 +226,8 @@ describe("isPredValid", () => {
           timeFrom: "2025-01-01T00:00",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(true);
     });
@@ -243,6 +247,8 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(true);
     });
@@ -262,6 +268,8 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(false);
     });
@@ -281,6 +289,8 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(true);
     });
@@ -300,6 +310,8 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(false);
     });
@@ -319,6 +331,8 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(true);
     });
@@ -338,6 +352,8 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(false);
     });
@@ -357,6 +373,8 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(true);
     });
@@ -376,6 +394,8 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          aglMin: null,
+          aglMax: null,
         }),
       ).toBe(true);
     });
@@ -492,6 +512,8 @@ describe("computeLabels", () => {
         timeFrom: "",
         timeTo: "",
         squawkCodes: [],
+        aglMin: null,
+        aglMax: null,
       },
       {
         id: "r2",
@@ -507,6 +529,8 @@ describe("computeLabels", () => {
         timeFrom: "",
         timeTo: "",
         squawkCodes: [],
+        aglMin: null,
+        aglMax: null,
       },
     );
     const labels = computeLabels(g);
@@ -550,6 +574,8 @@ describe("computeLabels", () => {
         timeFrom: "",
         timeTo: "",
         squawkCodes: [],
+        aglMin: null,
+        aglMax: null,
       },
       {
         id: "s1",
@@ -698,6 +724,8 @@ describe("collectGeometries", () => {
       dwellMaxMin: null,
       distanceMinNm: null,
       distanceMaxNm: null,
+      aglMin: null,
+      aglMax: null,
     });
     const [geom] = collectGeometries(g);
     expect(geom.label).toBe("Ever 1");
@@ -724,6 +752,8 @@ describe("collectGeometries", () => {
       dwellMaxMin: null,
       distanceMinNm: null,
       distanceMaxNm: null,
+      aglMin: null,
+      aglMax: null,
     });
     const [geom] = collectGeometries(g);
     expect(geom.label).toBe("Always 1");
@@ -773,6 +803,8 @@ describe("anyViewportFilter", () => {
       dwellMaxMin: null,
       distanceMinNm: null,
       distanceMaxNm: null,
+      aglMin: null,
+      aglMax: null,
     });
     expect(anyViewportFilter(group(inner))).toBe(true);
   });
@@ -798,6 +830,8 @@ describe("anyViewportFilter", () => {
       dwellMaxMin: null,
       distanceMinNm: null,
       distanceMaxNm: null,
+      aglMin: null,
+      aglMax: null,
     });
     expect(anyViewportFilter(g)).toBe(true);
   });
