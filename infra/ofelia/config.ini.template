@@ -5,7 +5,12 @@ command     = import-traces
 no-overlap  = true
 delete      = true
 network     = infra_db
-environment = POSTGRES_HOST=postgres,POSTGRES_PORT=5432,POSTGRES_DB=adsb,POSTGRES_USER=adsb,SCHEDULER_CACHE_DIR=/data/cache,SENTRY_DSN=__SENTRY_DSN__
+environment = POSTGRES_HOST=postgres
+environment = POSTGRES_PORT=5432
+environment = POSTGRES_DB=adsb
+environment = POSTGRES_USER=adsb
+environment = SCHEDULER_CACHE_DIR=/data/cache
+environment = SENTRY_DSN=__SENTRY_DSN__
 volume      = infra_scheduler_cache:/data/cache
 
 [job-run "import-airframes"]
@@ -15,4 +20,8 @@ command     = import-airframes
 no-overlap  = true
 delete      = true
 network     = infra_db
-environment = POSTGRES_HOST=postgres,POSTGRES_PORT=5432,POSTGRES_DB=adsb,POSTGRES_USER=adsb,SENTRY_DSN=__SENTRY_DSN__
+environment = POSTGRES_HOST=postgres
+environment = POSTGRES_PORT=5432
+environment = POSTGRES_DB=adsb
+environment = POSTGRES_USER=adsb
+environment = SENTRY_DSN=__SENTRY_DSN__
