@@ -447,13 +447,26 @@ async def run_batch(
                 traces_done += 1
                 last_log_time = _log_progress(traces_done, flight_count, t_start, last_log_time)
             if db_params:
-                try:
-                    await conn.executemany(_UPSERT_FLIGHT_SQL, db_params)
-                    for p in db_params:
-                        upserted_keys.add((p[0], p[4]))  # (icao24, start_ts)
-                    flight_count += len(db_params)
-                except Exception:
-                    logger.exception("Failed to write batch of %d flights", len(db_params))
+                for attempt in range(3):
+                    try:
+                        await conn.executemany(_UPSERT_FLIGHT_SQL, db_params)
+                        for p in db_params:
+                            upserted_keys.add((p[0], p[4]))  # (icao24, start_ts)
+                        flight_count += len(db_params)
+                        break
+                    except Exception:
+                        if attempt < 2:
+                            logger.exception(
+                                "Failed to write batch of %d flights (attempt %d/3), retrying",
+                                len(db_params),
+                                attempt + 1,
+                            )
+                        else:
+                            logger.exception(
+                                "Failed to write batch of %d flights after 3 attempts, aborting",
+                                len(db_params),
+                            )
+                            raise
 
     # Write current in-progress flights to the staging table.
     if in_progress_flights:

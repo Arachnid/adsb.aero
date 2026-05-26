@@ -1010,3 +1010,67 @@ async def test_run_batch_raises_when_mslp_unavailable(
 
     with pytest.raises(RuntimeError, match="MSLP data unavailable"):
         await run_batch(conn, tarball_dir, batch_date, mslp=None)
+
+
+# ---------------------------------------------------------------------------
+# Batch commit retry logic
+# ---------------------------------------------------------------------------
+
+
+class _FlakyConn:
+    """Wraps a real asyncpg PoolConnectionProxy, injecting failures into executemany."""
+
+    def __init__(self, real: asyncpg.Connection, fail_times: int) -> None:
+        self._real = real
+        self._fails_left = fail_times
+        self.executemany_calls = 0
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._real, name)
+
+    async def executemany(self, query: str, args: object, **kwargs: object) -> None:
+        self.executemany_calls += 1
+        if self._fails_left > 0:
+            self._fails_left -= 1
+            raise RuntimeError("transient DB error")
+        await self._real.executemany(query, args, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_run_batch_retries_on_transient_failure(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+    mslp: xr.DataArray,
+) -> None:
+    """run_batch retries a failed executemany up to 3 times; succeeds on the third attempt."""
+    from adsb_server.ingestion.batch import run_batch
+
+    flaky = _FlakyConn(conn, fail_times=2)  # fail twice, succeed on attempt 3
+    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
+    batch_date = date(2021, 11, 1)
+
+    count = await run_batch(flaky, tarball_dir, batch_date, mslp=mslp)  # type: ignore[arg-type]
+
+    assert count == 1
+    assert flaky.executemany_calls == 3
+    rows = await conn.fetch("SELECT icao24 FROM flights WHERE ingest_batch_date = '2021-11-01'")
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_batch_aborts_after_three_failures(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+    mslp: xr.DataArray,
+) -> None:
+    """run_batch raises after 3 consecutive executemany failures, aborting the import."""
+    from adsb_server.ingestion.batch import run_batch
+
+    flaky = _FlakyConn(conn, fail_times=999)  # always fail
+    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
+    batch_date = date(2021, 12, 1)
+
+    with pytest.raises(RuntimeError, match="transient DB error"):
+        await run_batch(flaky, tarball_dir, batch_date, mslp=mslp)  # type: ignore[arg-type]
+
+    assert flaky.executemany_calls == 3

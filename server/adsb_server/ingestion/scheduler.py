@@ -75,10 +75,15 @@ async def _is_batch_already_processed(
     return status == "succeeded"
 
 
-async def _get_errored_dates(conn: asyncpg.Connection) -> set[date]:
-    """Return the set of batch dates currently in 'errored' status."""
-    rows = await conn.fetch("SELECT batch_date FROM ingest_batches WHERE status = 'errored'")
-    return {row["batch_date"] for row in rows}
+async def _get_latest_succeeded_date(conn: asyncpg.Connection) -> date | None:
+    """Return the most recent batch_date with status 'succeeded', or None."""
+    row = await conn.fetchrow(
+        "SELECT MAX(batch_date) AS d FROM ingest_batches WHERE status = 'succeeded'"
+    )
+    if row is None:
+        return None
+    result: date | None = row["d"]
+    return result
 
 
 async def _fetch_releases_by_date(
@@ -105,29 +110,6 @@ async def _fetch_releases_by_date(
             break
         page += 1
     return releases_by_date
-
-
-async def _find_tag_for_date(
-    client: httpx.AsyncClient,
-    year: int,
-    target: date,
-) -> str | None:
-    """Return the newest release tag for a specific date, or None if not found."""
-    page = 1
-    while True:
-        releases = await _get_releases(client, year, page=page)
-        if not releases:
-            return None
-        for release in releases:
-            tag = str(release.get("tag_name", ""))
-            batch_date = _tag_to_date(tag)
-            if batch_date == target:
-                return tag  # newest-first, so first match is the latest revision
-            if batch_date is not None and batch_date < target:
-                return None  # passed the target date without finding it
-        if len(releases) < _GITHUB_RELEASES_PER_PAGE:
-            return None
-        page += 1
 
 
 async def _download_asset(
@@ -348,14 +330,15 @@ async def check_and_run_new_batches(
     """
     Query the GitHub API for new adsb.lol releases and process any unprocessed ones.
     Checks current year and previous year (to handle year boundaries).
-    Paginates through releases (newest-first) until a processed batch is found,
+    Paginates through releases (newest-first) until reaching the scan boundary,
     then ingests all discovered batches oldest-first.
 
     If lookback_days > 0, releases older than that many days are ignored.
 
-    Previously errored batches are re-queued automatically.  Their follow-up
-    day (the day immediately after each errored date) is also re-queued so that
-    any in-progress flights which spilled across the boundary are corrected.
+    The scan boundary is max(latest_succeeded_date, lookback_cutoff): all dates
+    strictly after that boundary are candidates for processing.  Errored batches
+    with no succeeded batch after them fall inside that window and are retried
+    automatically; errored batches before the latest success are left alone.
     Processing continues past failures — each failed batch is marked 'errored'
     and the scheduler moves on to the next pending date.
     """
@@ -363,10 +346,14 @@ async def check_and_run_new_batches(
     cutoff = today - timedelta(days=lookback_days) if lookback_days > 0 else None
     years_to_check = [today.year, today.year - 1]
 
-    # Dates that must be (re-)processed even if their status is already 'succeeded':
-    # errored batches and the day after each (to fix in-progress flight data).
-    errored_dates = await _get_errored_dates(conn)
-    force_dates = errored_dates | {d + timedelta(days=1) for d in errored_dates}
+    # scan_from is the exclusive lower bound: process dates strictly after it.
+    latest_success = await _get_latest_succeeded_date(conn)
+    scan_from: date | None
+    if latest_success is not None and cutoff is not None:
+        scan_from = max(latest_success, cutoff)
+    else:
+        scan_from = latest_success if latest_success is not None else cutoff
+
     herbie_cache_dir = get_settings().herbie_cache_dir
 
     async with httpx.AsyncClient(
@@ -391,18 +378,13 @@ async def check_and_run_new_batches(
                     if batch_date is None:
                         continue
 
-                    if cutoff is not None and batch_date < cutoff:
+                    if scan_from is not None and batch_date <= scan_from:
+                        logger.debug("Reached scan boundary at %s, stopping", batch_date)
                         stop = True
                         break
 
                     if await _is_batch_already_processed(conn, batch_date):
-                        if batch_date not in force_dates:
-                            logger.debug("Batch %s already processed, stopping scan", batch_date)
-                            stop = True
-                            break
-                        # Succeeded but in force_dates (follow-up of an errored batch):
-                        # queue for reprocessing and keep scanning.
-                        to_process.setdefault(batch_date, tag)
+                        logger.debug("Batch %s already succeeded, skipping", batch_date)
                         continue
 
                     to_process.setdefault(batch_date, tag)
@@ -411,17 +393,6 @@ async def check_and_run_new_batches(
                     break
 
                 page += 1
-
-            # The main scan stops at the first succeeded non-force batch, so
-            # force_dates older than that frontier are never encountered.  Look
-            # them up explicitly so they are always retried.
-            missed_force = {d for d in force_dates if d.year == year and d not in to_process}
-            for fd in sorted(missed_force):
-                fd_tag = await _find_tag_for_date(client, year, fd)
-                if fd_tag:
-                    to_process[fd] = fd_tag
-                else:
-                    logger.debug("No release found for force date %s", fd)
 
             await _process_date_queue(
                 conn,
@@ -436,7 +407,7 @@ async def check_and_run_new_batches(
             )
 
             if stop:
-                break  # processed release found; all earlier years are also done
+                break  # scan boundary reached; all earlier years are also done
 
 
 async def reimport_specific_dates(
