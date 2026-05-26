@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   altToColor,
+  aglToColor,
   squawkToColor,
   catToColor,
   vsToColor,
@@ -11,11 +12,11 @@ import {
 
 describe("altToColor", () => {
   it("returns the first stop color at 0 ft", () => {
-    expect(altToColor(0)).toEqual([226, 100, 100, 220]);
+    expect(altToColor(0)).toEqual([220, 50, 50, 220]);
   });
 
   it("returns the last stop color at 40000 ft", () => {
-    expect(altToColor(40000)).toEqual([155, 110, 240, 220]);
+    expect(altToColor(40000)).toEqual([155, 50, 230, 220]);
   });
 
   it("clamps negative altitudes to 0 ft", () => {
@@ -30,17 +31,52 @@ describe("altToColor", () => {
     const color = altToColor(10000);
     expect(color).toHaveLength(4);
     expect(color[3]).toBe(220);
-    // 10000 ft lands in the yellow-green range (between orange and green stops)
-    expect(color[0]).toBeGreaterThan(100);
+  });
+
+  it("returns distinct colors at 1000 ft, 3000 ft, 20000 ft, and 30000 ft", () => {
+    const c1k = altToColor(1000);
+    const c3k = altToColor(3000);
+    const c20k = altToColor(20000);
+    const c30k = altToColor(30000);
+    expect(c1k).not.toEqual(c3k);
+    expect(c20k).not.toEqual(c30k);
   });
 
   it("returns a value between the first and last stops for intermediate altitudes", () => {
     const low = altToColor(0);
     const mid = altToColor(20000);
     const high = altToColor(40000);
-    // Each channel should be between the two extremes (not necessarily monotone)
     expect(mid).not.toEqual(low);
     expect(mid).not.toEqual(high);
+  });
+});
+
+describe("aglToColor", () => {
+  it("returns the same color as altToColor at the same height", () => {
+    expect(aglToColor(0)).toEqual(altToColor(0));
+    expect(aglToColor(10000)).toEqual(altToColor(10000));
+    expect(aglToColor(40000)).toEqual(altToColor(40000));
+  });
+
+  it("returns gray for null", () => {
+    expect(aglToColor(null)).toEqual(GRAY);
+  });
+
+  it("returns gray for undefined", () => {
+    expect(aglToColor(undefined)).toEqual(GRAY);
+  });
+
+  it("clamps negative values to 0 ft", () => {
+    expect(aglToColor(-100)).toEqual(aglToColor(0));
+  });
+
+  it("clamps values above AGL_MAX to the max stop", () => {
+    expect(aglToColor(50000)).toEqual(aglToColor(40000));
+  });
+
+  it("returns distinct colors for low AGL values", () => {
+    expect(aglToColor(100)).not.toEqual(aglToColor(1000));
+    expect(aglToColor(1000)).not.toEqual(aglToColor(5000));
   });
 });
 

@@ -29,15 +29,17 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
       <LegendTitle>
         {colorMode === "alt"
           ? "Altitude (ft)"
-          : colorMode === "cat"
-            ? "Category"
-            : colorMode === "sqk"
-              ? "Squawk"
-              : colorMode === "vs"
-                ? "Vert. speed (fpm)"
-                : colorMode === "gs"
-                  ? "Ground speed (kt)"
-                  : "Indicated AS (kt)"}
+          : colorMode === "agl"
+            ? "AGL height (ft)"
+            : colorMode === "cat"
+              ? "Category"
+              : colorMode === "sqk"
+                ? "Squawk"
+                : colorMode === "vs"
+                  ? "Vert. speed (fpm)"
+                  : colorMode === "gs"
+                    ? "Ground speed (kt)"
+                    : "Indicated AS (kt)"}
       </LegendTitle>
 
       {colorMode === "alt" && (
@@ -46,16 +48,17 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
             style={{
               height: 8,
               borderRadius: 2,
-              // Stop positions reflect the power-curve mapping (ALT_CURVE=0.4):
-              // each colour stop's actual altitude as % of 40 000 ft.
+              // Stop positions reflect the power-curve mapping (ALT_CURVE=0.55, 7 stops):
+              // approx physical altitudes: 0, ~1.7k, ~5.7k, ~11.4k, ~18.2k, ~25.6k, 40k ft.
               background:
                 "linear-gradient(to right," +
-                " #e26464 0%," +
-                " #f0a04d 1.8%," +
-                " #f0e066 10.1%," +
-                " #6ed3a3 27.9%," +
-                " #6ea8ff 57.2%," +
-                " #9b6ef0 100%)",
+                " #dc3232 0%," +
+                " #f09123 16.7%," +
+                " #ebe12d 33.3%," +
+                " #37c84b 50%," +
+                " #1ed2d2 66.7%," +
+                " #3769eb 83.3%," +
+                " #9b32e6 100%)",
               marginBottom: 4,
             }}
           />
@@ -69,9 +72,18 @@ export function Legend({ colorMode }: LegendProps): React.ReactElement {
             }}
           >
             <span>0</span>
-            <span>20k</span>
+            <span>~11k</span>
             <span>40k+</span>
           </div>
+        </>
+      )}
+
+      {colorMode === "agl" && (
+        <>
+          {/* Same 7-stop spectrum as altitude (AGL_CURVE=0.55, cap 40 000 ft) */}
+          <GradientBar gradient="linear-gradient(to right, #dc3232 0%, #f09123 16.7%, #ebe12d 33.3%, #37c84b 50%, #1ed2d2 66.7%, #3769eb 83.3%, #9b32e6 100%)" />
+          <GradientLabels left="0" center="~11k" right="40k+" />
+          <LegendRow swatch="#969696">No data</LegendRow>
         </>
       )}
 

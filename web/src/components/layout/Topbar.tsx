@@ -20,6 +20,7 @@ interface TopbarProps {
 
 const COLOR_MODE_LABELS: Record<ColorMode, string> = {
   alt: "Altitude",
+  agl: "AGL height",
   cat: "Category",
   vs: "Vert. speed",
   gs: "Ground speed",
@@ -29,6 +30,7 @@ const COLOR_MODE_LABELS: Record<ColorMode, string> = {
 
 const COLOR_MODE_SHORT: Record<ColorMode, string> = {
   alt: "ALT",
+  agl: "AGL",
   cat: "CAT",
   vs: "VS",
   gs: "GS",
@@ -222,20 +224,20 @@ export function Topbar({
                   e.stopPropagation();
                 }}
               >
-                {(["alt", "cat", "vs", "gs", "ias", "sqk"] as ColorMode[]).map(
-                  (mode) => (
-                    <DropItem
-                      key={mode}
-                      active={colorMode === mode}
-                      onClick={() => {
-                        onColorMode(mode);
-                        setDropdown(null);
-                      }}
-                    >
-                      {COLOR_MODE_LABELS[mode]}
-                    </DropItem>
-                  ),
-                )}
+                {(
+                  ["alt", "agl", "cat", "vs", "gs", "ias", "sqk"] as ColorMode[]
+                ).map((mode) => (
+                  <DropItem
+                    key={mode}
+                    active={colorMode === mode}
+                    onClick={() => {
+                      onColorMode(mode);
+                      setDropdown(null);
+                    }}
+                  >
+                    {COLOR_MODE_LABELS[mode]}
+                  </DropItem>
+                ))}
               </DropMenu>
             )}
           </DropdownSection>
@@ -283,6 +285,14 @@ export function Topbar({
               }}
             >
               Altitude
+            </SegBtn>
+            <SegBtn
+              active={colorMode === "agl"}
+              onClick={() => {
+                onColorMode("agl");
+              }}
+            >
+              AGL
             </SegBtn>
             <SegBtn
               active={colorMode === "cat"}

@@ -138,6 +138,13 @@ export function AboutDialog({
             Colour trajectories by altitude, vertical speed, ground speed,
             indicated airspeed, or squawk code. Click any flight for details.
           </Feature>
+          <Feature title="Above-ground-level altitude">
+            Terrain elevation from the Copernicus GLO-90 90 m Digital Elevation
+            Model is sampled per trajectory vertex at ingest, giving true
+            above-ground-level (AGL) height for every flight. Filter queries by
+            AGL range, or colour trajectories by height above terrain to
+            distinguish low-level flying from cruise at a glance.
+          </Feature>
           <Feature title="Airspace overlay">
             Toggle OpenAIP airspace boundaries and use them as spatial filters
             in queries — pick an airspace by clicking on the map.
@@ -169,6 +176,11 @@ export function AboutDialog({
             name="Esri World Imagery"
             href="https://www.esri.com"
             desc="Satellite basemap tiles"
+          />
+          <Source
+            name="Copernicus GLO-90"
+            href="https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model"
+            desc="90 m global Digital Elevation Model, used to compute above-ground-level altitude per trajectory vertex"
           />
           <Source
             name="Mictronics / tar1090-db"

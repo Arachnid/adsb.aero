@@ -7,7 +7,7 @@ describe("Legend", () => {
     render(<Legend colorMode="alt" />);
     expect(screen.getByText("Altitude (ft)")).toBeInTheDocument();
     expect(screen.getByText("0")).toBeInTheDocument();
-    expect(screen.getByText("20k")).toBeInTheDocument();
+    expect(screen.getByText("~11k")).toBeInTheDocument();
     expect(screen.getByText("40k+")).toBeInTheDocument();
   });
 

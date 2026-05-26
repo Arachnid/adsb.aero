@@ -16,30 +16,38 @@ function lerpColor(a: RGBA, b: RGBA, t: number): RGBA {
   ];
 }
 
-// Altitude gradient: red (ground) → orange → yellow → green → blue → purple (high cruise).
-// Matches the legend. Evenly spaced in curved space (see altToColor).
-const ALT_MAX = 40000;
-const ALT_CURVE = 0.4; // exponent < 1 stretches low-altitude distinctions
-const ALT_STOPS: RGBA[] = [
-  [226, 100, 100, 220], // 0 ft   — red
-  [240, 160, 77, 220], // ~3k ft — orange
-  [240, 224, 102, 220], // ~9k ft — yellow
-  [110, 211, 163, 220], // ~19k ft — green
-  [110, 168, 255, 220], // ~32k ft — blue
-  [155, 110, 240, 220], // 40k+ ft — purple
+// Altitude / AGL gradient: full visible spectrum, red (ground) → violet (high).
+// 7 stops evenly spaced in power-curve space (HEIGHT_CURVE=0.55, cap 40 000 ft).
+// Physical breakpoints (approx): 0, ~1.7k, ~5.7k, ~11.4k, ~18.2k, ~25.6k, 40k ft.
+// The curve stretches the low-altitude range so GA circuit/approach altitudes
+// (1k–3k ft) occupy a visually distinct hue, and 20k–30k ft are well separated.
+export const HEIGHT_MAX = 40000;
+const HEIGHT_CURVE = 0.55;
+const HEIGHT_STOPS: RGBA[] = [
+  [220, 50, 50, 220], //    0 ft — red
+  [240, 145, 35, 220], // ~1.7k ft — orange
+  [235, 225, 45, 220], // ~5.7k ft — yellow
+  [55, 200, 75, 220], // ~11.4k ft — green
+  [30, 210, 210, 220], // ~18.2k ft — cyan
+  [55, 105, 235, 220], // ~25.6k ft — blue
+  [155, 50, 230, 220], //  40k+ ft — violet
 ];
 
-export function altToColor(altFt: number): RGBA {
-  const clamped = Math.max(0, Math.min(altFt, ALT_MAX));
-  // Apply power curve so low-altitude differences are visually exaggerated.
-  const t = Math.pow(clamped / ALT_MAX, ALT_CURVE) * (ALT_STOPS.length - 1);
+function heightToColor(ft: number): RGBA {
+  const clamped = Math.max(0, Math.min(ft, HEIGHT_MAX));
+  const t =
+    Math.pow(clamped / HEIGHT_MAX, HEIGHT_CURVE) * (HEIGHT_STOPS.length - 1);
   const lo = Math.floor(t);
-  const hi = Math.min(lo + 1, ALT_STOPS.length - 1);
-  const frac = t - lo;
-  const a = ALT_STOPS[lo];
-  const b = ALT_STOPS[hi];
-  if (!a || !b) return ALT_STOPS[ALT_STOPS.length - 1] ?? [155, 110, 240, 220];
-  return lerpColor(a, b, frac);
+  const hi = Math.min(lo + 1, HEIGHT_STOPS.length - 1);
+  const a = HEIGHT_STOPS[lo];
+  const b = HEIGHT_STOPS[hi];
+  if (!a || !b)
+    return HEIGHT_STOPS[HEIGHT_STOPS.length - 1] ?? [155, 50, 230, 220];
+  return lerpColor(a, b, t - lo);
+}
+
+export function altToColor(altFt: number): RGBA {
+  return heightToColor(altFt);
 }
 
 // Squawk palette — emergency codes use warm/saturated colours; conspicuity
@@ -150,4 +158,12 @@ export function iasToColor(iasKt: number | null | undefined): RGBA {
     SPEED_STOPS,
     Math.sqrt(Math.max(0, Math.min(iasKt, 450)) / 450),
   );
+}
+
+// AGL uses the same scale and cap as altitude so the two modes are comparable.
+export const AGL_MAX = HEIGHT_MAX;
+
+export function aglToColor(aglFt: number | null | undefined): RGBA {
+  if (aglFt == null) return GRAY;
+  return heightToColor(aglFt);
 }

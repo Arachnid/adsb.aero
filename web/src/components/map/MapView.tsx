@@ -13,6 +13,7 @@ import { LineLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { FlightDetail } from "../../lib/api";
 import {
   altToColor,
+  aglToColor,
   catToColor,
   squawkToColor,
   vsToColor,
@@ -26,7 +27,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 setWorkerUrl(workerUrl);
 
 type Basemap = "dark" | "light" | "sat";
-export type ColorMode = "alt" | "cat" | "vs" | "gs" | "ias" | "sqk";
+export type ColorMode = "alt" | "agl" | "cat" | "vs" | "gs" | "ias" | "sqk";
 
 // Precomputed segment for LineLayer — one per adjacent vertex pair in a path.
 type Seg = {
@@ -35,6 +36,7 @@ type Seg = {
   altMid: number;
   altFt: number;
   altFtTo: number;
+  aglMid: number | null;
   cat: string | null;
   squawk: string | null;
   flightId: string;
@@ -848,12 +850,18 @@ export function MapView({
             const tsNext = subTs[j + 1] ?? ts;
             const corrFt = stepValueAt(subAltCorr, ts) ?? 0;
             const corrFtTo = stepValueAt(subAltCorr, tsNext) ?? 0;
+            const aglFrom = linearValueAt(subAgl, ts);
+            const aglTo = linearValueAt(subAgl, tsNext);
             return {
               from: [c[0], c[1]],
               to: [next[0], next[1]],
               altMid: (c[2] + corrFt + next[2] + corrFtTo) / 2,
               altFt: c[2] + corrFt,
               altFtTo: next[2] + corrFtTo,
+              aglMid:
+                aglFrom !== null && aglTo !== null
+                  ? (aglFrom + aglTo) / 2
+                  : null,
               cat: f.emitter_category ?? null,
               squawk: squawkAt(subRuns, ts),
               flightId: f.flight_id,
@@ -862,8 +870,8 @@ export function MapView({
               gs: stepValueAt(subGs, ts),
               ias: stepValueAt(subIas, ts),
               track: stepValueAt(subTracks, ts),
-              aglFrom: linearValueAt(subAgl, ts),
-              aglTo: linearValueAt(subAgl, tsNext),
+              aglFrom,
+              aglTo,
               callsign: f.callsign ?? null,
               icao24: f.icao24,
               icaoType: f.icao_type ?? null,
@@ -883,15 +891,17 @@ export function MapView({
       const base =
         colorMode === "alt"
           ? altToColor(s.altMid)
-          : colorMode === "cat"
-            ? catToColor(s.cat)
-            : colorMode === "sqk"
-              ? squawkToColor(s.squawk)
-              : colorMode === "vs"
-                ? vsToColor(s.vs)
-                : colorMode === "gs"
-                  ? gsToColor(s.gs)
-                  : iasToColor(s.ias);
+          : colorMode === "agl"
+            ? aglToColor(s.aglMid)
+            : colorMode === "cat"
+              ? catToColor(s.cat)
+              : colorMode === "sqk"
+                ? squawkToColor(s.squawk)
+                : colorMode === "vs"
+                  ? vsToColor(s.vs)
+                  : colorMode === "gs"
+                    ? gsToColor(s.gs)
+                    : iasToColor(s.ias);
       if (hasSel && s.flightId !== selectedFlightId) {
         return [base[0], base[1], base[2], Math.round(base[3] * 0.2)];
       }
