@@ -19,6 +19,51 @@ export const MAX_GEOMETRY_AREA_KM2 = 75_000;
 const KM_PER_DEG = 111.32;
 const KM_PER_NM = 1.852;
 const DEG_TO_RAD = Math.PI / 180;
+const EARTH_RADIUS_NM = 3_440.065;
+
+/** Great-circle distance in nautical miles between two [lon, lat] points. */
+export function haversineNm(
+  lon1: number,
+  lat1: number,
+  lon2: number,
+  lat2: number,
+): number {
+  const φ1 = lat1 * DEG_TO_RAD;
+  const φ2 = lat2 * DEG_TO_RAD;
+  const Δφ = (lat2 - lat1) * DEG_TO_RAD;
+  const Δλ = (lon2 - lon1) * DEG_TO_RAD;
+  const a =
+    Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return (
+    EARTH_RADIUS_NM * 2 * Math.asin(Math.sqrt(Math.max(0, Math.min(1, a))))
+  );
+}
+
+/**
+ * Sum of great-circle segment distances across a MultiLineString path,
+ * including straight-line distance across coverage gaps between sub-sequences.
+ */
+export function trackDistanceNm(coords: [number, number, number][][]): number {
+  let total = 0;
+  let prevLast: [number, number, number] | null = null;
+  for (const seq of coords) {
+    const first = seq[0];
+    if (prevLast !== null && first !== undefined) {
+      // Include the gap leg: last point of previous sub-sequence to first of this one.
+      total += haversineNm(prevLast[0], prevLast[1], first[0], first[1]);
+    }
+    for (let i = 1; i < seq.length; i++) {
+      const p = seq[i - 1];
+      const c = seq[i];
+      if (p !== undefined && c !== undefined) {
+        total += haversineNm(p[0], p[1], c[0], c[1]);
+      }
+    }
+    const last = seq.at(-1);
+    if (last !== undefined) prevLast = last;
+  }
+  return total;
+}
 
 /** Approximate area in km² of a circle given its radius in nautical miles. */
 export function circleAreaKm2(radiusNm: number): number {

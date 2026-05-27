@@ -3,6 +3,7 @@ import { Plane } from "../Icons";
 import type { FlightDetail } from "../../lib/api";
 import type { HoveredPoint } from "../map/MapView";
 import { stepValueAt, linearValueAt } from "../../lib/seriesUtils";
+import { haversineNm, trackDistanceNm } from "../../lib/geometryUtils";
 
 interface ResultsPanelProps {
   flights: FlightDetail[] | null;
@@ -21,6 +22,18 @@ interface ResultsPanelProps {
   /** When true the panel is off-screen; skip scrollIntoView to avoid Chrome
    *  scrolling the overflow:hidden app container and shifting the map. */
   collapsed?: boolean;
+}
+
+function fmtDuration(startIso: string, endIso: string): string {
+  const secs = Math.round((Date.parse(endIso) - Date.parse(startIso)) / 1000);
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (h === 0) return `${String(m)}m`;
+  return `${String(h)}h ${String(m)}m`;
+}
+
+function fmtDistNm(nm: number): string {
+  return `${Math.round(nm).toLocaleString()} nm`;
 }
 
 function fmtTime(iso: string): string {
@@ -590,6 +603,11 @@ function FlightRow({
     "—";
   const coords = flight.path?.coordinates ?? null;
 
+  const trackNm = coords ? trackDistanceNm(coords) : null;
+  const sp = flight.start_point.coordinates;
+  const ep = flight.end_point.coordinates;
+  const p2pNm = haversineNm(sp[0], sp[1], ep[0], ep[1]);
+
   const detailRows: [string, string, boolean][] = [
     ["ICAO24", flight.icao24, true],
     ...(flight.registration != null
@@ -604,6 +622,10 @@ function FlightRow({
     ...(flight.operator != null
       ? [["Operator", flight.operator, false] as [string, string, boolean]]
       : []),
+    ...(trackNm != null
+      ? [["Track", fmtDistNm(trackNm), false] as [string, string, boolean]]
+      : []),
+    ["P2P", fmtDistNm(p2pNm), false],
   ];
 
   return (
@@ -647,6 +669,8 @@ function FlightRow({
       <div style={{ color: "var(--fg-3)", marginTop: 2 }}>
         {fmtTime(flight.start_ts)} →{" "}
         {fmtEndTime(flight.end_ts, flight.start_ts.slice(0, 10))}
+        {" · "}
+        {fmtDuration(flight.start_ts, flight.end_ts)}
       </div>
       {coords && (
         <SparklineChart
