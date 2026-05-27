@@ -814,7 +814,7 @@ export function App({
         }}
       />
 
-      <Legend colorMode={colorMode} />
+      <Legend colorMode={colorMode} rightCollapsed={rightCollapsed} />
 
       {airspaceMenu && (
         <AirspacePickerMenu

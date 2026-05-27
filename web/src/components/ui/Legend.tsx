@@ -1,18 +1,31 @@
 import type { ColorMode } from "../map/MapView";
 import { useMobile } from "../../hooks/useMobile";
 
+const SIDEBAR_W = 340;
+const SIDEBAR_MARGIN = 12;
+
 interface LegendProps {
   colorMode: ColorMode;
+  rightCollapsed: boolean;
 }
 
-export function Legend({ colorMode }: LegendProps): React.ReactElement {
+export function Legend({
+  colorMode,
+  rightCollapsed,
+}: LegendProps): React.ReactElement {
   const mobile = useMobile();
+  const rightOffset = rightCollapsed
+    ? SIDEBAR_MARGIN
+    : SIDEBAR_MARGIN + SIDEBAR_MARGIN + SIDEBAR_W;
   return (
     <div
       style={{
         position: "absolute",
-        bottom: 12,
-        ...(mobile ? { left: 12 } : { right: 364 }),
+        bottom: 40,
+        ...(mobile ? { left: 12 } : { right: rightOffset }),
+        transition: mobile
+          ? undefined
+          : "right 240ms cubic-bezier(0.4,0,0.2,1)",
         zIndex: 8,
         background: "color-mix(in oklab, var(--bg-1) 92%, transparent)",
         backdropFilter: "blur(12px)",

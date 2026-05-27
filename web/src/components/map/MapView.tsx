@@ -579,15 +579,14 @@ export function MapView({
       zoom: 2,
       attributionControl: false,
     });
-    map.addControl(new AttributionControl({ compact: true }), "bottom-right");
-    // MapLibre's _updateCompact() sets `open` + `maplibregl-compact-show` on init
-    // even with compact:true, only collapsing on the first drag event. Close it now.
-    const attribEl = map
-      .getContainer()
-      .querySelector(".maplibregl-ctrl-attrib");
-    attribEl?.removeAttribute("open");
-    attribEl?.classList.remove("maplibregl-compact-show");
-
+    map.addControl(
+      new AttributionControl({
+        compact: true,
+        customAttribution:
+          "ADS-B data &copy; <a href='https://adsb.lol/' target='_blank'>adsb.lol</a>",
+      }),
+      "bottom-right",
+    );
     // If a shared view was decoded from the URL, fly there immediately.
     // Otherwise try geolocation; skip it if the user pans first.
     let hasMoved = false;
