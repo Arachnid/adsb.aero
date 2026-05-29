@@ -21,7 +21,7 @@ dependencies = [
     "h3>=4.1",
     "orjson>=3.10",
     "sentry-sdk[fastapi]>=2.0",
-    "redis[asyncio]>=5.0",
+    "redis>=8.0",
     "sqlalchemy[asyncio]>=2.0",
     "alembic>=1.13",
     "rasterio>=1.3",
@@ -68,7 +68,7 @@ python_version = "3.14"
 exclude = ["tests/"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg", "asyncpg.*", "dramatiq.*", "pyproj.*", "sentry_sdk", "sentry_sdk.*", "shapely.*", "testcontainers.*", "alembic.*", "cfgrib.*", "h3", "h3.*", "numpy", "numpy.*", "scipy", "scipy.*", "xarray", "xarray.*", "redis", "redis.*", "rasterio", "rasterio.*"]
+module = ["asyncpg", "asyncpg.*", "dramatiq.*", "pyproj.*", "sentry_sdk", "sentry_sdk.*", "shapely.*", "testcontainers.*", "alembic.*", "cfgrib.*", "h3", "h3.*", "numpy", "numpy.*", "scipy", "scipy.*", "xarray", "xarray.*", "rasterio", "rasterio.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

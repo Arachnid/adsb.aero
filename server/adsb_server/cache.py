@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import zlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis as _Redis
@@ -37,7 +37,7 @@ class ResultCache:
     async def get(self, key: str) -> bytes | None:
         """Return decompressed value for *key*, or None on miss/error."""
         try:
-            raw: bytes | None = await self._client.get(key)
+            raw = cast("bytes | None", await self._client.get(key))
             if raw is None:
                 return None
             return zlib.decompress(raw)
