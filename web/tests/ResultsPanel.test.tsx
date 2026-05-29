@@ -1,7 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ResultsPanel } from "../src/components/results/ResultsPanel";
+import {
+  ExportMenu,
+  ResultsPanel,
+} from "../src/components/results/ResultsPanel";
 import type { FlightDetail } from "../src/lib/api";
+import {
+  downloadGeoJSON,
+  downloadGPX,
+  downloadKML,
+  downloadCSV,
+} from "../src/lib/export";
+
+vi.mock("../src/lib/export", () => ({
+  downloadGeoJSON: vi.fn(),
+  downloadGPX: vi.fn(),
+  downloadKML: vi.fn(),
+  downloadCSV: vi.fn(),
+}));
 
 function makeFlight(overrides: Partial<FlightDetail> = {}): FlightDetail {
   return {
@@ -552,6 +568,67 @@ describe("ResultsPanel", () => {
     expect(screen.getByText("Boeing 737-800")).toBeInTheDocument();
     expect(screen.getByText("2010")).toBeInTheDocument();
     expect(screen.getByText("British Airways")).toBeInTheDocument();
+  });
+
+  describe("ExportMenu", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("renders the export icon button", () => {
+      render(<ExportMenu flights={[makeFlight()]} />);
+      expect(screen.getByTitle("Export results")).toBeInTheDocument();
+    });
+
+    it("opens a dropdown with all format options when clicked", () => {
+      render(<ExportMenu flights={[makeFlight()]} />);
+      fireEvent.click(screen.getByTitle("Export results"));
+      expect(screen.getByText("GeoJSON")).toBeInTheDocument();
+      expect(screen.getByText("GPX")).toBeInTheDocument();
+      expect(screen.getByText("KML")).toBeInTheDocument();
+      expect(screen.getByText("CSV")).toBeInTheDocument();
+    });
+
+    it("closes the dropdown when the toggle button is clicked again", () => {
+      render(<ExportMenu flights={[makeFlight()]} />);
+      const btn = screen.getByTitle("Export results");
+      fireEvent.click(btn);
+      expect(screen.getByText("GeoJSON")).toBeInTheDocument();
+      fireEvent.click(btn);
+      expect(screen.queryByText("GeoJSON")).not.toBeInTheDocument();
+    });
+
+    it("calls downloadGeoJSON and closes the menu", () => {
+      render(<ExportMenu flights={[makeFlight()]} />);
+      fireEvent.click(screen.getByTitle("Export results"));
+      fireEvent.click(screen.getByText("GeoJSON"));
+      expect(vi.mocked(downloadGeoJSON)).toHaveBeenCalledOnce();
+      expect(screen.queryByText("GeoJSON")).not.toBeInTheDocument();
+    });
+
+    it("calls downloadGPX and closes the menu", () => {
+      render(<ExportMenu flights={[makeFlight()]} />);
+      fireEvent.click(screen.getByTitle("Export results"));
+      fireEvent.click(screen.getByText("GPX"));
+      expect(vi.mocked(downloadGPX)).toHaveBeenCalledOnce();
+      expect(screen.queryByText("GPX")).not.toBeInTheDocument();
+    });
+
+    it("calls downloadKML and closes the menu", () => {
+      render(<ExportMenu flights={[makeFlight()]} />);
+      fireEvent.click(screen.getByTitle("Export results"));
+      fireEvent.click(screen.getByText("KML"));
+      expect(vi.mocked(downloadKML)).toHaveBeenCalledOnce();
+      expect(screen.queryByText("KML")).not.toBeInTheDocument();
+    });
+
+    it("calls downloadCSV and closes the menu", () => {
+      render(<ExportMenu flights={[makeFlight()]} />);
+      fireEvent.click(screen.getByTitle("Export results"));
+      fireEvent.click(screen.getByText("CSV"));
+      expect(vi.mocked(downloadCSV)).toHaveBeenCalledOnce();
+      expect(screen.queryByText("CSV")).not.toBeInTheDocument();
+    });
   });
 
   describe("scrollIntoView behaviour", () => {

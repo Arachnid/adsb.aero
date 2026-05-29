@@ -65,6 +65,9 @@ export const Viewport = icon("M6 2H2v4M22 6V2h-4M6 22H2v-4M22 18v4h-4");
 export const Link = icon(
   "M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71",
 );
+export const Download = icon(
+  "M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3",
+);
 export const Zone = icon(
   "M12 2a8 8 0 100 16A8 8 0 0012 2zM2 12h3M19 12h3M12 2v3M12 19v3",
 );

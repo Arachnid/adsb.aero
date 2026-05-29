@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Plane } from "../Icons";
+import { Download, Plane } from "../Icons";
 import type { FlightDetail } from "../../lib/api";
 import type { HoveredPoint } from "../map/MapView";
 import { stepValueAt, linearValueAt } from "../../lib/seriesUtils";
@@ -376,7 +376,7 @@ function fmtDateLabel(iso: string): string {
   return iso.slice(0, 10);
 }
 
-function ExportMenu({
+export function ExportMenu({
   flights,
 }: {
   flights: FlightDetail[];
@@ -413,24 +413,23 @@ function ExportMenu({
   return (
     <div style={{ position: "relative" }}>
       <button
+        title="Export results"
         onClick={() => {
           setOpen((v) => !v);
         }}
         style={{
-          padding: "3px 8px",
+          padding: 3,
           borderRadius: "var(--radius-1)",
-          border: "1px solid var(--line-1)",
-          background: "var(--bg-2)",
-          color: "var(--fg-2)",
-          fontSize: 11,
-          fontWeight: 500,
+          border: "none",
+          background: "transparent",
+          color: "var(--fg-3)",
           cursor: "pointer",
           display: "flex",
           alignItems: "center",
-          gap: 4,
+          lineHeight: 0,
         }}
       >
-        Export ▾
+        <Download size={14} />
       </button>
       {open && (
         <>
@@ -588,23 +587,6 @@ export function ResultsPanel({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {flights !== null && flights.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "5px 10px 5px 14px",
-            borderBottom: "1px solid var(--line-1)",
-            flexShrink: 0,
-          }}
-        >
-          <span style={{ fontSize: 11, color: "var(--fg-3)" }}>
-            {flights.length} flight{flights.length !== 1 ? "s" : ""}
-          </span>
-          <ExportMenu flights={flights} />
-        </div>
-      )}
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto" }}>
         {buildList(flights ?? []).map((item) =>
           item.type === "divider" ? (

@@ -5,6 +5,7 @@ interface SidebarProps {
   collapsed: boolean;
   title: string;
   meta?: string;
+  headerActions?: React.ReactNode;
   toolbar?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
@@ -15,6 +16,7 @@ export function Sidebar({
   collapsed,
   title,
   meta,
+  headerActions,
   toolbar,
   footer,
   children,
@@ -66,17 +68,20 @@ export function Sidebar({
         >
           {title}
         </span>
-        {meta !== undefined && (
-          <span
-            style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 10.5,
-              color: "var(--fg-3)",
-            }}
-          >
-            {meta}
-          </span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {headerActions}
+          {meta !== undefined && (
+            <span
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 10.5,
+                color: "var(--fg-3)",
+              }}
+            >
+              {meta}
+            </span>
+          )}
+        </div>
       </div>
 
       <div

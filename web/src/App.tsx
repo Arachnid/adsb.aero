@@ -118,7 +118,7 @@ import {
   updatePredInGroup,
   UIPredicate,
 } from "./components/query/QueryBuilder";
-import { ResultsPanel } from "./components/results/ResultsPanel";
+import { ExportMenu, ResultsPanel } from "./components/results/ResultsPanel";
 import { Legend } from "./components/ui/Legend";
 import { ChevronLeft, ChevronRight } from "./components/Icons";
 import { compileGroup } from "./lib/compileQuery";
@@ -786,6 +786,11 @@ export function App({
               (hasMore ? "+" : "") +
               " flight" +
               (queryFlights.length !== 1 ? "s" : "")
+        }
+        headerActions={
+          queryFlights !== null && queryFlights.length > 0 ? (
+            <ExportMenu flights={queryFlights} />
+          ) : undefined
         }
       >
         <ResultsPanel
