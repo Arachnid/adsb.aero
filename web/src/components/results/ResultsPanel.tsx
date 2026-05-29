@@ -1,9 +1,15 @@
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Plane } from "../Icons";
 import type { FlightDetail } from "../../lib/api";
 import type { HoveredPoint } from "../map/MapView";
 import { stepValueAt, linearValueAt } from "../../lib/seriesUtils";
 import { haversineNm, trackDistanceNm } from "../../lib/geometryUtils";
+import {
+  downloadGeoJSON,
+  downloadGPX,
+  downloadCSV,
+  downloadKML,
+} from "../../lib/export";
 
 interface ResultsPanelProps {
   flights: FlightDetail[] | null;
@@ -370,6 +376,123 @@ function fmtDateLabel(iso: string): string {
   return iso.slice(0, 10);
 }
 
+function ExportMenu({
+  flights,
+}: {
+  flights: FlightDetail[];
+}): React.ReactElement {
+  const [open, setOpen] = useState(false);
+
+  const options: { label: string; action: () => void }[] = [
+    {
+      label: "GeoJSON",
+      action: () => {
+        downloadGeoJSON(flights);
+      },
+    },
+    {
+      label: "GPX",
+      action: () => {
+        downloadGPX(flights);
+      },
+    },
+    {
+      label: "KML",
+      action: () => {
+        downloadKML(flights);
+      },
+    },
+    {
+      label: "CSV",
+      action: () => {
+        downloadCSV(flights);
+      },
+    },
+  ];
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => {
+          setOpen((v) => !v);
+        }}
+        style={{
+          padding: "3px 8px",
+          borderRadius: "var(--radius-1)",
+          border: "1px solid var(--line-1)",
+          background: "var(--bg-2)",
+          color: "var(--fg-2)",
+          fontSize: 11,
+          fontWeight: 500,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        Export ▾
+      </button>
+      {open && (
+        <>
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 99,
+            }}
+            onClick={() => {
+              setOpen(false);
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 4px)",
+              right: 0,
+              zIndex: 100,
+              background: "var(--bg-2)",
+              border: "1px solid var(--line-1)",
+              borderRadius: "var(--radius-1)",
+              minWidth: 110,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+              overflow: "hidden",
+            }}
+          >
+            {options.map(({ label, action }) => (
+              <button
+                key={label}
+                onClick={() => {
+                  action();
+                  setOpen(false);
+                }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  padding: "7px 12px",
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--fg-1)",
+                  fontSize: 12,
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--bg-3, var(--bg-1))";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function ResultsPanel({
   flights,
   loading,
@@ -465,6 +588,23 @@ export function ResultsPanel({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {flights !== null && flights.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "5px 10px 5px 14px",
+            borderBottom: "1px solid var(--line-1)",
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: 11, color: "var(--fg-3)" }}>
+            {flights.length} flight{flights.length !== 1 ? "s" : ""}
+          </span>
+          <ExportMenu flights={flights} />
+        </div>
+      )}
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto" }}>
         {buildList(flights ?? []).map((item) =>
           item.type === "divider" ? (
