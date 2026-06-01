@@ -762,6 +762,7 @@ class TestProcessAndCorrect:
             cutoff_ts=ct,
             staging=staging or {},
             tile_manager=mock_tm,
+            airport_index=None,
         )
 
     def test_valid_trace_produces_finalized_flight(self, monkeypatch):

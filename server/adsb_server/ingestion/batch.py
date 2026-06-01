@@ -28,6 +28,7 @@ from adsb_server.geometry.wkt import (
     tint_seqset,
     ttext_seqset,
 )
+from adsb_server.ingestion.airport_index import AirportIndex
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import parse_trace_bytes, stream_tarball_raw
 from adsb_server.ingestion.splitter import finalize_segment, split_flights
@@ -76,12 +77,14 @@ INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
     start_ts, end_ts, path, path_tracks,
     squawk_seq, alt_correction_ft,
     path_gs, path_vr, path_ias,
-    raw_point_count, ingest_batch_date, path_h3, squawk_codes, path_agl_ft)
+    raw_point_count, ingest_batch_date, path_h3, squawk_codes, path_agl_ft,
+    start_airport_ident, end_airport_ident)
 VALUES ($1,$2,$3,$4,$5,$6,
     $7::tgeompoint, $8::tint,
     $9::ttext, $10::tfloat,
     $11::tint, $12::tint, $13::tint,
-    $14, $15, $16::h3index[], $17::text[], $18::tfloat)
+    $14, $15, $16::h3index[], $17::text[], $18::tfloat,
+    $19, $20)
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
@@ -94,28 +97,32 @@ ON CONFLICT (icao24, start_ts) DO UPDATE SET
     ingest_batch_date=EXCLUDED.ingest_batch_date,
     path_h3=EXCLUDED.path_h3,
     squawk_codes=EXCLUDED.squawk_codes,
-    path_agl_ft=EXCLUDED.path_agl_ft
+    path_agl_ft=EXCLUDED.path_agl_ft,
+    start_airport_ident=EXCLUDED.start_airport_ident,
+    end_airport_ident=EXCLUDED.end_airport_ident
 """
 
 _FlightParams = tuple[
-    str,
-    str | None,
-    str | None,
-    str | None,
-    datetime,
-    datetime,
-    str,
-    str | None,
-    str | None,
-    str | None,
-    str | None,
-    str | None,
-    str | None,
-    int,
-    date,
-    list[str],
-    list[str],
+    str,  # icao24
+    str | None,  # callsign
+    str | None,  # icao_type
+    str | None,  # emitter_category
+    datetime,  # start_ts
+    datetime,  # end_ts
+    str,  # path
+    str | None,  # path_tracks
+    str | None,  # squawk_seq
+    str | None,  # alt_correction_ft
+    str | None,  # path_gs
+    str | None,  # path_vr
+    str | None,  # path_ias
+    int,  # raw_point_count
+    date,  # ingest_batch_date
+    list[str],  # path_h3
+    list[str],  # squawk_codes
     str | None,  # path_agl_ft
+    str | None,  # start_airport_ident
+    str | None,  # end_airport_ident
 ]
 
 
@@ -127,6 +134,7 @@ class _WorkerState(NamedTuple):
     cutoff_ts: float
     staging: dict[str, RawFlight]
     tile_manager: TileManager
+    airport_index: AirportIndex | None
 
 
 # Set in run_batch before Pool creation; inherited by forked workers.
@@ -173,8 +181,16 @@ def _flight_to_params(
     batch_date: date,
     alt_correction_ft: str | None,
     path_agl_ft: str | None,
+    airport_index: AirportIndex | None,
 ) -> _FlightParams:
     """Convert a FinalizedFlight into the parameter tuple for the UPSERT SQL."""
+    start_lon, start_lat = flight.vertex_sequences[0][0][0], flight.vertex_sequences[0][0][1]
+    end_lon, end_lat = flight.vertex_sequences[-1][-1][0], flight.vertex_sequences[-1][-1][1]
+    if airport_index is not None:
+        start_airport = airport_index.nearest(start_lon, start_lat, flight.emitter_category)
+        end_airport = airport_index.nearest(end_lon, end_lat, flight.emitter_category)
+    else:
+        start_airport = end_airport = None
     return (
         flight.icao24,
         flight.callsign,
@@ -194,6 +210,8 @@ def _flight_to_params(
         path_h3_cells(flight.vertex_sequences),
         list({code for seq in flight.squawk_runs for _, code in seq}),
         path_agl_ft,
+        start_airport,
+        end_airport,
     )
 
 
@@ -301,7 +319,9 @@ def _process_and_correct(
         agl = compute_agl_series(flight.vertex_sequences, corr_ts, corr_vals, state.tile_manager)
         agl_wkt = tfloat_stepwise_seqset(agl) if agl is not None else None
 
-        params_list.append(_flight_to_params(flight, state.batch_date, wkt, agl_wkt))
+        params_list.append(
+            _flight_to_params(flight, state.batch_date, wkt, agl_wkt, state.airport_index)
+        )
 
     return params_list, in_progress, total_dropped, icao24
 
@@ -401,9 +421,27 @@ async def run_batch(
 
     tile_manager = TileManager(settings.terrain_data_dir)
 
+    airport_rows = await conn.fetch(
+        "SELECT ident, ST_X(location) AS lon, ST_Y(location) AS lat, type"
+        " FROM airports WHERE type NOT IN ('closed', 'balloonport')"
+    )
+    airport_index: AirportIndex | None = (
+        AirportIndex.from_rows([(r["ident"], r["lon"], r["lat"], r["type"]) for r in airport_rows])
+        if airport_rows
+        else None
+    )
+    logger.info("Loaded %d airports into index", len(airport_rows))
+
     # Set worker state before fork so all worker processes inherit it.
     _worker_state = _WorkerState(
-        correction_interp, t_min, t_max, batch_date, cutoff_ts, staging, tile_manager
+        correction_interp,
+        t_min,
+        t_max,
+        batch_date,
+        cutoff_ts,
+        staging,
+        tile_manager,
+        airport_index,
     )
 
     flight_count = 0

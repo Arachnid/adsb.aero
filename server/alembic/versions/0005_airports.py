@@ -1,4 +1,4 @@
-"""Add airports table (OurAirports reference data)
+"""Add airports table and start/end airport columns on flights
 
 Revision ID: 0005
 Revises: 0004
@@ -72,6 +72,14 @@ def upgrade() -> None:
     )
     op.execute(sa.text("CREATE INDEX airports_search ON airports USING GIN (search_vec)"))
 
+    # start_airport_ident / end_airport_ident — nearest airport within 5 km of
+    # the flight's first/last point, matched at ingest time and backfilled for
+    # historical flights.  Heliports are only matched for rotorcraft (A7).
+    op.execute(sa.text("ALTER TABLE flights ADD COLUMN start_airport_ident TEXT"))
+    op.execute(sa.text("ALTER TABLE flights ADD COLUMN end_airport_ident TEXT"))
+
 
 def downgrade() -> None:
+    op.execute(sa.text("ALTER TABLE flights DROP COLUMN IF EXISTS end_airport_ident"))
+    op.execute(sa.text("ALTER TABLE flights DROP COLUMN IF EXISTS start_airport_ident"))
     op.execute(sa.text("DROP TABLE IF EXISTS airports"))
