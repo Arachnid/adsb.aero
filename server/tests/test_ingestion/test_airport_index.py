@@ -97,3 +97,16 @@ def test_empty_index_returns_none() -> None:
 
 def test_match_radius_constant_is_5km() -> None:
     assert MATCH_RADIUS_M == 5_000.0
+
+
+# ---------------------------------------------------------------------------
+# AGL gate (tested at the batch._flight_to_params level via integration)
+# The airport_index.nearest() itself has no AGL awareness — the gate lives
+# in batch.py and backfill_airports.py.  These tests document the constant.
+# ---------------------------------------------------------------------------
+
+
+def test_agl_match_max_ft_constant() -> None:
+    from adsb_server.ingestion.airport_index import AGL_MATCH_MAX_FT
+
+    assert AGL_MATCH_MAX_FT == 1_000.0

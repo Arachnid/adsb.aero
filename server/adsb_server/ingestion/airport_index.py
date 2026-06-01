@@ -23,6 +23,12 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 MATCH_RADIUS_M: float = 5_000.0
+# Only assign an airport when the first/last ADS-B point is below this AGL
+# threshold.  At 5 km horizontal distance a 3° glide path puts the aircraft at
+# ~640 ft, so 1 000 ft provides a comfortable margin while excluding overflying
+# traffic.  Applied only when AGL data is available; falls back to
+# proximity-only matching when it is not.
+AGL_MATCH_MAX_FT: float = 1_000.0
 _EARTH_RADIUS_M: float = 6_371_000.0
 
 FIXED_WING_TYPES: frozenset[str] = frozenset(

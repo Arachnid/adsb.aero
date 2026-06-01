@@ -28,7 +28,7 @@ from adsb_server.geometry.wkt import (
     tint_seqset,
     ttext_seqset,
 )
-from adsb_server.ingestion.airport_index import AirportIndex
+from adsb_server.ingestion.airport_index import AGL_MATCH_MAX_FT, AirportIndex
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import parse_trace_bytes, stream_tarball_raw
 from adsb_server.ingestion.splitter import finalize_segment, split_flights
@@ -182,13 +182,25 @@ def _flight_to_params(
     alt_correction_ft: str | None,
     path_agl_ft: str | None,
     airport_index: AirportIndex | None,
+    agl: list[tuple[list[float], list[float]]] | None,
 ) -> _FlightParams:
     """Convert a FinalizedFlight into the parameter tuple for the UPSERT SQL."""
     start_lon, start_lat = flight.vertex_sequences[0][0][0], flight.vertex_sequences[0][0][1]
     end_lon, end_lat = flight.vertex_sequences[-1][-1][0], flight.vertex_sequences[-1][-1][1]
+    # AGL height at the first/last vertex — None when DEM data is unavailable.
+    start_agl = agl[0][0][0] if agl and agl[0] and agl[0][0] else None
+    end_agl = agl[-1][0][-1] if agl and agl[-1] and agl[-1][0] else None
     if airport_index is not None:
-        start_airport = airport_index.nearest(start_lon, start_lat, flight.emitter_category)
-        end_airport = airport_index.nearest(end_lon, end_lat, flight.emitter_category)
+        start_airport = (
+            airport_index.nearest(start_lon, start_lat, flight.emitter_category)
+            if start_agl is None or start_agl <= AGL_MATCH_MAX_FT
+            else None
+        )
+        end_airport = (
+            airport_index.nearest(end_lon, end_lat, flight.emitter_category)
+            if end_agl is None or end_agl <= AGL_MATCH_MAX_FT
+            else None
+        )
     else:
         start_airport = end_airport = None
     return (
@@ -320,7 +332,7 @@ def _process_and_correct(
         agl_wkt = tfloat_stepwise_seqset(agl) if agl is not None else None
 
         params_list.append(
-            _flight_to_params(flight, state.batch_date, wkt, agl_wkt, state.airport_index)
+            _flight_to_params(flight, state.batch_date, wkt, agl_wkt, state.airport_index, agl)
         )
 
     return params_list, in_progress, total_dropped, icao24

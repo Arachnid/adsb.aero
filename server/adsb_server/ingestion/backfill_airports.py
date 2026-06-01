@@ -24,7 +24,7 @@ import sys
 import asyncpg
 
 from adsb_server.config import get_settings
-from adsb_server.ingestion.airport_index import AirportIndex
+from adsb_server.ingestion.airport_index import AGL_MATCH_MAX_FT, AirportIndex
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +35,13 @@ SELECT
     icao24,
     start_ts,
     emitter_category,
-    ST_X(startValue(path)::geometry) AS start_lon,
-    ST_Y(startValue(path)::geometry) AS start_lat,
-    ST_X(endValue(path)::geometry)   AS end_lon,
-    ST_Y(endValue(path)::geometry)   AS end_lat
+    ST_X(startValue(path)::geometry)  AS start_lon,
+    ST_Y(startValue(path)::geometry)  AS start_lat,
+    ST_X(endValue(path)::geometry)    AS end_lon,
+    ST_Y(endValue(path)::geometry)    AS end_lat,
+    startValue(path_agl_ft)           AS start_agl_ft,
+    endValue(path_agl_ft)             AS end_agl_ft
 FROM flights
-WHERE start_airport_ident IS NULL OR end_airport_ident IS NULL
 ORDER BY start_ts DESC, icao24 DESC
 """
 
@@ -71,8 +72,18 @@ async def run_backfill(dsn: str, batch_size: int = _DEFAULT_BATCH_SIZE) -> None:
 
         async with read_conn.transaction():
             async for row in read_conn.cursor(_FETCH_SQL, prefetch=batch_size):
-                start = index.nearest(row["start_lon"], row["start_lat"], row["emitter_category"])
-                end = index.nearest(row["end_lon"], row["end_lat"], row["emitter_category"])
+                start_agl: float | None = row["start_agl_ft"]
+                end_agl: float | None = row["end_agl_ft"]
+                start = (
+                    index.nearest(row["start_lon"], row["start_lat"], row["emitter_category"])
+                    if start_agl is None or start_agl <= AGL_MATCH_MAX_FT
+                    else None
+                )
+                end = (
+                    index.nearest(row["end_lon"], row["end_lat"], row["emitter_category"])
+                    if end_agl is None or end_agl <= AGL_MATCH_MAX_FT
+                    else None
+                )
                 pending.append((row["icao24"], row["start_ts"], start, end))
 
                 if len(pending) >= batch_size:
