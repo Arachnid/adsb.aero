@@ -26,3 +26,16 @@ environment = POSTGRES_PORT=5432
 environment = POSTGRES_DB=adsb
 environment = POSTGRES_USER=adsb
 environment = SENTRY_DSN=__SENTRY_DSN__
+
+[job-run "import-airports"]
+schedule    = 0 10 3 * * 0
+image       = ghcr.io/arachnid/adsb.aero/api:latest
+command     = import-airports
+no-overlap  = true
+delete      = true
+network     = infra_db
+environment = POSTGRES_HOST=postgres
+environment = POSTGRES_PORT=5432
+environment = POSTGRES_DB=adsb
+environment = POSTGRES_USER=adsb
+environment = SENTRY_DSN=__SENTRY_DSN__
