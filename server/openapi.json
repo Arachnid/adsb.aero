@@ -303,10 +303,254 @@
           }
         }
       }
+    },
+    "/api/v1/airports/search": {
+      "get": {
+        "summary": "Airport typeahead search",
+        "description": "Search airports by name, ICAO code, IATA code, or municipality using prefix matching. Closed airports are excluded. Results are ordered by scheduled service, then name.",
+        "operationId": "search_airports_api_v1_airports_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "description": "Search query.",
+              "title": "Q"
+            },
+            "description": "Search query."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "description": "Max results.",
+              "default": 10,
+              "title": "Limit"
+            },
+            "description": "Max results."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Airport"
+                  },
+                  "title": "Response Search Airports Api V1 Airports Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/airports/{ident}": {
+      "get": {
+        "summary": "Look up an airport by ident",
+        "description": "Return a single airport by its OurAirports ident (e.g. `EGLL`, `KSFO`). Case-insensitive.",
+        "operationId": "get_airport_api_v1_airports__ident__get",
+        "parameters": [
+          {
+            "name": "ident",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ident"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Airport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Airport": {
+        "properties": {
+          "ident": {
+            "type": "string",
+            "title": "Ident",
+            "description": "OurAirports identifier (primary key).",
+            "examples": [
+              "EGLL"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Airport type.",
+            "examples": [
+              "large_airport"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Airport name.",
+            "examples": [
+              "London Heathrow Airport"
+            ]
+          },
+          "lon": {
+            "type": "number",
+            "title": "Lon",
+            "description": "Longitude (WGS-84).",
+            "examples": [
+              -0.461389
+            ]
+          },
+          "lat": {
+            "type": "number",
+            "title": "Lat",
+            "description": "Latitude (WGS-84).",
+            "examples": [
+              51.4775
+            ]
+          },
+          "elevation_ft": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elevation Ft",
+            "description": "Elevation in feet, or null.",
+            "examples": [
+              83
+            ]
+          },
+          "iso_country": {
+            "type": "string",
+            "title": "Iso Country",
+            "description": "ISO 3166-1 alpha-2 country code.",
+            "examples": [
+              "GB"
+            ]
+          },
+          "iso_region": {
+            "type": "string",
+            "title": "Iso Region",
+            "description": "ISO 3166-2 region code.",
+            "examples": [
+              "GB-ENG"
+            ]
+          },
+          "municipality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Municipality",
+            "description": "Nearest city or town.",
+            "examples": [
+              "London"
+            ]
+          },
+          "scheduled_service": {
+            "type": "boolean",
+            "title": "Scheduled Service",
+            "description": "True if the airport has scheduled commercial service."
+          },
+          "icao_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icao Code",
+            "description": "ICAO 4-letter designator, or null.",
+            "examples": [
+              "EGLL"
+            ]
+          },
+          "iata_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iata Code",
+            "description": "IATA 3-letter code, or null.",
+            "examples": [
+              "LHR"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "ident",
+          "type",
+          "name",
+          "lon",
+          "lat",
+          "elevation_ft",
+          "iso_country",
+          "iso_region",
+          "municipality",
+          "scheduled_service",
+          "icao_code",
+          "iata_code"
+        ],
+        "title": "Airport",
+        "description": "An airport from the OurAirports reference dataset."
+      },
       "AndPredicate": {
         "properties": {
           "and": {
@@ -1131,7 +1375,7 @@
               }
             ],
             "title": "Path Agl Ft",
-            "description": "Above-ground-level (AGL) height timeseries, structured as a list of sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. Computed from pressure altitude + QNH correction \u2212 GLO-90 terrain elevation. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when terrain data was unavailable at ingestion time.",
+            "description": "Above-ground-level (AGL) height timeseries, structured as a list of sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. Computed from pressure altitude + QNH correction - GLO-90 terrain elevation. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when terrain data was unavailable at ingestion time.",
             "examples": [
               [
                 [

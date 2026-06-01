@@ -287,6 +287,27 @@ class IcaoTypeStat(BaseModel):
     )
 
 
+class Airport(BaseModel):
+    """An airport from the OurAirports reference dataset."""
+
+    ident: str = Field(description="OurAirports identifier (primary key).", examples=["EGLL"])
+    type: str = Field(description="Airport type.", examples=["large_airport"])
+    name: str = Field(description="Airport name.", examples=["London Heathrow Airport"])
+    lon: float = Field(description="Longitude (WGS-84).", examples=[-0.461389])
+    lat: float = Field(description="Latitude (WGS-84).", examples=[51.4775])
+    elevation_ft: int | None = Field(description="Elevation in feet, or null.", examples=[83])
+    iso_country: str = Field(description="ISO 3166-1 alpha-2 country code.", examples=["GB"])
+    iso_region: str = Field(description="ISO 3166-2 region code.", examples=["GB-ENG"])
+    municipality: str | None = Field(description="Nearest city or town.", examples=["London"])
+    scheduled_service: bool = Field(
+        description="True if the airport has scheduled commercial service."
+    )
+    icao_code: str | None = Field(
+        description="ICAO 4-letter designator, or null.", examples=["EGLL"]
+    )
+    iata_code: str | None = Field(description="IATA 3-letter code, or null.", examples=["LHR"])
+
+
 # ---------------------------------------------------------------------------
 # Cursor encoding / decoding
 # ---------------------------------------------------------------------------

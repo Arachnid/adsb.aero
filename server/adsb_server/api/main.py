@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Annotated, Any
 
-from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse  # noqa: TC002
 from scalar_fastapi import get_scalar_api_reference
 
@@ -25,6 +25,7 @@ from adsb_server.query.compiler import (
     compile_predicate,
 )
 from adsb_server.query.models import (
+    Airport,
     DataRange,
     FlightDetail,
     GeoJSONMultiLineStringZ,
@@ -734,6 +735,93 @@ async def get_flight(
     if cache:
         await cache.set(cache_key, detail.model_dump_json().encode(), FLIGHT_TTL)
     return detail
+
+
+_AIRPORT_COLS = """
+    ident, type, name,
+    ST_X(location) AS lon, ST_Y(location) AS lat,
+    elevation_ft, iso_country, iso_region, municipality,
+    scheduled_service, icao_code, iata_code
+"""
+
+
+def _row_to_airport(row: asyncpg.Record) -> Airport:
+    return Airport(
+        ident=row["ident"],
+        type=row["type"],
+        name=row["name"],
+        lon=row["lon"],
+        lat=row["lat"],
+        elevation_ft=row["elevation_ft"],
+        iso_country=row["iso_country"],
+        iso_region=row["iso_region"],
+        municipality=row["municipality"],
+        scheduled_service=row["scheduled_service"],
+        icao_code=row["icao_code"],
+        iata_code=row["iata_code"],
+    )
+
+
+def _build_tsquery(q: str) -> str | None:
+    """Convert a user search string into a 'simple' prefix tsquery.
+
+    Each whitespace-separated token becomes a prefix term (token:*), joined
+    with AND.  Non-word characters are stripped to avoid tsquery parse errors.
+    Returns None if no usable tokens remain.
+    """
+    words = re.sub(r"[^\w\s]", " ", q).split()
+    return " & ".join(f"{w}:*" for w in words) if words else None
+
+
+@router.get(
+    "/airports/search",
+    response_model=list[Airport],
+    summary="Airport typeahead search",
+    description=(
+        "Search airports by name, ICAO code, IATA code, or municipality using prefix matching. "
+        "Closed airports are excluded. Results are ordered by scheduled service, then name."
+    ),
+)
+async def search_airports(
+    request: Request,
+    q: Annotated[str, Query(min_length=1, max_length=100, description="Search query.")],
+    limit: Annotated[int, Query(ge=1, le=20, description="Max results.")] = 10,
+) -> list[Airport]:
+    tsquery = _build_tsquery(q)
+    if tsquery is None:
+        return []
+    pool = await get_pool(request)
+    rows = await pool.fetch(
+        f"""
+        SELECT {_AIRPORT_COLS}
+        FROM airports
+        WHERE search_vec @@ to_tsquery('simple', $1)
+          AND type != 'closed'
+        ORDER BY scheduled_service DESC, name
+        LIMIT $2
+        """,
+        tsquery,
+        limit,
+    )
+    return [_row_to_airport(r) for r in rows]
+
+
+@router.get(
+    "/airports/{ident}",
+    response_model=Airport,
+    summary="Look up an airport by ident",
+    description="Return a single airport by its OurAirports ident (e.g. `EGLL`, `KSFO`). "
+    "Case-insensitive.",
+)
+async def get_airport(ident: str, request: Request) -> Airport:
+    pool = await get_pool(request)
+    row = await pool.fetchrow(
+        f"SELECT {_AIRPORT_COLS} FROM airports WHERE ident = $1",
+        ident.upper(),
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Airport not found")
+    return _row_to_airport(row)
 
 
 app.include_router(router)

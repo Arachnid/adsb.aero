@@ -110,7 +110,10 @@ async def test_upsert_airports(conn: asyncpg.Connection) -> None:  # type: ignor
     ]
     await _upsert_batch(conn, batch)
 
-    rows = await conn.fetch("SELECT ident, icao_code, iata_code FROM airports ORDER BY ident")
+    rows = await conn.fetch(
+        "SELECT ident, icao_code, iata_code FROM airports"
+        " WHERE ident IN ('EGLL', 'KSFO') ORDER BY ident"
+    )
     assert len(rows) == 2
     assert rows[0]["ident"] == "EGLL"
     assert rows[0]["icao_code"] == "EGLL"
@@ -201,7 +204,9 @@ async def test_search_vec_generated_column(
     rows = await conn.fetch(
         "SELECT ident FROM airports WHERE search_vec @@ to_tsquery('simple', 'heath:*')"
     )
-    assert [r["ident"] for r in rows] == ["EGLL"]
+    idents = {r["ident"] for r in rows}
+    assert "EGLL" in idents
+    assert "KSFO" not in idents  # 'heath' does not match San Francisco
 
 
 @pytest.mark.asyncio

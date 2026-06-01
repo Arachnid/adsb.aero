@@ -114,10 +114,127 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/airports/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Airport typeahead search
+     * @description Search airports by name, ICAO code, IATA code, or municipality using prefix matching. Closed airports are excluded. Results are ordered by scheduled service, then name.
+     */
+    get: operations["search_airports_api_v1_airports_search_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/airports/{ident}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Look up an airport by ident
+     * @description Return a single airport by its OurAirports ident (e.g. `EGLL`, `KSFO`). Case-insensitive.
+     */
+    get: operations["get_airport_api_v1_airports__ident__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * Airport
+     * @description An airport from the OurAirports reference dataset.
+     */
+    Airport: {
+      /**
+       * Ident
+       * @description OurAirports identifier (primary key).
+       * @example EGLL
+       */
+      ident: string;
+      /**
+       * Type
+       * @description Airport type.
+       * @example large_airport
+       */
+      type: string;
+      /**
+       * Name
+       * @description Airport name.
+       * @example London Heathrow Airport
+       */
+      name: string;
+      /**
+       * Lon
+       * @description Longitude (WGS-84).
+       * @example -0.461389
+       */
+      lon: number;
+      /**
+       * Lat
+       * @description Latitude (WGS-84).
+       * @example 51.4775
+       */
+      lat: number;
+      /**
+       * Elevation Ft
+       * @description Elevation in feet, or null.
+       * @example 83
+       */
+      elevation_ft: number | null;
+      /**
+       * Iso Country
+       * @description ISO 3166-1 alpha-2 country code.
+       * @example GB
+       */
+      iso_country: string;
+      /**
+       * Iso Region
+       * @description ISO 3166-2 region code.
+       * @example GB-ENG
+       */
+      iso_region: string;
+      /**
+       * Municipality
+       * @description Nearest city or town.
+       * @example London
+       */
+      municipality: string | null;
+      /**
+       * Scheduled Service
+       * @description True if the airport has scheduled commercial service.
+       */
+      scheduled_service: boolean;
+      /**
+       * Icao Code
+       * @description ICAO 4-letter designator, or null.
+       * @example EGLL
+       */
+      icao_code: string | null;
+      /**
+       * Iata Code
+       * @description IATA 3-letter code, or null.
+       * @example LHR
+       */
+      iata_code: string | null;
+    };
     /**
      * AndPredicate
      * @description All child predicates must be true (logical AND).
@@ -537,7 +654,7 @@ export interface components {
       alt_correction_ft?: number[][][] | null;
       /**
        * Path Agl Ft
-       * @description Above-ground-level (AGL) height timeseries, structured as a list of sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. Computed from pressure altitude + QNH correction − GLO-90 terrain elevation. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when terrain data was unavailable at ingestion time.
+       * @description Above-ground-level (AGL) height timeseries, structured as a list of sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. Computed from pressure altitude + QNH correction - GLO-90 terrain elevation. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when terrain data was unavailable at ingestion time.
        * @example [
        *       [
        *         [
@@ -1203,6 +1320,71 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  search_airports_api_v1_airports_search_get: {
+    parameters: {
+      query: {
+        /** @description Search query. */
+        q: string;
+        /** @description Max results. */
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Airport"][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_airport_api_v1_airports__ident__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        ident: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Airport"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
       };
     };
   };
