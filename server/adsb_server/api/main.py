@@ -165,10 +165,18 @@ _FLIGHT_COLS = f"""
     asText(f.path_agl_ft) AS path_agl_ft_text,
     f.raw_point_count,
     f.ingest_batch_date,
+    f.start_airport_ident,
+    sa.name AS start_airport_name,
+    f.end_airport_ident,
+    ea.name AS end_airport_name,
     numInstants(f.path) AS point_count
 """
 
-_FLIGHT_JOIN = "LEFT JOIN airframes af ON af.icao24 = f.icao24"
+_FLIGHT_JOIN = (
+    "LEFT JOIN airframes af ON af.icao24 = f.icao24"
+    " LEFT JOIN airports sa ON sa.ident = f.start_airport_ident"
+    " LEFT JOIN airports ea ON ea.ident = f.end_airport_ident"
+)
 
 # Raw columns projected by the inner subquery of the two-level intersects plan.
 # Excludes large arrays (path_h3, squawk_codes) and generated columns not needed
@@ -190,6 +198,10 @@ _INNER_COLS = """
     f.path_agl_ft,
     f.raw_point_count,
     f.ingest_batch_date,
+    f.start_airport_ident,
+    sa.name AS start_airport_name,
+    f.end_airport_ident,
+    ea.name AS end_airport_name,
     af.registration,
     af.model,
     af.year,
@@ -222,6 +234,10 @@ _FLIGHT_COLS_OUTER = f"""
     asText(f.path_agl_ft) AS path_agl_ft_text,
     f.raw_point_count,
     f.ingest_batch_date,
+    f.start_airport_ident,
+    f.start_airport_name,
+    f.end_airport_ident,
+    f.end_airport_name,
     numInstants(f.path) AS point_count
 """
 
@@ -347,6 +363,10 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
         end_ts=row["end_ts"],
         start_point=GeoJSONPointZ.model_validate_json(row["start_point"]),
         end_point=GeoJSONPointZ.model_validate_json(row["end_point"]),
+        start_airport_ident=row["start_airport_ident"],
+        start_airport_name=row["start_airport_name"],
+        end_airport_ident=row["end_airport_ident"],
+        end_airport_name=row["end_airport_name"],
         point_count=row["point_count"],
         path=path,
         timestamps=timestamps,

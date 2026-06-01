@@ -43,12 +43,12 @@ function fmtDistNm(nm: number): string {
 }
 
 function fmtTime(iso: string): string {
-  return iso.slice(11, 19) + " UTC";
+  return iso.slice(11, 16); // HH:MM, no seconds, no UTC
 }
 
 function fmtEndTime(endIso: string, startDate: string): string {
   const endDate = endIso.slice(0, 10);
-  const t = fmtTime(endIso);
+  const t = endIso.slice(11, 16) + " UTC"; // HH:MM UTC
   if (endDate === startDate) return t;
   const diff = Math.round(
     (Date.parse(endDate) - Date.parse(startDate)) / 86400000,
@@ -720,9 +720,15 @@ function FlightRow({
   onHoverPointIdx: (idx: number | null) => void;
 }): React.ReactElement {
   const label = flight.callsign ?? flight.icao24;
-  const sub =
+  const hasAnyAirport =
+    flight.start_airport_ident != null || flight.end_airport_ident != null;
+  const routePart = hasAnyAirport
+    ? `${flight.start_airport_ident ?? "?"} → ${flight.end_airport_ident ?? "?"}`
+    : null;
+  const typePart =
     [flight.icao_type, flight.emitter_category].filter(Boolean).join(" · ") ||
-    "—";
+    null;
+  const sub = [routePart, typePart].filter(Boolean).join(" · ") || "—";
   const coords = flight.path?.coordinates ?? null;
 
   const trackNm = coords ? trackDistanceNm(coords) : null;
@@ -731,6 +737,28 @@ function FlightRow({
   const p2pNm = haversineNm(sp[0], sp[1], ep[0], ep[1]);
 
   const detailRows: [string, string, boolean][] = [
+    ...(flight.start_airport_ident != null
+      ? [
+          [
+            "From",
+            flight.start_airport_name
+              ? `${flight.start_airport_ident} (${flight.start_airport_name})`
+              : flight.start_airport_ident,
+            true,
+          ] as [string, string, boolean],
+        ]
+      : []),
+    ...(flight.end_airport_ident != null
+      ? [
+          [
+            "To",
+            flight.end_airport_name
+              ? `${flight.end_airport_ident} (${flight.end_airport_name})`
+              : flight.end_airport_ident,
+            true,
+          ] as [string, string, boolean],
+        ]
+      : []),
     ["ICAO24", flight.icao24, true],
     ...(flight.registration != null
       ? [["Reg", flight.registration, false] as [string, string, boolean]]

@@ -502,6 +502,30 @@ export interface components {
        */
       end_point: components["schemas"]["GeoJSONPointZ"];
       /**
+       * Start Airport Ident
+       * @description OurAirports ident of the nearest airport to the start point (within 5 km), or null if none is nearby. Heliports are preferred for rotorcraft (emitter category A7) and excluded for all other types.
+       * @example EGLL
+       */
+      start_airport_ident?: string | null;
+      /**
+       * Start Airport Name
+       * @description Full name of the start airport, or null.
+       * @example London Heathrow Airport
+       */
+      start_airport_name?: string | null;
+      /**
+       * End Airport Ident
+       * @description OurAirports ident of the nearest airport to the end point (within 5 km), or null if none is nearby.
+       * @example KJFK
+       */
+      end_airport_ident?: string | null;
+      /**
+       * End Airport Name
+       * @description Full name of the end airport, or null.
+       * @example John F. Kennedy International Airport
+       */
+      end_airport_name?: string | null;
+      /**
        * Point Count
        * @description Number of vertices in the simplified path geometry. Always present, even when `include_path` is false.
        */

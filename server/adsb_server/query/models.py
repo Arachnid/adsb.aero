@@ -109,6 +109,29 @@ class FlightSummary(BaseModel):
         "Coordinates are `[longitude, latitude, altitude_ft]`.",
         examples=[{"type": "Point", "coordinates": [-2.2667, 53.4667, 35000.0]}],
     )
+    start_airport_ident: str | None = Field(
+        default=None,
+        description="OurAirports ident of the nearest airport to the start point "
+        "(within 5 km), or null if none is nearby. Heliports are preferred for "
+        "rotorcraft (emitter category A7) and excluded for all other types.",
+        examples=["EGLL"],
+    )
+    start_airport_name: str | None = Field(
+        default=None,
+        description="Full name of the start airport, or null.",
+        examples=["London Heathrow Airport"],
+    )
+    end_airport_ident: str | None = Field(
+        default=None,
+        description="OurAirports ident of the nearest airport to the end point "
+        "(within 5 km), or null if none is nearby.",
+        examples=["KJFK"],
+    )
+    end_airport_name: str | None = Field(
+        default=None,
+        description="Full name of the end airport, or null.",
+        examples=["John F. Kennedy International Airport"],
+    )
 
 
 class FlightDetail(FlightSummary):

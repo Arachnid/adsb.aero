@@ -1066,6 +1066,66 @@
               }
             ]
           },
+          "start_airport_ident": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Airport Ident",
+            "description": "OurAirports ident of the nearest airport to the start point (within 5 km), or null if none is nearby. Heliports are preferred for rotorcraft (emitter category A7) and excluded for all other types.",
+            "examples": [
+              "EGLL"
+            ]
+          },
+          "start_airport_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Airport Name",
+            "description": "Full name of the start airport, or null.",
+            "examples": [
+              "London Heathrow Airport"
+            ]
+          },
+          "end_airport_ident": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Airport Ident",
+            "description": "OurAirports ident of the nearest airport to the end point (within 5 km), or null if none is nearby.",
+            "examples": [
+              "KJFK"
+            ]
+          },
+          "end_airport_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Airport Name",
+            "description": "Full name of the end airport, or null.",
+            "examples": [
+              "John F. Kennedy International Airport"
+            ]
+          },
           "point_count": {
             "type": "integer",
             "title": "Point Count",
