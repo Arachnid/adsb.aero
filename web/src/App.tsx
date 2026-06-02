@@ -275,6 +275,21 @@ export function App({
   const [fitBoundsTarget, setFitBoundsTarget] =
     useState<FitBoundsTarget | null>(null);
   const fitBoundsSeqRef = useRef(0);
+
+  const handleFlyToAirport = useCallback(
+    (lat: number, lng: number, _ident: string) => {
+      const pad = 0.04; // ~4 km each side — lands at ~z13, runways visible
+      setFitBoundsTarget({
+        west: lng - pad,
+        south: lat - pad,
+        east: lng + pad,
+        north: lat + pad,
+        maxZoom: 13,
+        seq: ++fitBoundsSeqRef.current,
+      });
+    },
+    [],
+  );
   const [hoveredPoint, setHoveredPoint] = useState<HoveredPoint | null>(null);
   const pickerAutoCollapseRef = useRef(false);
   const autoRunDoneRef = useRef(false);
@@ -719,6 +734,7 @@ export function App({
         onAbout={() => {
           setAboutOpen(true);
         }}
+        onFlyToAirport={handleFlyToAirport}
       />
       <AboutDialog
         open={aboutOpen}

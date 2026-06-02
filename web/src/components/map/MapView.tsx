@@ -419,6 +419,7 @@ export type FitBoundsTarget = {
   east: number;
   north: number;
   seq: number;
+  maxZoom?: number;
 };
 
 interface MapViewProps {
@@ -545,7 +546,7 @@ export function MapView({
         [fitBoundsTarget.west, fitBoundsTarget.south],
         [fitBoundsTarget.east, fitBoundsTarget.north],
       ],
-      { padding: 60, maxZoom: 10 },
+      { padding: 60, maxZoom: fitBoundsTarget.maxZoom ?? 10 },
     );
   }, [fitBoundsTarget]);
 

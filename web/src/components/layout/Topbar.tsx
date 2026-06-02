@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Layers, Link, Moon, Satellite, Sun } from "../Icons";
 import { useMobile } from "../../hooks/useMobile";
 import type { ColorMode } from "../map/MapView";
+import { AirportSearch } from "../map/AirportSearch";
 
 type Basemap = "dark" | "light" | "sat";
 type Theme = "dark" | "light";
@@ -16,6 +17,7 @@ interface TopbarProps {
   theme: Theme;
   onTheme: () => void;
   onAbout: () => void;
+  onFlyToAirport: (lat: number, lng: number, ident: string) => void;
 }
 
 const COLOR_MODE_LABELS: Record<ColorMode, string> = {
@@ -48,6 +50,7 @@ export function Topbar({
   theme,
   onTheme,
   onAbout,
+  onFlyToAirport,
 }: TopbarProps): React.ReactElement {
   const [copied, setCopied] = useState(false);
   const [dropdown, setDropdown] = useState<"basemap" | "color" | null>(null);
@@ -142,6 +145,8 @@ export function Topbar({
         )}
       </button>
 
+      <Sep />
+      <AirportSearch onSelect={onFlyToAirport} />
       <Sep />
 
       {mobile ? (
