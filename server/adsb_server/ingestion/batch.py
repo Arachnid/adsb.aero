@@ -434,11 +434,13 @@ async def run_batch(
     tile_manager = TileManager(settings.terrain_data_dir)
 
     airport_rows = await conn.fetch(
-        "SELECT ident, ST_X(location) AS lon, ST_Y(location) AS lat, type"
-        " FROM airports WHERE type NOT IN ('closed', 'balloonport')"
+        "SELECT id, ST_X(location) AS lon, ST_Y(location) AS lat, type_code"
+        " FROM waypoints WHERE kind = 'airport' AND type_code != 8"
     )
     airport_index: AirportIndex | None = (
-        AirportIndex.from_rows([(r["ident"], r["lon"], r["lat"], r["type"]) for r in airport_rows])
+        AirportIndex.from_rows(
+            [(r["id"], r["lon"], r["lat"], r["type_code"]) for r in airport_rows]
+        )
         if airport_rows
         else None
     )

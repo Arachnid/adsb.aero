@@ -27,10 +27,10 @@ environment = POSTGRES_DB=adsb
 environment = POSTGRES_USER=adsb
 environment = SENTRY_DSN=__SENTRY_DSN__
 
-[job-run "import-airports"]
-schedule    = 0 10 3 * * 0
+[job-run "import-openaip"]
+schedule    = 0 0 2 * * *
 image       = ghcr.io/arachnid/adsb.aero/api:latest
-command     = import-airports
+command     = import-openaip
 no-overlap  = true
 delete      = true
 network     = infra_db

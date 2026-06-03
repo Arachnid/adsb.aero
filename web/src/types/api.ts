@@ -114,7 +114,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/airports/search": {
+  "/api/v1/waypoints/search": {
     parameters: {
       query?: never;
       header?: never;
@@ -122,10 +122,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Airport typeahead search
-     * @description Search airports by name, ICAO code, IATA code, or municipality using prefix matching. Closed airports are excluded. Results are ordered by scheduled service, then name.
+     * Waypoint typeahead search
+     * @description Search airports, navaids, and VFR reporting points by name, ICAO code, IATA code, or navaid identifier using prefix matching. Optionally filter by kind. Results ordered by kind priority then name.
      */
-    get: operations["search_airports_api_v1_airports_search_get"];
+    get: operations["search_waypoints_api_v1_waypoints_search_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -134,7 +134,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/airports/{ident}": {
+  "/api/v1/waypoints/{waypoint_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -142,10 +142,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Look up an airport by ident
-     * @description Return a single airport by its OurAirports ident (e.g. `EGLL`, `KSFO`). Case-insensitive.
+     * Look up a waypoint by OpenAIP ID
+     * @description Return a single waypoint (airport, navaid, or reporting point) by its OpenAIP ID.
      */
-    get: operations["get_airport_api_v1_airports__ident__get"];
+    get: operations["get_waypoint_api_v1_waypoints__waypoint_id__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -158,83 +158,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
-    /**
-     * Airport
-     * @description An airport from the OurAirports reference dataset.
-     */
-    Airport: {
-      /**
-       * Ident
-       * @description OurAirports identifier (primary key).
-       * @example EGLL
-       */
-      ident: string;
-      /**
-       * Type
-       * @description Airport type.
-       * @example large_airport
-       */
-      type: string;
-      /**
-       * Name
-       * @description Airport name.
-       * @example London Heathrow Airport
-       */
-      name: string;
-      /**
-       * Lon
-       * @description Longitude (WGS-84).
-       * @example -0.461389
-       */
-      lon: number;
-      /**
-       * Lat
-       * @description Latitude (WGS-84).
-       * @example 51.4775
-       */
-      lat: number;
-      /**
-       * Elevation Ft
-       * @description Elevation in feet, or null.
-       * @example 83
-       */
-      elevation_ft: number | null;
-      /**
-       * Iso Country
-       * @description ISO 3166-1 alpha-2 country code.
-       * @example GB
-       */
-      iso_country: string;
-      /**
-       * Iso Region
-       * @description ISO 3166-2 region code.
-       * @example GB-ENG
-       */
-      iso_region: string;
-      /**
-       * Municipality
-       * @description Nearest city or town.
-       * @example London
-       */
-      municipality: string | null;
-      /**
-       * Scheduled Service
-       * @description True if the airport has scheduled commercial service.
-       */
-      scheduled_service: boolean;
-      /**
-       * Icao Code
-       * @description ICAO 4-letter designator, or null.
-       * @example EGLL
-       */
-      icao_code: string | null;
-      /**
-       * Iata Code
-       * @description IATA 3-letter code, or null.
-       * @example LHR
-       */
-      iata_code: string | null;
-    };
     /**
      * AndPredicate
      * @description All child predicates must be true (logical AND).
@@ -503,26 +426,26 @@ export interface components {
       end_point: components["schemas"]["GeoJSONPointZ"];
       /**
        * Start Airport Ident
-       * @description OurAirports ident of the nearest airport to the start point (within 5 km), or null if none is nearby. Heliports are preferred for rotorcraft (emitter category A7) and excluded for all other types.
+       * @description ICAO/identifier of the nearest airport to the start point (within 5 km), or null. Heliports (types 4, 7) preferred for rotorcraft (emitter category A7); excluded for all other types. Null for airports without an ICAO code.
        * @example EGLL
        */
       start_airport_ident?: string | null;
       /**
        * Start Airport Name
        * @description Full name of the start airport, or null.
-       * @example London Heathrow Airport
+       * @example LONDON HEATHROW
        */
       start_airport_name?: string | null;
       /**
        * End Airport Ident
-       * @description OurAirports ident of the nearest airport to the end point (within 5 km), or null if none is nearby.
+       * @description ICAO/identifier of the nearest airport to the end point (within 5 km), or null.
        * @example KJFK
        */
       end_airport_ident?: string | null;
       /**
        * End Airport Name
        * @description Full name of the end airport, or null.
-       * @example John F. Kennedy International Airport
+       * @example JOHN F KENNEDY INTL
        */
       end_airport_name?: string | null;
       /**
@@ -1195,6 +1118,82 @@ export interface components {
       /** Context */
       ctx?: Record<string, never>;
     };
+    /**
+     * Waypoint
+     * @description An airport, navaid, or VFR reporting point from the OpenAIP dataset.
+     */
+    Waypoint: {
+      /**
+       * Id
+       * @description OpenAIP object ID (primary key).
+       */
+      id: string;
+      /**
+       * Kind
+       * @description 'airport' | 'navaid' | 'reporting_point'.
+       * @example airport
+       */
+      kind: string;
+      /**
+       * Name
+       * @description Name.
+       * @example LONDON HEATHROW
+       */
+      name: string;
+      /**
+       * Ident
+       * @description ICAO code (airports), identifier (navaids), or null.
+       * @example EGLL
+       */
+      ident: string | null;
+      /**
+       * Iata Code
+       * @description IATA 3-letter code (airports only), or null.
+       * @example LHR
+       */
+      iata_code: string | null;
+      /**
+       * Type Code
+       * @description OpenAIP numeric type code.
+       * @example 3
+       */
+      type_code: number | null;
+      /**
+       * Country
+       * @description ISO 3166-1 alpha-2 country code.
+       * @example GB
+       */
+      country: string;
+      /**
+       * Lon
+       * @description Longitude (WGS-84).
+       * @example -0.461389
+       */
+      lon: number;
+      /**
+       * Lat
+       * @description Latitude (WGS-84).
+       * @example 51.4775
+       */
+      lat: number;
+      /**
+       * Elevation Ft
+       * @description Elevation in feet, or null.
+       * @example 83
+       */
+      elevation_ft: number | null;
+      /**
+       * Frequency Mhz
+       * @description Navaid frequency in MHz, or null.
+       * @example 116.7
+       */
+      frequency_mhz: number | null;
+      /**
+       * Compulsory
+       * @description True if a compulsory VFR reporting point, or null.
+       */
+      compulsory?: boolean | null;
+    };
   };
   responses: never;
   parameters: never;
@@ -1347,11 +1346,13 @@ export interface operations {
       };
     };
   };
-  search_airports_api_v1_airports_search_get: {
+  search_waypoints_api_v1_waypoints_search_get: {
     parameters: {
       query: {
         /** @description Search query. */
         q: string;
+        /** @description Comma-separated kinds to include: airport,navaid,reporting_point. */
+        kinds?: string | null;
         /** @description Max results. */
         limit?: number;
       };
@@ -1367,7 +1368,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Airport"][];
+          "application/json": components["schemas"]["Waypoint"][];
         };
       };
       /** @description Validation Error */
@@ -1381,12 +1382,12 @@ export interface operations {
       };
     };
   };
-  get_airport_api_v1_airports__ident__get: {
+  get_waypoint_api_v1_waypoints__waypoint_id__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        ident: string;
+        waypoint_id: string;
       };
       cookie?: never;
     };
@@ -1398,7 +1399,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Airport"];
+          "application/json": components["schemas"]["Waypoint"];
         };
       };
       /** @description Validation Error */

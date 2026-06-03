@@ -111,26 +111,27 @@ class FlightSummary(BaseModel):
     )
     start_airport_ident: str | None = Field(
         default=None,
-        description="OurAirports ident of the nearest airport to the start point "
-        "(within 5 km), or null if none is nearby. Heliports are preferred for "
-        "rotorcraft (emitter category A7) and excluded for all other types.",
+        description="ICAO/identifier of the nearest airport to the start point "
+        "(within 5 km), or null. Heliports (types 4, 7) preferred for rotorcraft "
+        "(emitter category A7); excluded for all other types. Null for airports "
+        "without an ICAO code.",
         examples=["EGLL"],
     )
     start_airport_name: str | None = Field(
         default=None,
         description="Full name of the start airport, or null.",
-        examples=["London Heathrow Airport"],
+        examples=["LONDON HEATHROW"],
     )
     end_airport_ident: str | None = Field(
         default=None,
-        description="OurAirports ident of the nearest airport to the end point "
-        "(within 5 km), or null if none is nearby.",
+        description="ICAO/identifier of the nearest airport to the end point "
+        "(within 5 km), or null.",
         examples=["KJFK"],
     )
     end_airport_name: str | None = Field(
         default=None,
         description="Full name of the end airport, or null.",
-        examples=["John F. Kennedy International Airport"],
+        examples=["JOHN F KENNEDY INTL"],
     )
 
 
@@ -310,25 +311,33 @@ class IcaoTypeStat(BaseModel):
     )
 
 
-class Airport(BaseModel):
-    """An airport from the OurAirports reference dataset."""
+class Waypoint(BaseModel):
+    """An airport, navaid, or VFR reporting point from the OpenAIP dataset."""
 
-    ident: str = Field(description="OurAirports identifier (primary key).", examples=["EGLL"])
-    type: str = Field(description="Airport type.", examples=["large_airport"])
-    name: str = Field(description="Airport name.", examples=["London Heathrow Airport"])
+    id: str = Field(description="OpenAIP object ID (primary key).")
+    kind: str = Field(
+        description="'airport' | 'navaid' | 'reporting_point'.",
+        examples=["airport"],
+    )
+    name: str = Field(description="Name.", examples=["LONDON HEATHROW"])
+    ident: str | None = Field(
+        description="ICAO code (airports), identifier (navaids), or null.",
+        examples=["EGLL"],
+    )
+    iata_code: str | None = Field(
+        description="IATA 3-letter code (airports only), or null.", examples=["LHR"]
+    )
+    type_code: int | None = Field(description="OpenAIP numeric type code.", examples=[3])
+    country: str = Field(description="ISO 3166-1 alpha-2 country code.", examples=["GB"])
     lon: float = Field(description="Longitude (WGS-84).", examples=[-0.461389])
     lat: float = Field(description="Latitude (WGS-84).", examples=[51.4775])
     elevation_ft: int | None = Field(description="Elevation in feet, or null.", examples=[83])
-    iso_country: str = Field(description="ISO 3166-1 alpha-2 country code.", examples=["GB"])
-    iso_region: str = Field(description="ISO 3166-2 region code.", examples=["GB-ENG"])
-    municipality: str | None = Field(description="Nearest city or town.", examples=["London"])
-    scheduled_service: bool = Field(
-        description="True if the airport has scheduled commercial service."
+    frequency_mhz: float | None = Field(
+        description="Navaid frequency in MHz, or null.", examples=[116.7]
     )
-    icao_code: str | None = Field(
-        description="ICAO 4-letter designator, or null.", examples=["EGLL"]
+    compulsory: bool | None = Field(
+        description="True if a compulsory VFR reporting point, or null.", default=None
     )
-    iata_code: str | None = Field(description="IATA 3-letter code, or null.", examples=["LHR"])
 
 
 # ---------------------------------------------------------------------------

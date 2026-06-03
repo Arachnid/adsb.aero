@@ -30,7 +30,7 @@ dependencies = [
 [project.scripts]
 import-traces = "adsb_server.ingestion.ingest:main"
 import-airframes = "adsb_server.reference_data.airframes:main"
-import-airports = "adsb_server.reference_data.airports:main"
+import-openaip = "adsb_server.reference_data.openaip:main"
 backfill-airports = "adsb_server.ingestion.backfill_airports:main"
 download-terrain = "adsb_server.terrain.dem_downloader:main"
 backfill-agl = "adsb_server.terrain.backfill_agl:main"

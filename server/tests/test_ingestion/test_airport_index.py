@@ -4,25 +4,28 @@ from __future__ import annotations
 
 import pytest
 
-from adsb_server.ingestion.airport_index import MATCH_RADIUS_M, AirportIndex
+from adsb_server.ingestion.airport_index import (
+    AGL_MATCH_MAX_FT,
+    MATCH_RADIUS_M,
+    AirportIndex,
+)
 
-# Heathrow (EGLL): -0.461389, 51.4775
-# Gatwick  (EGKK): -0.190278, 51.148056  (~44 km from EGLL)
-# Ascot heliport (EGLT): -0.668056, 51.408611 (~16 km from EGLL)
+# Heathrow EGLL (type 3 = International Airport): -0.461389, 51.4775
+# Gatwick  EGKK (type 3): -0.190278, 51.148056  (~44 km from EGLL)
+# Ascot civil heliport EGLT (type 7): -0.668056, 51.408611 (~16 km from EGLL)
 
-_AIRPORTS: list[tuple[str, float, float, str]] = [
-    ("EGLL", -0.461389, 51.4775, "large_airport"),
-    ("EGKK", -0.190278, 51.148056, "large_airport"),
-    ("EGLT", -0.668056, 51.408611, "heliport"),
+_AIRPORTS: list[tuple[str, float, float, int]] = [
+    ("id-egll", -0.461389, 51.4775, 3),
+    ("id-egkk", -0.190278, 51.148056, 3),
+    ("id-eglt", -0.668056, 51.408611, 7),  # civil heliport
 ]
 
-# Co-located airport + heliport: airport XAPT at (10.000, 51.000),
-# heliport XHEL at (10.004, 51.000) ~280 m east.  A test point at
-# (9.997, 51.000) is ~210 m from XAPT and ~490 m from XHEL — the
-# airport is closer, but a helicopter should still prefer the heliport.
-_COLLOCATED: list[tuple[str, float, float, str]] = [
-    ("XAPT", 10.000, 51.000, "large_airport"),
-    ("XHEL", 10.004, 51.000, "heliport"),
+# Co-located airport (type 3) + civil heliport (type 7), ~280 m apart.
+# A point ~210 m from the airport and ~490 m from the heliport should
+# still prefer the heliport for rotorcraft (A7).
+_COLLOCATED: list[tuple[str, float, float, int]] = [
+    ("id-xapt", 10.000, 51.000, 3),
+    ("id-xhel", 10.004, 51.000, 7),
 ]
 
 
@@ -37,46 +40,39 @@ def collocated_index() -> AirportIndex:
 
 
 def test_nearest_finds_close_airport(index: AirportIndex) -> None:
-    # ~1 km north of EGLL
-    result = index.nearest(-0.461389, 51.487)
-    assert result == "EGLL"
+    result = index.nearest(-0.461389, 51.487)  # ~1 km north of EGLL
+    assert result == "id-egll"
 
 
 def test_nearest_returns_none_beyond_radius(index: AirportIndex) -> None:
-    # Middle of the English Channel — far from any airport in the index
-    result = index.nearest(1.0, 50.5)
+    result = index.nearest(1.0, 50.5)  # English Channel
     assert result is None
 
 
 def test_nearest_fixed_wing_excludes_heliport(index: AirportIndex) -> None:
-    # ~1 km north of EGLT (heliport); EGLL is ~16 km away.
-    # Fixed-wing should skip the heliport and return None (nothing else within 5 km).
+    # ~1 km north of EGLT (heliport); EGLL is ~16 km away → no match.
     result = index.nearest(-0.668056, 51.418, emitter_category="A3")
     assert result is None
 
 
 def test_nearest_rotorcraft_prefers_heliport(index: AirportIndex) -> None:
-    # Same point: A7 (rotorcraft) should match the heliport.
     result = index.nearest(-0.668056, 51.418, emitter_category="A7")
-    assert result == "EGLT"
+    assert result == "id-eglt"
 
 
 def test_nearest_rotorcraft_prefers_heliport_over_closer_airport(
     collocated_index: AirportIndex,
 ) -> None:
-    # Point is closer to the airport (XAPT) than the heliport (XHEL), but
-    # a helicopter should still prefer XHEL since it's within the radius.
     result = collocated_index.nearest(9.997, 51.000, emitter_category="A7")
-    assert result == "XHEL"
+    assert result == "id-xhel"
 
 
 def test_nearest_rotorcraft_falls_back_to_airport_when_no_heliport(
     index: AirportIndex,
 ) -> None:
-    # ~1 km north of EGLL; EGLT (heliport) is ~16 km away — out of range.
-    # A7 helicopter should fall back to EGLL.
+    # ~1 km north of EGLL; EGLT (heliport) is ~16 km away → falls back.
     result = index.nearest(-0.461389, 51.487, emitter_category="A7")
-    assert result == "EGLL"
+    assert result == "id-egll"
 
 
 def test_nearest_default_category_excludes_heliport(index: AirportIndex) -> None:
@@ -85,9 +81,14 @@ def test_nearest_default_category_excludes_heliport(index: AirportIndex) -> None
 
 
 def test_nearest_tie_breaks_by_distance(index: AirportIndex) -> None:
-    # ~2 km north of EGLL, well within the 5 km radius and closer to EGLL than EGKK.
-    result = index.nearest(-0.461389, 51.495)
-    assert result == "EGLL"
+    result = index.nearest(-0.461389, 51.495)  # ~2 km north of EGLL
+    assert result == "id-egll"
+
+
+def test_nearest_excludes_closed_type(index: AirportIndex) -> None:
+    # Build an index with a closed airport (type 8) only.
+    idx = AirportIndex.from_rows([("closed", -0.461389, 51.4775, 8)])
+    assert idx.nearest(-0.461389, 51.4775) is None
 
 
 def test_empty_index_returns_none() -> None:
@@ -99,14 +100,5 @@ def test_match_radius_constant_is_5km() -> None:
     assert MATCH_RADIUS_M == 5_000.0
 
 
-# ---------------------------------------------------------------------------
-# AGL gate (tested at the batch._flight_to_params level via integration)
-# The airport_index.nearest() itself has no AGL awareness — the gate lives
-# in batch.py and backfill_airports.py.  These tests document the constant.
-# ---------------------------------------------------------------------------
-
-
 def test_agl_match_max_ft_constant() -> None:
-    from adsb_server.ingestion.airport_index import AGL_MATCH_MAX_FT
-
     assert AGL_MATCH_MAX_FT == 1_000.0

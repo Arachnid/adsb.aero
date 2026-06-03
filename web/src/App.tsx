@@ -419,7 +419,7 @@ export function App({
     if (!predId) return;
     setAirspacePickingId(null);
     setAirspaceMenu({ x, y, predId, candidates: null });
-    fetch(`/api/airspaces?pos=${lat.toFixed(6)},${lng.toFixed(6)}&dist=1`)
+    fetch(`/api/v1/airspaces?pos=${lat.toFixed(6)},${lng.toFixed(6)}&dist=1`)
       .then((r) => r.json())
       .then(
         (data: {

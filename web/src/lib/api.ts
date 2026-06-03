@@ -5,7 +5,7 @@ export type QueryRequest = components["schemas"]["QueryRequest"];
 export type QueryResponse = components["schemas"]["QueryResponse"];
 export type DataRange = components["schemas"]["DataRange"];
 export type IcaoTypeStat = components["schemas"]["IcaoTypeStat"];
-export type Airport = components["schemas"]["Airport"];
+export type Waypoint = components["schemas"]["Waypoint"];
 
 export class ApiError extends Error {
   constructor(
@@ -74,17 +74,18 @@ export async function getDataRange(): Promise<DataRange> {
   return res.json() as Promise<DataRange>;
 }
 
-export async function searchAirports(
+export async function searchWaypoints(
   q: string,
-  opts: { limit?: number; signal?: AbortSignal } = {},
-): Promise<Airport[]> {
+  opts: { limit?: number; kinds?: string; signal?: AbortSignal } = {},
+): Promise<Waypoint[]> {
   const params = new URLSearchParams({ q });
   if (opts.limit != null) params.set("limit", String(opts.limit));
-  const res = await fetch(`/api/v1/airports/search?${params.toString()}`, {
+  if (opts.kinds != null) params.set("kinds", opts.kinds);
+  const res = await fetch(`/api/v1/waypoints/search?${params.toString()}`, {
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
   if (!res.ok) await parseError(res);
-  return res.json() as Promise<Airport[]>;
+  return res.json() as Promise<Waypoint[]>;
 }
 
 export async function getIcaoTypes(

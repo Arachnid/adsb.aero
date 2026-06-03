@@ -54,11 +54,11 @@ WHERE icao24 = $1 AND start_ts = $2
 
 async def _load_airport_index(conn: asyncpg.Connection) -> AirportIndex:
     rows = await conn.fetch(
-        "SELECT ident, ST_X(location) AS lon, ST_Y(location) AS lat, type"
-        " FROM airports WHERE type NOT IN ('closed', 'balloonport')"
+        "SELECT id, ST_X(location) AS lon, ST_Y(location) AS lat, type_code"
+        " FROM waypoints WHERE kind = 'airport' AND type_code != 8"
     )
     logger.info("Loaded %d airports into index", len(rows))
-    return AirportIndex.from_rows([(r["ident"], r["lon"], r["lat"], r["type"]) for r in rows])
+    return AirportIndex.from_rows([(r["id"], r["lon"], r["lat"], r["type_code"]) for r in rows])
 
 
 async def run_backfill(dsn: str, batch_size: int = _DEFAULT_BATCH_SIZE) -> None:

@@ -304,11 +304,11 @@
         }
       }
     },
-    "/api/v1/airports/search": {
+    "/api/v1/waypoints/search": {
       "get": {
-        "summary": "Airport typeahead search",
-        "description": "Search airports by name, ICAO code, IATA code, or municipality using prefix matching. Closed airports are excluded. Results are ordered by scheduled service, then name.",
-        "operationId": "search_airports_api_v1_airports_search_get",
+        "summary": "Waypoint typeahead search",
+        "description": "Search airports, navaids, and VFR reporting points by name, ICAO code, IATA code, or navaid identifier using prefix matching. Optionally filter by kind. Results ordered by kind priority then name.",
+        "operationId": "search_waypoints_api_v1_waypoints_search_get",
         "parameters": [
           {
             "name": "q",
@@ -322,6 +322,24 @@
               "title": "Q"
             },
             "description": "Search query."
+          },
+          {
+            "name": "kinds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated kinds to include: airport,navaid,reporting_point.",
+              "title": "Kinds"
+            },
+            "description": "Comma-separated kinds to include: airport,navaid,reporting_point."
           },
           {
             "name": "limit",
@@ -346,9 +364,9 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Airport"
+                    "$ref": "#/components/schemas/Waypoint"
                   },
-                  "title": "Response Search Airports Api V1 Airports Search Get"
+                  "title": "Response Search Waypoints Api V1 Waypoints Search Get"
                 }
               }
             }
@@ -366,19 +384,19 @@
         }
       }
     },
-    "/api/v1/airports/{ident}": {
+    "/api/v1/waypoints/{waypoint_id}": {
       "get": {
-        "summary": "Look up an airport by ident",
-        "description": "Return a single airport by its OurAirports ident (e.g. `EGLL`, `KSFO`). Case-insensitive.",
-        "operationId": "get_airport_api_v1_airports__ident__get",
+        "summary": "Look up a waypoint by OpenAIP ID",
+        "description": "Return a single waypoint (airport, navaid, or reporting point) by its OpenAIP ID.",
+        "operationId": "get_waypoint_api_v1_waypoints__waypoint_id__get",
         "parameters": [
           {
-            "name": "ident",
+            "name": "waypoint_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Ident"
+              "title": "Waypoint Id"
             }
           }
         ],
@@ -388,7 +406,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Airport"
+                  "$ref": "#/components/schemas/Waypoint"
                 }
               }
             }
@@ -409,148 +427,6 @@
   },
   "components": {
     "schemas": {
-      "Airport": {
-        "properties": {
-          "ident": {
-            "type": "string",
-            "title": "Ident",
-            "description": "OurAirports identifier (primary key).",
-            "examples": [
-              "EGLL"
-            ]
-          },
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "description": "Airport type.",
-            "examples": [
-              "large_airport"
-            ]
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "description": "Airport name.",
-            "examples": [
-              "London Heathrow Airport"
-            ]
-          },
-          "lon": {
-            "type": "number",
-            "title": "Lon",
-            "description": "Longitude (WGS-84).",
-            "examples": [
-              -0.461389
-            ]
-          },
-          "lat": {
-            "type": "number",
-            "title": "Lat",
-            "description": "Latitude (WGS-84).",
-            "examples": [
-              51.4775
-            ]
-          },
-          "elevation_ft": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Elevation Ft",
-            "description": "Elevation in feet, or null.",
-            "examples": [
-              83
-            ]
-          },
-          "iso_country": {
-            "type": "string",
-            "title": "Iso Country",
-            "description": "ISO 3166-1 alpha-2 country code.",
-            "examples": [
-              "GB"
-            ]
-          },
-          "iso_region": {
-            "type": "string",
-            "title": "Iso Region",
-            "description": "ISO 3166-2 region code.",
-            "examples": [
-              "GB-ENG"
-            ]
-          },
-          "municipality": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Municipality",
-            "description": "Nearest city or town.",
-            "examples": [
-              "London"
-            ]
-          },
-          "scheduled_service": {
-            "type": "boolean",
-            "title": "Scheduled Service",
-            "description": "True if the airport has scheduled commercial service."
-          },
-          "icao_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Icao Code",
-            "description": "ICAO 4-letter designator, or null.",
-            "examples": [
-              "EGLL"
-            ]
-          },
-          "iata_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Iata Code",
-            "description": "IATA 3-letter code, or null.",
-            "examples": [
-              "LHR"
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "ident",
-          "type",
-          "name",
-          "lon",
-          "lat",
-          "elevation_ft",
-          "iso_country",
-          "iso_region",
-          "municipality",
-          "scheduled_service",
-          "icao_code",
-          "iata_code"
-        ],
-        "title": "Airport",
-        "description": "An airport from the OurAirports reference dataset."
-      },
       "AndPredicate": {
         "properties": {
           "and": {
@@ -1076,7 +952,7 @@
               }
             ],
             "title": "Start Airport Ident",
-            "description": "OurAirports ident of the nearest airport to the start point (within 5 km), or null if none is nearby. Heliports are preferred for rotorcraft (emitter category A7) and excluded for all other types.",
+            "description": "ICAO/identifier of the nearest airport to the start point (within 5 km), or null. Heliports (types 4, 7) preferred for rotorcraft (emitter category A7); excluded for all other types. Null for airports without an ICAO code.",
             "examples": [
               "EGLL"
             ]
@@ -1093,7 +969,7 @@
             "title": "Start Airport Name",
             "description": "Full name of the start airport, or null.",
             "examples": [
-              "London Heathrow Airport"
+              "LONDON HEATHROW"
             ]
           },
           "end_airport_ident": {
@@ -1106,7 +982,7 @@
               }
             ],
             "title": "End Airport Ident",
-            "description": "OurAirports ident of the nearest airport to the end point (within 5 km), or null if none is nearby.",
+            "description": "ICAO/identifier of the nearest airport to the end point (within 5 km), or null.",
             "examples": [
               "KJFK"
             ]
@@ -1123,7 +999,7 @@
             "title": "End Airport Name",
             "description": "Full name of the end airport, or null.",
             "examples": [
-              "John F. Kennedy International Airport"
+              "JOHN F KENNEDY INTL"
             ]
           },
           "point_count": {
@@ -2460,6 +2336,158 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "Waypoint": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "OpenAIP object ID (primary key)."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "'airport' | 'navaid' | 'reporting_point'.",
+            "examples": [
+              "airport"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Name.",
+            "examples": [
+              "LONDON HEATHROW"
+            ]
+          },
+          "ident": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ident",
+            "description": "ICAO code (airports), identifier (navaids), or null.",
+            "examples": [
+              "EGLL"
+            ]
+          },
+          "iata_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iata Code",
+            "description": "IATA 3-letter code (airports only), or null.",
+            "examples": [
+              "LHR"
+            ]
+          },
+          "type_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Code",
+            "description": "OpenAIP numeric type code.",
+            "examples": [
+              3
+            ]
+          },
+          "country": {
+            "type": "string",
+            "title": "Country",
+            "description": "ISO 3166-1 alpha-2 country code.",
+            "examples": [
+              "GB"
+            ]
+          },
+          "lon": {
+            "type": "number",
+            "title": "Lon",
+            "description": "Longitude (WGS-84).",
+            "examples": [
+              -0.461389
+            ]
+          },
+          "lat": {
+            "type": "number",
+            "title": "Lat",
+            "description": "Latitude (WGS-84).",
+            "examples": [
+              51.4775
+            ]
+          },
+          "elevation_ft": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elevation Ft",
+            "description": "Elevation in feet, or null.",
+            "examples": [
+              83
+            ]
+          },
+          "frequency_mhz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency Mhz",
+            "description": "Navaid frequency in MHz, or null.",
+            "examples": [
+              116.7
+            ]
+          },
+          "compulsory": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compulsory",
+            "description": "True if a compulsory VFR reporting point, or null."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "ident",
+          "iata_code",
+          "type_code",
+          "country",
+          "lon",
+          "lat",
+          "elevation_ft",
+          "frequency_mhz"
+        ],
+        "title": "Waypoint",
+        "description": "An airport, navaid, or VFR reporting point from the OpenAIP dataset."
       }
     }
   }

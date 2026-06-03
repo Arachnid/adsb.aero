@@ -25,7 +25,6 @@ from adsb_server.query.compiler import (
     compile_predicate,
 )
 from adsb_server.query.models import (
-    Airport,
     DataRange,
     FlightDetail,
     GeoJSONMultiLineStringZ,
@@ -33,6 +32,7 @@ from adsb_server.query.models import (
     IcaoTypeStat,
     QueryRequest,
     QueryResponse,
+    Waypoint,
     decode_cursor,
     encode_cursor,
 )
@@ -165,17 +165,17 @@ _FLIGHT_COLS = f"""
     asText(f.path_agl_ft) AS path_agl_ft_text,
     f.raw_point_count,
     f.ingest_batch_date,
-    f.start_airport_ident,
-    sa.name AS start_airport_name,
-    f.end_airport_ident,
-    ea.name AS end_airport_name,
+    sa.ident AS start_airport_ident,
+    sa.name  AS start_airport_name,
+    ea.ident AS end_airport_ident,
+    ea.name  AS end_airport_name,
     numInstants(f.path) AS point_count
 """
 
 _FLIGHT_JOIN = (
     "LEFT JOIN airframes af ON af.icao24 = f.icao24"
-    " LEFT JOIN airports sa ON sa.ident = f.start_airport_ident"
-    " LEFT JOIN airports ea ON ea.ident = f.end_airport_ident"
+    " LEFT JOIN waypoints sa ON sa.id = f.start_airport_ident"
+    " LEFT JOIN waypoints ea ON ea.id = f.end_airport_ident"
 )
 
 # Raw columns projected by the inner subquery of the two-level intersects plan.
@@ -198,10 +198,10 @@ _INNER_COLS = """
     f.path_agl_ft,
     f.raw_point_count,
     f.ingest_batch_date,
-    f.start_airport_ident,
-    sa.name AS start_airport_name,
-    f.end_airport_ident,
-    ea.name AS end_airport_name,
+    sa.ident AS start_airport_ident,
+    sa.name  AS start_airport_name,
+    ea.ident AS end_airport_ident,
+    ea.name  AS end_airport_name,
     af.registration,
     af.model,
     af.year,
@@ -757,28 +757,27 @@ async def get_flight(
     return detail
 
 
-_AIRPORT_COLS = """
-    ident, type, name,
+_WAYPOINT_COLS = """
+    id, kind, name, ident, iata_code, type_code, country,
     ST_X(location) AS lon, ST_Y(location) AS lat,
-    elevation_ft, iso_country, iso_region, municipality,
-    scheduled_service, icao_code, iata_code
+    elevation_ft, frequency_mhz, compulsory
 """
 
 
-def _row_to_airport(row: asyncpg.Record) -> Airport:
-    return Airport(
-        ident=row["ident"],
-        type=row["type"],
+def _row_to_waypoint(row: asyncpg.Record) -> Waypoint:
+    return Waypoint(
+        id=row["id"],
+        kind=row["kind"],
         name=row["name"],
+        ident=row["ident"],
+        iata_code=row["iata_code"],
+        type_code=row["type_code"],
+        country=row["country"],
         lon=row["lon"],
         lat=row["lat"],
         elevation_ft=row["elevation_ft"],
-        iso_country=row["iso_country"],
-        iso_region=row["iso_region"],
-        municipality=row["municipality"],
-        scheduled_service=row["scheduled_service"],
-        icao_code=row["icao_code"],
-        iata_code=row["iata_code"],
+        frequency_mhz=row["frequency_mhz"],
+        compulsory=row["compulsory"],
     )
 
 
@@ -794,54 +793,136 @@ def _build_tsquery(q: str) -> str | None:
 
 
 @router.get(
-    "/airports/search",
-    response_model=list[Airport],
-    summary="Airport typeahead search",
+    "/waypoints/search",
+    response_model=list[Waypoint],
+    summary="Waypoint typeahead search",
     description=(
-        "Search airports by name, ICAO code, IATA code, or municipality using prefix matching. "
-        "Closed airports are excluded. Results are ordered by scheduled service, then name."
+        "Search airports, navaids, and VFR reporting points by name, ICAO code, "
+        "IATA code, or navaid identifier using prefix matching. "
+        "Optionally filter by kind. Results ordered by kind priority then name."
     ),
 )
-async def search_airports(
+async def search_waypoints(
     request: Request,
     q: Annotated[str, Query(min_length=1, max_length=100, description="Search query.")],
+    kinds: Annotated[
+        str | None,
+        Query(description="Comma-separated kinds to include: airport,navaid,reporting_point."),
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=20, description="Max results.")] = 10,
-) -> list[Airport]:
+) -> list[Waypoint]:
     tsquery = _build_tsquery(q)
     if tsquery is None:
         return []
     pool = await get_pool(request)
-    rows = await pool.fetch(
-        f"""
-        SELECT {_AIRPORT_COLS}
-        FROM airports
-        WHERE search_vec @@ to_tsquery('simple', $1)
-          AND type != 'closed'
-        ORDER BY scheduled_service DESC, name
+    kind_filter = [k.strip() for k in kinds.split(",") if k.strip()] if kinds else None
+    # Waypoints + airspace centroids via UNION ALL wrapped in a subquery
+    # so we can ORDER BY a CASE expression (PostgreSQL requires this).
+    sql = f"""
+        SELECT * FROM (
+            SELECT {_WAYPOINT_COLS}
+            FROM waypoints
+            WHERE search_vec @@ to_tsquery('simple', $1)
+              AND ($3::text[] IS NULL OR kind = ANY($3::text[]))
+              AND (type_code IS NULL OR type_code != 8)
+            UNION ALL
+            SELECT id, 'airspace' AS kind, name, NULL AS ident,
+                   NULL AS iata_code, type_code, country,
+                   ST_X(ST_Centroid(geometry)) AS lon,
+                   ST_Y(ST_Centroid(geometry)) AS lat,
+                   NULL AS elevation_ft, NULL AS frequency_mhz,
+                   NULL AS compulsory
+            FROM airspaces
+            WHERE search_vec @@ to_tsquery('simple', $1)
+              AND ($3::text[] IS NULL OR 'airspace' = ANY($3::text[]))
+        ) sub
+        ORDER BY
+            CASE kind
+                WHEN 'airport' THEN 1 WHEN 'navaid' THEN 2
+                WHEN 'reporting_point' THEN 3 ELSE 4
+            END,
+            name
         LIMIT $2
-        """,
-        tsquery,
-        limit,
-    )
-    return [_row_to_airport(r) for r in rows]
+    """
+    rows = await pool.fetch(sql, tsquery, limit, kind_filter)
+    return [_row_to_waypoint(r) for r in rows]
 
 
 @router.get(
-    "/airports/{ident}",
-    response_model=Airport,
-    summary="Look up an airport by ident",
-    description="Return a single airport by its OurAirports ident (e.g. `EGLL`, `KSFO`). "
-    "Case-insensitive.",
+    "/waypoints/{waypoint_id}",
+    response_model=Waypoint,
+    summary="Look up a waypoint by OpenAIP ID",
+    description="Return a single waypoint (airport, navaid, or reporting point) by its OpenAIP ID.",
 )
-async def get_airport(ident: str, request: Request) -> Airport:
+async def get_waypoint(waypoint_id: str, request: Request) -> Waypoint:
     pool = await get_pool(request)
     row = await pool.fetchrow(
-        f"SELECT {_AIRPORT_COLS} FROM airports WHERE ident = $1",
-        ident.upper(),
+        f"SELECT {_WAYPOINT_COLS} FROM waypoints WHERE id = $1",
+        waypoint_id,
     )
     if row is None:
-        raise HTTPException(status_code=404, detail="Airport not found")
-    return _row_to_airport(row)
+        raise HTTPException(status_code=404, detail="Waypoint not found")
+    return _row_to_waypoint(row)
+
+
+@router.get(
+    "/airspaces",
+    summary="Find airspaces near a point",
+    description=(
+        "Return airspaces whose geometry intersects or is within `dist` km of the given "
+        "coordinate.  Response shape matches the OpenAIP /api/airspaces proxy it replaces."
+    ),
+)
+async def get_airspaces(
+    pos: Annotated[str, Query(description="Latitude,longitude (decimal degrees).")],
+    dist: Annotated[float, Query(ge=0, le=100, description="Search radius in km.")] = 1.0,
+    request: Request = ...,  # type: ignore[assignment]
+) -> dict[str, list[dict[str, object]]]:
+    try:
+        lat_s, lng_s = pos.split(",", 1)
+        lat, lng = float(lat_s.strip()), float(lng_s.strip())
+    except ValueError, AttributeError:
+        raise HTTPException(status_code=422, detail="pos must be 'lat,lng'") from None
+    pool = await get_pool(request)
+    rows = await pool.fetch(
+        """
+        SELECT id, name, type_code, icao_class, country,
+               lower_limit_value, lower_limit_unit,
+               upper_limit_value, upper_limit_unit,
+               ST_AsGeoJSON(geometry) AS geojson
+        FROM airspaces
+        WHERE ST_DWithin(
+            geometry::geography,
+            ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
+            $3
+        )
+        ORDER BY COALESCE(lower_limit_value, 0)
+        LIMIT 50
+        """,
+        lat,
+        lng,
+        dist * 1000.0,
+    )
+
+    def _limit(value: int | None, unit: int | None) -> dict[str, int] | None:
+        if value is None or unit is None:
+            return None
+        return {"value": value, "unit": unit}
+
+    items = [
+        {
+            "_id": r["id"],
+            "name": r["name"],
+            "type": r["type_code"],
+            "icaoClass": r["icao_class"],
+            "country": r["country"],
+            "lowerLimit": _limit(r["lower_limit_value"], r["lower_limit_unit"]),
+            "upperLimit": _limit(r["upper_limit_value"], r["upper_limit_unit"]),
+            "geometry": json.loads(r["geojson"]),
+        }
+        for r in rows
+    ]
+    return {"items": items}
 
 
 app.include_router(router)

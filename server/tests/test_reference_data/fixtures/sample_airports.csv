@@ -1,4 +1,0 @@
-"id","ident","type","name","latitude_deg","longitude_deg","elevation_ft","continent","iso_country","iso_region","municipality","scheduled_service","icao_code","iata_code","gps_code","local_code","home_link","wikipedia_link","keywords"
-2434,"EGLL","large_airport","London Heathrow Airport",51.4775,-0.461389,83,"EU","GB","GB-ENG","London","yes","EGLL","LHR","EGLL",,,,"Heathrow, London"
-6523,"00A","heliport","Total RF Heliport",40.070985,-74.933689,11,"NA","US","US-PA","Bensalem","no",,,"K00A","00A",,,
-99999,"BADCOORDS","small_airport","Bad Coords",,,,"NA","US","US-CA","Test","no",,,,,,,

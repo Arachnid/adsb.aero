@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Layers, Link, Moon, Satellite, Sun } from "../Icons";
 import { useMobile } from "../../hooks/useMobile";
 import type { ColorMode } from "../map/MapView";
-import { AirportSearch } from "../map/AirportSearch";
+import { WaypointSearch } from "../map/WaypointSearch";
 
 type Basemap = "dark" | "light" | "sat";
 type Theme = "dark" | "light";
@@ -146,7 +146,7 @@ export function Topbar({
       </button>
 
       <Sep />
-      <AirportSearch onSelect={onFlyToAirport} />
+      <WaypointSearch onSelect={onFlyToAirport} />
       <Sep />
 
       {mobile ? (

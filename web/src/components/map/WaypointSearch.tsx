@@ -1,31 +1,99 @@
 import { useEffect, useRef, useState } from "react";
-import type { Airport } from "../../lib/api";
-import { searchAirports } from "../../lib/api";
+import type { Waypoint } from "../../lib/api";
+import { searchWaypoints } from "../../lib/api";
 
-interface AirportSearchProps {
-  onSelect: (lat: number, lng: number, name: string) => void;
+interface WaypointSearchProps {
+  onSelect: (lat: number, lng: number, label: string) => void;
 }
 
-const TYPE_LABEL: Record<string, string> = {
-  large_airport: "✈",
-  medium_airport: "✈",
-  small_airport: "✈",
-  heliport: "H",
-  seaplane_base: "~",
-  balloonport: "◯",
+// Airport type_code → display label used in the icon badge
+const APT_TYPE: Record<number, string> = {
+  0: "APT",
+  1: "GLD",
+  2: "AF",
+  3: "APT",
+  4: "HEL",
+  5: "MIL",
+  6: "ULM",
+  7: "HEL",
+  8: "CLO",
+  9: "APT",
+  10: "H₂O",
+  11: "STR",
+  12: "AGR",
+  13: "ALT",
 };
 
-export function AirportSearch({
+// Navaid type_code → abbreviation
+const NAV_TYPE: Record<number, string> = {
+  0: "DME",
+  1: "TCN",
+  2: "NDB",
+  3: "VOR",
+  4: "VDM",
+  5: "VTC",
+  6: "DVR",
+  7: "DDM",
+  8: "DTC",
+};
+
+function kindIcon(w: Waypoint): React.ReactElement {
+  if (w.kind === "navaid") {
+    const label =
+      w.type_code != null ? (NAV_TYPE[w.type_code] ?? "NAV") : "NAV";
+    return <Badge color="var(--accent)">{label}</Badge>;
+  }
+  if (w.kind === "reporting_point") {
+    return <Badge color="#a78bfa">RPT</Badge>;
+  }
+  if (w.kind === "airspace") {
+    return <Badge color="#60a5fa">ASP</Badge>;
+  }
+  // airport
+  const label = w.type_code != null ? (APT_TYPE[w.type_code] ?? "APT") : "APT";
+  const color =
+    w.type_code === 4 || w.type_code === 7
+      ? "#34d399" // heliport — green
+      : w.type_code === 5 || w.type_code === 0
+        ? "#94a3b8" // military — muted
+        : "var(--fg-2)";
+  return <Badge color={color}>{label}</Badge>;
+}
+
+function Badge({
+  children,
+  color,
+}: {
+  children: string;
+  color: string;
+}): React.ReactElement {
+  return (
+    <span
+      style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 9,
+        fontWeight: 700,
+        color,
+        minWidth: 32,
+        flexShrink: 0,
+        letterSpacing: "0.02em",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+export function WaypointSearch({
   onSelect,
-}: AirportSearchProps): React.ReactElement {
+}: WaypointSearchProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Airport[]>([]);
+  const [results, setResults] = useState<Waypoint[]>([]);
   const [activeIdx, setActiveIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Debounced search
   useEffect(() => {
     const q = query.trim();
     if (!q) {
@@ -35,14 +103,12 @@ export function AirportSearch({
     }
     const controller = new AbortController();
     const timer = setTimeout((): void => {
-      searchAirports(q, { limit: 8, signal: controller.signal })
+      searchWaypoints(q, { limit: 10, signal: controller.signal })
         .then((r) => {
           setResults(r);
           setActiveIdx(-1);
         })
-        .catch((): void => {
-          /* aborted or network error — leave stale results */
-        });
+        .catch((): void => {});
     }, 180);
     return (): void => {
       clearTimeout(timer);
@@ -50,18 +116,14 @@ export function AirportSearch({
     };
   }, [query]);
 
-  // Focus input when opened
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent): void => {
-      if (!containerRef.current?.contains(e.target as Node)) {
-        close();
-      }
+      if (!containerRef.current?.contains(e.target as Node)) close();
     };
     document.addEventListener("mousedown", handler);
     return (): void => {
@@ -75,8 +137,8 @@ export function AirportSearch({
     setResults([]);
   };
 
-  const handleSelect = (airport: Airport): void => {
-    onSelect(airport.lat, airport.lon, airport.ident);
+  const handleSelect = (w: Waypoint): void => {
+    onSelect(w.lat, w.lon, w.ident ?? w.name);
     close();
   };
 
@@ -94,8 +156,8 @@ export function AirportSearch({
       setActiveIdx((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter" && activeIdx >= 0) {
       e.preventDefault();
-      const a = results[activeIdx];
-      if (a) handleSelect(a);
+      const w = results[activeIdx];
+      if (w) handleSelect(w);
     }
   };
 
@@ -105,7 +167,7 @@ export function AirportSearch({
         onClick={() => {
           setOpen(true);
         }}
-        title="Search airports"
+        title="Search waypoints"
         style={{
           background: "var(--bg-2)",
           border: "1px solid var(--line-1)",
@@ -118,7 +180,6 @@ export function AirportSearch({
           justifyContent: "center",
           cursor: "pointer",
           padding: 0,
-          fontSize: 14,
           flexShrink: 0,
         }}
       >
@@ -152,14 +213,14 @@ export function AirportSearch({
             setQuery(e.target.value);
           }}
           onKeyDown={handleKeyDown}
-          placeholder="EGLL, Heathrow…"
+          placeholder="EGLL, BNN, DIVIS…"
           style={{
             background: "none",
             border: "none",
             outline: "none",
             color: "var(--fg-1)",
             fontSize: 12,
-            width: 160,
+            width: 170,
             padding: 0,
           }}
         />
@@ -199,18 +260,18 @@ export function AirportSearch({
             border: "1px solid var(--line-1)",
             borderRadius: "var(--radius-2)",
             boxShadow: "var(--shadow-2)",
-            minWidth: 300,
+            minWidth: 320,
             overflow: "hidden",
           }}
         >
-          {results.map((airport, i) => (
+          {results.map((w, i) => (
             <button
-              key={airport.ident}
+              key={w.id}
               onMouseDown={(e) => {
                 e.preventDefault();
               }}
               onClick={() => {
-                handleSelect(airport);
+                handleSelect(w);
               }}
               onMouseEnter={() => {
                 setActiveIdx(i);
@@ -230,6 +291,7 @@ export function AirportSearch({
                 textAlign: "left",
               }}
             >
+              {kindIcon(w)}
               <span
                 style={{
                   fontFamily: "'JetBrains Mono', monospace",
@@ -240,16 +302,7 @@ export function AirportSearch({
                   flexShrink: 0,
                 }}
               >
-                {airport.ident}
-              </span>
-              <span
-                style={{
-                  fontSize: 10,
-                  color: "var(--fg-3)",
-                  flexShrink: 0,
-                }}
-              >
-                {TYPE_LABEL[airport.type] ?? "✈"}
+                {w.ident ?? ""}
               </span>
               <span
                 style={{
@@ -259,7 +312,7 @@ export function AirportSearch({
                   color: i === activeIdx ? "var(--accent)" : "var(--fg-2)",
                 }}
               >
-                {airport.name}
+                {w.name}
               </span>
               <span
                 style={{
@@ -269,7 +322,7 @@ export function AirportSearch({
                   color: "var(--fg-3)",
                 }}
               >
-                {airport.iso_country}
+                {w.country}
               </span>
             </button>
           ))}
