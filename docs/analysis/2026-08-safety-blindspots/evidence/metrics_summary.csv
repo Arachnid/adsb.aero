@@ -1,0 +1,7 @@
+area,season,area_km2,n_days,n_flights,busiest_500ft_window_start,busiest_500ft_window_seconds,range_500_3000_total_seconds,CR,HHI,density_s_per_day_per_km2,box_seconds_total,agl_excluded_seconds,agl_excluded_pct,out_of_range_seconds
+london_tma_shelf,summer,723.8,4,304.0,1500,51580.9,103382.5,0.4989,0.1805,17.815,110515.1,1916.3,1.73,488.4
+london_tma_shelf,winter,723.8,2,143.0,1750,20725.1,42681.3,0.4856,0.1855,14.316,45285.3,534.0,1.18,165.7
+manchester_llr,summer,406.3,4,77.0,1000,11097.2,15331.5,0.7238,0.3085,6.828,16745.0,469.0,2.8,133.1
+manchester_llr,winter,406.3,2,25.0,1000,3292.3,4422.7,0.7444,0.3071,4.051,5597.8,308.7,5.52,285.6
+control,summer,1804.4,4,406.0,2000,71460.6,189530.3,0.377,0.1388,9.901,278914.2,2220.9,0.8,1061.0
+control,winter,1804.4,2,157.0,2250,20801.3,66825.9,0.3113,0.1246,5.764,104858.4,1138.4,1.09,1198.2
