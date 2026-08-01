@@ -1,0 +1,1346 @@
+{
+ "_diag": {
+  "flights": 3182,
+  "n_airports_in_mask": 916,
+  "point_filter": {
+   "pt_outside_box": 297643,
+   "pt_near_airfield": 69839,
+   "pt_kept": 19903,
+   "pt_no_corr": 5375,
+   "pt_slow": 28421
+  },
+  "level_runs": 721,
+  "flights_with_run": 514,
+  "level_hours": 51.9
+ },
+ "main": [
+  {
+   "label": "belowTA_500_3000|qnh|LEVEL|allA1",
+   "n_pairs": 3392,
+   "hours": 23.91,
+   "conc500_pm50": 0.3027,
+   "conc1000_pm50": 0.2045,
+   "M_binned": 1.762,
+   "M_phase_range": [
+    1.709,
+    1.791
+   ],
+   "M_pair": 1.707,
+   "M_envelope": 1.564,
+   "M_round": 1.126
+  },
+  {
+   "label": "belowTA_500_3000|qnh|LEVEL|sq7000",
+   "n_pairs": 2051,
+   "hours": 13.34,
+   "conc500_pm50": 0.2627,
+   "conc1000_pm50": 0.152,
+   "M_binned": 1.716,
+   "M_phase_range": [
+    1.69,
+    1.731
+   ],
+   "M_pair": 1.699,
+   "M_envelope": 1.597,
+   "M_round": 1.075
+  },
+  {
+   "label": "belowTA_500_3000|qnh|TRANSIT|allA1",
+   "n_pairs": 5667,
+   "hours": 30.23,
+   "conc500_pm50": 0.2026,
+   "conc1000_pm50": 0.1076,
+   "M_binned": 1.461,
+   "M_phase_range": [
+    1.451,
+    1.475
+   ],
+   "M_pair": 1.475,
+   "M_envelope": 1.418,
+   "M_round": 1.031
+  },
+  {
+   "label": "belowTA_500_3000|qnh|TRANSIT|sq7000",
+   "n_pairs": 3102,
+   "hours": 15.84,
+   "conc500_pm50": 0.1927,
+   "conc1000_pm50": 0.1022,
+   "M_binned": 1.509,
+   "M_phase_range": [
+    1.504,
+    1.518
+   ],
+   "M_pair": 1.52,
+   "M_envelope": 1.451,
+   "M_round": 1.04
+  },
+  {
+   "label": "belowTA_500_3000|press|LEVEL|allA1",
+   "n_pairs": 3392,
+   "hours": 23.91,
+   "conc500_pm50": 0.229,
+   "conc1000_pm50": 0.1331,
+   "M_binned": 1.564,
+   "M_phase_range": [
+    1.549,
+    1.584
+   ],
+   "M_pair": 1.672,
+   "M_envelope": 1.448,
+   "M_round": 1.08
+  },
+  {
+   "label": "belowTA_500_3000|press|LEVEL|sq7000",
+   "n_pairs": 2051,
+   "hours": 13.34,
+   "conc500_pm50": 0.1915,
+   "conc1000_pm50": 0.0914,
+   "M_binned": 1.617,
+   "M_phase_range": [
+    1.612,
+    1.623
+   ],
+   "M_pair": 1.715,
+   "M_envelope": 1.477,
+   "M_round": 1.095
+  },
+  {
+   "label": "belowTA_500_3000|press|TRANSIT|allA1",
+   "n_pairs": 5667,
+   "hours": 30.23,
+   "conc500_pm50": 0.225,
+   "conc1000_pm50": 0.0949,
+   "M_binned": 1.344,
+   "M_phase_range": [
+    1.34,
+    1.347
+   ],
+   "M_pair": 1.462,
+   "M_envelope": 1.327,
+   "M_round": 1.013
+  },
+  {
+   "label": "belowTA_500_3000|press|TRANSIT|sq7000",
+   "n_pairs": 3102,
+   "hours": 15.84,
+   "conc500_pm50": 0.2238,
+   "conc1000_pm50": 0.0946,
+   "M_binned": 1.376,
+   "M_phase_range": [
+    1.37,
+    1.385
+   ],
+   "M_pair": 1.489,
+   "M_envelope": 1.35,
+   "M_round": 1.019
+  },
+  {
+   "label": "aboveTA_3000_5500|qnh|LEVEL|allA1",
+   "n_pairs": 2643,
+   "hours": 18.73,
+   "conc500_pm50": 0.3664,
+   "conc1000_pm50": 0.1951,
+   "M_binned": 1.298,
+   "M_phase_range": [
+    1.261,
+    1.343
+   ],
+   "M_pair": 1.207,
+   "M_envelope": 1.094,
+   "M_round": 1.187
+  },
+  {
+   "label": "aboveTA_3000_5500|qnh|LEVEL|sq7000",
+   "n_pairs": 671,
+   "hours": 5.85,
+   "conc500_pm50": 0.2673,
+   "conc1000_pm50": 0.1724,
+   "M_binned": 1.755,
+   "M_phase_range": [
+    1.65,
+    1.827
+   ],
+   "M_pair": 1.665,
+   "M_envelope": 1.51,
+   "M_round": 1.163
+  },
+  {
+   "label": "aboveTA_3000_5500|qnh|TRANSIT|allA1",
+   "n_pairs": 3970,
+   "hours": 21.93,
+   "conc500_pm50": 0.2339,
+   "conc1000_pm50": 0.1306,
+   "M_binned": 1.115,
+   "M_phase_range": [
+    1.096,
+    1.14
+   ],
+   "M_pair": 1.111,
+   "M_envelope": 1.087,
+   "M_round": 1.026
+  },
+  {
+   "label": "aboveTA_3000_5500|qnh|TRANSIT|sq7000",
+   "n_pairs": 1205,
+   "hours": 6.84,
+   "conc500_pm50": 0.2421,
+   "conc1000_pm50": 0.1404,
+   "M_binned": 1.422,
+   "M_phase_range": [
+    1.383,
+    1.463
+   ],
+   "M_pair": 1.371,
+   "M_envelope": 1.311,
+   "M_round": 1.085
+  },
+  {
+   "label": "aboveTA_3000_5500|press|LEVEL|allA1",
+   "n_pairs": 2643,
+   "hours": 18.73,
+   "conc500_pm50": 0.2378,
+   "conc1000_pm50": 0.1878,
+   "M_binned": 1.223,
+   "M_phase_range": [
+    1.19,
+    1.268
+   ],
+   "M_pair": 1.217,
+   "M_envelope": 1.106,
+   "M_round": 1.106
+  },
+  {
+   "label": "aboveTA_3000_5500|press|LEVEL|sq7000",
+   "n_pairs": 671,
+   "hours": 5.85,
+   "conc500_pm50": 0.2512,
+   "conc1000_pm50": 0.2004,
+   "M_binned": 1.511,
+   "M_phase_range": [
+    1.455,
+    1.557
+   ],
+   "M_pair": 1.546,
+   "M_envelope": 1.401,
+   "M_round": 1.079
+  },
+  {
+   "label": "aboveTA_3000_5500|press|TRANSIT|allA1",
+   "n_pairs": 3970,
+   "hours": 21.93,
+   "conc500_pm50": 0.2214,
+   "conc1000_pm50": 0.1333,
+   "M_binned": 1.051,
+   "M_phase_range": [
+    1.046,
+    1.053
+   ],
+   "M_pair": 1.137,
+   "M_envelope": 1.136,
+   "M_round": 0.925
+  },
+  {
+   "label": "aboveTA_3000_5500|press|TRANSIT|sq7000",
+   "n_pairs": 1205,
+   "hours": 6.84,
+   "conc500_pm50": 0.2183,
+   "conc1000_pm50": 0.1231,
+   "M_binned": 1.183,
+   "M_phase_range": [
+    1.169,
+    1.198
+   ],
+   "M_pair": 1.263,
+   "M_envelope": 1.292,
+   "M_round": 0.915
+  }
+ ],
+ "robustness": [
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|per-flight-equal-weight",
+   "n_pairs": 3392,
+   "hours": 0.08,
+   "conc500_pm50": 0.3176,
+   "conc1000_pm50": 0.2189,
+   "M_binned": 1.798,
+   "M_phase_range": [
+    1.726,
+    1.844
+   ],
+   "M_pair": 1.721,
+   "M_envelope": 1.577,
+   "M_round": 1.14
+  },
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|AGL>=300ft",
+   "n_pairs": 3392,
+   "hours": 23.91,
+   "conc500_pm50": 0.3027,
+   "conc1000_pm50": 0.2045,
+   "M_binned": 1.762,
+   "M_phase_range": [
+    1.709,
+    1.791
+   ],
+   "M_pair": 1.707,
+   "M_envelope": 1.564,
+   "M_round": 1.126
+  },
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|AGL>=500ft",
+   "n_pairs": 3392,
+   "hours": 23.91,
+   "conc500_pm50": 0.3027,
+   "conc1000_pm50": 0.2045,
+   "M_binned": 1.762,
+   "M_phase_range": [
+    1.709,
+    1.791
+   ],
+   "M_pair": 1.707,
+   "M_envelope": 1.564,
+   "M_round": 1.126
+  },
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|AGL>=1000ft",
+   "n_pairs": 3352,
+   "hours": 23.43,
+   "conc500_pm50": 0.3062,
+   "conc1000_pm50": 0.2063,
+   "M_binned": 1.822,
+   "M_phase_range": [
+    1.768,
+    1.852
+   ],
+   "M_pair": 1.765,
+   "M_envelope": 1.613,
+   "M_round": 1.13
+  },
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|area=shropshire",
+   "n_pairs": 943,
+   "hours": 4.77,
+   "conc500_pm50": 0.2264,
+   "conc1000_pm50": 0.1084,
+   "M_binned": 2.144,
+   "M_phase_range": [
+    2.08,
+    2.279
+   ],
+   "M_pair": 2.079,
+   "M_envelope": 1.895,
+   "M_round": 1.132
+  },
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|area=devon",
+   "n_pairs": 672,
+   "hours": 4.98,
+   "conc500_pm50": 0.2127,
+   "conc1000_pm50": 0.1224,
+   "M_binned": 2.013,
+   "M_phase_range": [
+    1.886,
+    2.073
+   ],
+   "M_pair": 1.934,
+   "M_envelope": 1.734,
+   "M_round": 1.161
+  },
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|area=lincolnshire",
+   "n_pairs": 1777,
+   "hours": 14.15,
+   "conc500_pm50": 0.3601,
+   "conc1000_pm50": 0.2658,
+   "M_binned": 1.926,
+   "M_phase_range": [
+    1.867,
+    1.978
+   ],
+   "M_pair": 1.797,
+   "M_envelope": 1.47,
+   "M_round": 1.31
+  },
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|weekend",
+   "n_pairs": 2029,
+   "hours": 13.45,
+   "conc500_pm50": 0.2847,
+   "conc1000_pm50": 0.1868,
+   "M_binned": 1.735,
+   "M_phase_range": [
+    1.706,
+    1.757
+   ],
+   "M_pair": 1.708,
+   "M_envelope": 1.565,
+   "M_round": 1.109
+  },
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|weekday",
+   "n_pairs": 1363,
+   "hours": 10.46,
+   "conc500_pm50": 0.3259,
+   "conc1000_pm50": 0.2272,
+   "M_binned": 1.903,
+   "M_phase_range": [
+    1.827,
+    1.948
+   ],
+   "M_pair": 1.76,
+   "M_envelope": 1.576,
+   "M_round": 1.208
+  },
+  {
+   "label": "belowTA|qnh|LEVEL|allA1|span1500-3000",
+   "n_pairs": 3166,
+   "hours": 22.18,
+   "conc500_pm50": 0.3036,
+   "conc1000_pm50": 0.2137,
+   "M_binned": 1.209,
+   "M_phase_range": [
+    1.172,
+    1.229
+   ],
+   "M_pair": 1.188,
+   "M_envelope": 1.076,
+   "M_round": 1.123
+  }
+ ],
+ "semicircular": {
+  "belowTA_500_3000": {
+   "whole_thousand_pct": 20.45,
+   "thousand_plus_500_pct": 9.83,
+   "uniform_each_pct": 10.0
+  },
+  "aboveTA_3000_5500": {
+   "whole_thousand_pct": 19.51,
+   "thousand_plus_500_pct": 17.13,
+   "uniform_each_pct": 10.0
+  }
+ },
+ "levels_belowTA_500_3000": [
+  [
+   1000,
+   0.63
+  ],
+  [
+   1500,
+   2.7
+  ],
+  [
+   2000,
+   13.95
+  ],
+  [
+   2500,
+   7.13
+  ],
+  [
+   3000,
+   5.87
+  ]
+ ],
+ "top100bins_belowTA_500_3000": [
+  [
+   1900,
+   11.97
+  ],
+  [
+   2900,
+   9.06
+  ],
+  [
+   2000,
+   8.78
+  ],
+  [
+   2600,
+   8.55
+  ],
+  [
+   2200,
+   7.7
+  ],
+  [
+   2300,
+   7.28
+  ],
+  [
+   2100,
+   6.99
+  ],
+  [
+   2500,
+   6.9
+  ],
+  [
+   2400,
+   6.69
+  ],
+  [
+   2700,
+   5.46
+  ],
+  [
+   2800,
+   4.42
+  ],
+  [
+   1800,
+   3.49
+  ],
+  [
+   1500,
+   2.35
+  ],
+  [
+   1400,
+   2.02
+  ],
+  [
+   1600,
+   1.62
+  ]
+ ],
+ "levels_aboveTA_3000_5500": [
+  [
+   3000,
+   4.55
+  ],
+  [
+   3500,
+   5.47
+  ],
+  [
+   4000,
+   7.91
+  ],
+  [
+   4500,
+   3.81
+  ],
+  [
+   5000,
+   7.04
+  ],
+  [
+   5500,
+   7.85
+  ]
+ ],
+ "top100bins_aboveTA_3000_5500": [
+  [
+   5400,
+   8.4
+  ],
+  [
+   3000,
+   8.28
+  ],
+  [
+   4000,
+   7.2
+  ],
+  [
+   3100,
+   6.7
+  ],
+  [
+   3400,
+   6.53
+  ],
+  [
+   3900,
+   6.04
+  ],
+  [
+   3300,
+   5.72
+  ],
+  [
+   4900,
+   5.64
+  ],
+  [
+   3500,
+   5.49
+  ],
+  [
+   5000,
+   4.59
+  ],
+  [
+   3600,
+   4.52
+  ],
+  [
+   3200,
+   3.91
+  ],
+  [
+   5100,
+   3.85
+  ],
+  [
+   4100,
+   3.31
+  ],
+  [
+   4500,
+   3.25
+  ]
+ ],
+ "folded_mod500_pct_per_25ft_bin": {
+  "belowTA_500_3000|qnh|LEVEL": [
+   6.2,
+   4.53,
+   4.77,
+   3.43,
+   4.57,
+   4.68,
+   4.84,
+   4.08,
+   4.38,
+   3.5,
+   4.41,
+   3.67,
+   4.67,
+   5.0,
+   2.99,
+   4.02,
+   4.48,
+   6.24,
+   9.25,
+   10.3
+  ],
+  "belowTA_500_3000|qnh|TRANSIT": [
+   4.3,
+   4.15,
+   4.99,
+   4.37,
+   4.62,
+   3.93,
+   4.28,
+   4.29,
+   5.98,
+   5.66,
+   4.48,
+   5.56,
+   5.22,
+   4.51,
+   6.03,
+   5.65,
+   4.74,
+   5.44,
+   4.62,
+   7.19
+  ],
+  "belowTA_500_3000|press|LEVEL": [
+   5.96,
+   3.23,
+   6.86,
+   3.91,
+   4.84,
+   3.45,
+   5.58,
+   3.86,
+   6.44,
+   2.47,
+   4.22,
+   5.52,
+   8.5,
+   5.63,
+   5.84,
+   3.87,
+   6.18,
+   4.41,
+   5.8,
+   3.44
+  ],
+  "belowTA_500_3000|press|TRANSIT": [
+   5.12,
+   3.35,
+   5.59,
+   4.03,
+   6.31,
+   3.91,
+   5.68,
+   3.49,
+   6.98,
+   4.8,
+   6.05,
+   3.97,
+   6.68,
+   3.87,
+   5.99,
+   3.8,
+   6.85,
+   3.54,
+   5.68,
+   4.3
+  ],
+  "aboveTA_3000_5500|qnh|LEVEL": [
+   8.46,
+   7.76,
+   5.6,
+   6.98,
+   6.65,
+   4.55,
+   4.32,
+   3.86,
+   2.1,
+   2.95,
+   3.02,
+   4.16,
+   3.48,
+   2.7,
+   1.99,
+   2.84,
+   3.9,
+   4.27,
+   6.66,
+   13.75
+  ],
+  "aboveTA_3000_5500|qnh|TRANSIT": [
+   7.08,
+   5.76,
+   6.34,
+   5.18,
+   4.84,
+   5.07,
+   4.49,
+   3.46,
+   4.69,
+   6.32,
+   4.95,
+   4.5,
+   3.63,
+   4.01,
+   5.08,
+   5.18,
+   4.31,
+   4.57,
+   5.12,
+   5.42
+  ],
+  "aboveTA_3000_5500|press|LEVEL": [
+   5.87,
+   5.65,
+   3.36,
+   3.21,
+   3.52,
+   3.53,
+   6.75,
+   5.41,
+   4.13,
+   4.07,
+   3.98,
+   3.72,
+   7.18,
+   4.87,
+   6.78,
+   4.27,
+   7.36,
+   5.8,
+   6.44,
+   4.13
+  ],
+  "aboveTA_3000_5500|press|TRANSIT": [
+   5.16,
+   3.86,
+   5.54,
+   4.03,
+   5.85,
+   3.83,
+   6.19,
+   3.84,
+   7.51,
+   4.11,
+   6.66,
+   3.63,
+   7.08,
+   3.43,
+   5.94,
+   3.87,
+   5.81,
+   3.78,
+   5.65,
+   4.22
+  ]
+ },
+ "hist25_belowTA_level_qnh_pct": [
+  [
+   550,
+   0.045
+  ],
+  [
+   575,
+   0.004
+  ],
+  [
+   625,
+   0.314
+  ],
+  [
+   650,
+   0.221
+  ],
+  [
+   900,
+   0.013
+  ],
+  [
+   925,
+   0.317
+  ],
+  [
+   950,
+   0.106
+  ],
+  [
+   975,
+   0.096
+  ],
+  [
+   1000,
+   0.104
+  ],
+  [
+   1025,
+   0.321
+  ],
+  [
+   1050,
+   0.124
+  ],
+  [
+   1075,
+   0.297
+  ],
+  [
+   1100,
+   0.004
+  ],
+  [
+   1125,
+   0.196
+  ],
+  [
+   1150,
+   0.021
+  ],
+  [
+   1175,
+   0.239
+  ],
+  [
+   1200,
+   0.303
+  ],
+  [
+   1225,
+   0.128
+  ],
+  [
+   1250,
+   0.524
+  ],
+  [
+   1275,
+   0.371
+  ],
+  [
+   1300,
+   0.867
+  ],
+  [
+   1325,
+   0.401
+  ],
+  [
+   1350,
+   0.178
+  ],
+  [
+   1375,
+   0.041
+  ],
+  [
+   1400,
+   0.246
+  ],
+  [
+   1425,
+   0.29
+  ],
+  [
+   1450,
+   0.454
+  ],
+  [
+   1475,
+   1.034
+  ],
+  [
+   1500,
+   0.688
+  ],
+  [
+   1525,
+   0.521
+  ],
+  [
+   1550,
+   0.496
+  ],
+  [
+   1575,
+   0.641
+  ],
+  [
+   1600,
+   0.46
+  ],
+  [
+   1625,
+   0.538
+  ],
+  [
+   1650,
+   0.472
+  ],
+  [
+   1675,
+   0.153
+  ],
+  [
+   1700,
+   0.182
+  ],
+  [
+   1725,
+   0.247
+  ],
+  [
+   1750,
+   0.741
+  ],
+  [
+   1775,
+   0.312
+  ],
+  [
+   1800,
+   0.848
+  ],
+  [
+   1825,
+   1.244
+  ],
+  [
+   1850,
+   0.324
+  ],
+  [
+   1875,
+   1.075
+  ],
+  [
+   1900,
+   1.325
+  ],
+  [
+   1925,
+   2.427
+  ],
+  [
+   1950,
+   3.781
+  ],
+  [
+   1975,
+   4.433
+  ],
+  [
+   2000,
+   3.256
+  ],
+  [
+   2025,
+   2.483
+  ],
+  [
+   2050,
+   2.044
+  ],
+  [
+   2075,
+   0.999
+  ],
+  [
+   2100,
+   1.075
+  ],
+  [
+   2125,
+   1.296
+  ],
+  [
+   2150,
+   2.779
+  ],
+  [
+   2175,
+   1.843
+  ],
+  [
+   2200,
+   2.133
+  ],
+  [
+   2225,
+   1.491
+  ],
+  [
+   2250,
+   2.319
+  ],
+  [
+   2275,
+   1.759
+  ],
+  [
+   2300,
+   2.003
+  ],
+  [
+   2325,
+   2.209
+  ],
+  [
+   2350,
+   1.455
+  ],
+  [
+   2375,
+   1.614
+  ],
+  [
+   2400,
+   1.729
+  ],
+  [
+   2425,
+   1.18
+  ],
+  [
+   2450,
+   2.214
+  ],
+  [
+   2475,
+   1.563
+  ],
+  [
+   2500,
+   2.149
+  ],
+  [
+   2525,
+   1.202
+  ],
+  [
+   2550,
+   2.063
+  ],
+  [
+   2575,
+   1.486
+  ],
+  [
+   2600,
+   3.028
+  ],
+  [
+   2625,
+   2.333
+  ],
+  [
+   2650,
+   1.342
+  ],
+  [
+   2675,
+   1.848
+  ],
+  [
+   2700,
+   1.763
+  ],
+  [
+   2725,
+   1.636
+  ],
+  [
+   2750,
+   0.826
+  ],
+  [
+   2775,
+   1.23
+  ],
+  [
+   2800,
+   0.954
+  ],
+  [
+   2825,
+   1.147
+  ],
+  [
+   2850,
+   1.036
+  ],
+  [
+   2875,
+   1.285
+  ],
+  [
+   2900,
+   1.168
+  ],
+  [
+   2925,
+   2.026
+  ],
+  [
+   2950,
+   2.694
+  ],
+  [
+   2975,
+   3.172
+  ]
+ ],
+ "examples_on_round_level": [
+  {
+   "flight_id": "402c25:2026-03-07T10:28:40Z",
+   "area": "lincolnshire",
+   "day": "2026-03-07",
+   "reg": "G-BOYI",
+   "type": "P28A",
+   "callsign": "GBOYI",
+   "dur_s": 628.4,
+   "mean_qnh_ft": 1963.9,
+   "band_ft": 100.0,
+   "sq7000_frac": 0.0
+  },
+  {
+   "flight_id": "40800d:2026-07-08T04:35:59Z",
+   "area": "lincolnshire",
+   "day": "2026-07-08",
+   "reg": "G-HMGH",
+   "type": "B350",
+   "callsign": "SRG224A",
+   "dur_s": 609.3,
+   "mean_qnh_ft": 1970.7,
+   "band_ft": 100.0,
+   "sq7000_frac": 0.0
+  },
+  {
+   "flight_id": "402fff:2026-06-20T11:13:28Z",
+   "area": "shropshire",
+   "day": "2026-06-20",
+   "reg": "G-BRPV",
+   "type": "C152",
+   "callsign": "GBRPV",
+   "dur_s": 522.3,
+   "mean_qnh_ft": 2974.4,
+   "band_ft": 100.0,
+   "sq7000_frac": 1.0
+  },
+  {
+   "flight_id": "407c64:2026-05-28T12:20:31Z",
+   "area": "lincolnshire",
+   "day": "2026-05-28",
+   "reg": "G-KEVJ",
+   "type": "SLG4",
+   "callsign": "GKEVJ",
+   "dur_s": 514.2,
+   "mean_qnh_ft": 2976.7,
+   "band_ft": 25.0,
+   "sq7000_frac": 0.0
+  },
+  {
+   "flight_id": "407b7f:2026-07-11T09:19:43Z",
+   "area": "devon",
+   "day": "2026-07-11",
+   "reg": "G-CLYP",
+   "type": "C42",
+   "callsign": "GCLYP",
+   "dur_s": 467.7,
+   "mean_qnh_ft": 2976.4,
+   "band_ft": 150.0,
+   "sq7000_frac": 1.0
+  },
+  {
+   "flight_id": "40800d:2026-05-28T12:34:02Z",
+   "area": "lincolnshire",
+   "day": "2026-05-28",
+   "reg": "G-HMGH",
+   "type": "B350",
+   "callsign": "BRO93",
+   "dur_s": 456.7,
+   "mean_qnh_ft": 2994.8,
+   "band_ft": 25.0,
+   "sq7000_frac": 0.0
+  },
+  {
+   "flight_id": "408084:2026-07-22T09:55:41Z",
+   "area": "shropshire",
+   "day": "2026-07-22",
+   "reg": "G-CMTG",
+   "type": "P28A",
+   "callsign": "GCMTG",
+   "dur_s": 444.8,
+   "mean_qnh_ft": 1993.6,
+   "band_ft": 125.0,
+   "sq7000_frac": 1.0
+  },
+  {
+   "flight_id": "401b9a:2026-07-08T08:31:38Z",
+   "area": "lincolnshire",
+   "day": "2026-07-08",
+   "reg": "G-BCRL",
+   "type": "P28A",
+   "callsign": "GBCRL",
+   "dur_s": 426.4,
+   "mean_qnh_ft": 2487.2,
+   "band_ft": 100.0,
+   "sq7000_frac": 0.0
+  },
+  {
+   "flight_id": "401b9a:2026-07-08T08:31:38Z",
+   "area": "lincolnshire",
+   "day": "2026-07-08",
+   "reg": "G-BCRL",
+   "type": "P28A",
+   "callsign": "GBCRL",
+   "dur_s": 422.4,
+   "mean_qnh_ft": 2505.8,
+   "band_ft": 100.0,
+   "sq7000_frac": 0.0
+  },
+  {
+   "flight_id": "4016db:2026-05-09T10:03:55Z",
+   "area": "devon",
+   "day": "2026-05-09",
+   "reg": "G-AVGZ",
+   "type": "DR10",
+   "callsign": "GAVGZ",
+   "dur_s": 410.1,
+   "mean_qnh_ft": 2021.9,
+   "band_ft": 125.0,
+   "sq7000_frac": 0.0
+  },
+  {
+   "flight_id": "407936:2026-06-13T09:18:29Z",
+   "area": "lincolnshire",
+   "day": "2026-06-13",
+   "reg": "G-LHXA",
+   "type": "DA42",
+   "callsign": "ADV39",
+   "dur_s": 407.9,
+   "mean_qnh_ft": 1990.1,
+   "band_ft": 150.0,
+   "sq7000_frac": 0.0
+  },
+  {
+   "flight_id": "4021f7:2026-05-09T09:50:09Z",
+   "area": "lincolnshire",
+   "day": "2026-05-09",
+   "reg": "G-HULL",
+   "type": "C150",
+   "callsign": "GHULL",
+   "dur_s": 400.7,
+   "mean_qnh_ft": 2017.4,
+   "band_ft": 125.0,
+   "sq7000_frac": 1.0
+  }
+ ],
+ "examples_off_round_level": [
+  {
+   "flight_id": "402a5d:2026-05-09T09:58:36Z",
+   "area": "lincolnshire",
+   "day": "2026-05-09",
+   "reg": "G-BOEE",
+   "type": "P28A",
+   "callsign": "GBOEE",
+   "dur_s": 789.3,
+   "mean_qnh_ft": 2836.6,
+   "band_ft": 150.0,
+   "sq7000_frac": 1.0
+  },
+  {
+   "flight_id": "402b0f:2026-07-22T10:14:43Z",
+   "area": "lincolnshire",
+   "day": "2026-07-22",
+   "reg": "G-BOMP",
+   "type": "P28A",
+   "callsign": "GBOMP",
+   "dur_s": 607.6,
+   "mean_qnh_ft": 2726.5,
+   "band_ft": 150.0,
+   "sq7000_frac": 1.0
+  },
+  {
+   "flight_id": "4073dd:2026-06-13T17:10:20Z",
+   "area": "devon",
+   "day": "2026-06-13",
+   "reg": "G-RKID",
+   "type": "RV6",
+   "callsign": "GRKID",
+   "dur_s": 600.5,
+   "mean_qnh_ft": 2785.6,
+   "band_ft": 50.0,
+   "sq7000_frac": 1.0
+  },
+  {
+   "flight_id": "404a30:2026-06-13T16:59:09Z",
+   "area": "shropshire",
+   "day": "2026-06-13",
+   "reg": "G-KEVX",
+   "type": "JAB4",
+   "callsign": "GKEVX",
+   "dur_s": 574.7,
+   "mean_qnh_ft": 2652.1,
+   "band_ft": 125.0,
+   "sq7000_frac": 0.08
+  },
+  {
+   "flight_id": "40825a:2026-07-15T08:32:50Z",
+   "area": "lincolnshire",
+   "day": "2026-07-15",
+   "reg": null,
+   "type": null,
+   "callsign": "GCMZB",
+   "dur_s": 562.5,
+   "mean_qnh_ft": 1300.0,
+   "band_ft": 75.0,
+   "sq7000_frac": 1.0
+  },
+  {
+   "flight_id": "40818f:2026-07-15T08:32:35Z",
+   "area": "lincolnshire",
+   "day": "2026-07-15",
+   "reg": "G-CMVT",
+   "type": "EFOX",
+   "callsign": "GCMVT",
+   "dur_s": 537.5,
+   "mean_qnh_ft": 1282.1,
+   "band_ft": 75.0,
+   "sq7000_frac": 1.0
+  }
+ ]
+}

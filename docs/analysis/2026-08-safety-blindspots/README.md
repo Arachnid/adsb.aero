@@ -29,6 +29,10 @@ evidence files) before this synthesis was written.
 | H3 | Controlled-airspace floors compress VFR traffic into thin bands just under their ceilings | **Partially supported** | [h3-compression.md](h3-compression.md) |
 | H4 | Go-around rates differ systematically by airport, wind-linked at terrain airports, invisible in public statistics | **Supported** | [h4-goarounds.md](h4-goarounds.md) |
 
+A second round of three operator-posed hypotheses (round-altitude clustering, the
+"MSA trap", hemispheric-rule compliance) is summarised in
+[round2-README.md](round2-README.md) with full reports alongside.
+
 ## The data-quality frame (read first)
 
 The validator's findings ([coverage.md](coverage.md)) bound everything below:
