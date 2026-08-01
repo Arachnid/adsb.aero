@@ -117,7 +117,7 @@ async def _flush(
     pending: list[tuple[asyncpg.Record, asyncio.Future[str | None]]],
 ) -> int:
     """Await pending AGL futures, write results to the DB, return updated flight count."""
-    raw: list[str | None | BaseException] = list(
+    raw: list[str | BaseException | None] = list(
         await asyncio.gather(*[f for _, f in pending], return_exceptions=True)
     )
     updates: list[tuple[str, datetime, str]] = []
