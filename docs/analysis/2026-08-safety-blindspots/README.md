@@ -204,9 +204,10 @@ Incidental findings from ~560 API calls, possibly worth fixing:
 ## Reproducibility
 
 Every per-hypothesis report records its final query JSONs verbatim; each cited flight resolves
-via `GET /api/v1/flights/{flight_id}`. Small evidence aggregates are committed under
-[`evidence/`](evidence/); bulky per-event CSVs (5,196 DZ circle-passes, 7,208 approach
-records, 2,131 low-AGL runs) were kept out of the repo but are regenerable from the documented
-queries. Key aggregates (H3's concentration histogram, H1's worst-case transit, H2's minimum-AGL
-outlier, H4's double go-around) were re-derived or re-fetched independently of the original
-analyses before publication.
+via `GET /api/v1/flights/{flight_id}`. Evidence is committed under [`evidence/`](evidence/):
+small aggregates (H3 histograms/metrics, coverage summaries) plus the full per-event tables —
+`h1-dropzone-transits.csv` (5,196 DZ circle-passes), `h4-approaches.csv` (7,208 approach
+records incl. all 86 go-arounds), and `h2-enroute-runs.csv` (2,131 low-AGL runs). All are also
+regenerable from the documented queries. Key aggregates (H3's concentration histogram, H1's
+worst-case transit, H2's minimum-AGL outlier, H4's double go-around) were re-derived or
+re-fetched independently of the original analyses before publication.
