@@ -1,0 +1,207 @@
+{
+ "belowTA|qnh|LEVEL|allA1": {
+  "n_flights": 287,
+  "conc500_ci95": [
+   0.256,
+   0.343
+  ],
+  "M_binned_ci95": [
+   1.668,
+   2.021
+  ],
+  "M_pair_ci95": [
+   1.605,
+   1.924
+  ],
+  "point_conc500": 0.3027,
+  "point_M_binned": 1.762,
+  "perflight_conc500": 0.3176,
+  "perflight_M_binned": 1.798,
+  "top1_flight_timeshare": 0.019,
+  "top5_flight_timeshare": 0.071
+ },
+ "belowTA|qnh|LEVEL|sq7000": {
+  "n_flights": 173,
+  "conc500_ci95": [
+   0.21,
+   0.32
+  ],
+  "M_binned_ci95": [
+   1.642,
+   2.038
+  ],
+  "M_pair_ci95": [
+   1.589,
+   1.989
+  ],
+  "point_conc500": 0.2627,
+  "point_M_binned": 1.716,
+  "perflight_conc500": 0.269,
+  "perflight_M_binned": 1.78,
+  "top1_flight_timeshare": 0.026,
+  "top5_flight_timeshare": 0.099
+ },
+ "belowTA|qnh|TRANSIT|allA1": {
+  "n_flights": 609,
+  "conc500_ci95": [
+   0.184,
+   0.221
+  ],
+  "M_binned_ci95": [
+   1.391,
+   1.581
+  ],
+  "M_pair_ci95": [
+   1.396,
+   1.586
+  ],
+  "point_conc500": 0.2026,
+  "point_M_binned": 1.461,
+  "perflight_conc500": 0.2211,
+  "perflight_M_binned": 1.446,
+  "top1_flight_timeshare": 0.025,
+  "top5_flight_timeshare": 0.072
+ },
+ "belowTA|press|LEVEL|allA1": {
+  "n_flights": 287,
+  "conc500_ci95": [
+   0.188,
+   0.271
+  ],
+  "M_binned_ci95": [
+   1.494,
+   1.824
+  ],
+  "M_pair_ci95": [
+   1.575,
+   1.915
+  ],
+  "point_conc500": 0.229,
+  "point_M_binned": 1.564,
+  "perflight_conc500": 0.2245,
+  "perflight_M_binned": 1.564,
+  "top1_flight_timeshare": 0.019,
+  "top5_flight_timeshare": 0.071
+ },
+ "aboveTA|qnh|LEVEL|allA1": {
+  "n_flights": 204,
+  "conc500_ci95": [
+   0.267,
+   0.467
+  ],
+  "M_binned_ci95": [
+   1.305,
+   1.907
+  ],
+  "M_pair_ci95": [
+   1.188,
+   1.529
+  ],
+  "point_conc500": 0.3664,
+  "point_M_binned": 1.298,
+  "perflight_conc500": 0.3466,
+  "perflight_M_binned": 1.431,
+  "top1_flight_timeshare": 0.079,
+  "top5_flight_timeshare": 0.147
+ },
+ "aboveTA|qnh|LEVEL|sq7000": {
+  "n_flights": 84,
+  "conc500_ci95": [
+   0.176,
+   0.374
+  ],
+  "M_binned_ci95": [
+   1.617,
+   2.613
+  ],
+  "M_pair_ci95": [
+   1.467,
+   2.378
+  ],
+  "point_conc500": 0.2673,
+  "point_M_binned": 1.755,
+  "perflight_conc500": 0.2899,
+  "perflight_M_binned": 1.789,
+  "top1_flight_timeshare": 0.048,
+  "top5_flight_timeshare": 0.192
+ },
+ "aboveTA|press|LEVEL|allA1": {
+  "n_flights": 204,
+  "conc500_ci95": [
+   0.182,
+   0.299
+  ],
+  "M_binned_ci95": [
+   1.203,
+   1.834
+  ],
+  "M_pair_ci95": [
+   1.185,
+   1.553
+  ],
+  "point_conc500": 0.2378,
+  "point_M_binned": 1.223,
+  "perflight_conc500": 0.2522,
+  "perflight_M_binned": 1.217,
+  "top1_flight_timeshare": 0.079,
+  "top5_flight_timeshare": 0.147
+ },
+ "aboveTA|qnh|TRANSIT|allA1": {
+  "n_flights": 463,
+  "conc500_ci95": [
+   0.205,
+   0.258
+  ],
+  "M_binned_ci95": [
+   1.082,
+   1.227
+  ],
+  "M_pair_ci95": [
+   1.07,
+   1.211
+  ],
+  "point_conc500": 0.2339,
+  "point_M_binned": 1.115,
+  "perflight_conc500": 0.2661,
+  "perflight_M_binned": 1.271,
+  "top1_flight_timeshare": 0.018,
+  "top5_flight_timeshare": 0.073
+ },
+ "press_mod25_pct": {
+  "0.0": 62.02,
+  "12.5": 37.98
+ },
+ "alt_correction_ft_quantiles": {
+  "5": -234.4,
+  "25": 91.3,
+  "50": 173.1,
+  "75": 281.0,
+  "95": 353.4
+ },
+ "level_hours_by_day": {
+  "2026-03-07": 0.65,
+  "2026-03-21": 2.7,
+  "2026-03-28": 0.21,
+  "2026-04-04": 0.22,
+  "2026-04-11": 0.48,
+  "2026-04-15": 0.67,
+  "2026-04-22": 2.22,
+  "2026-05-03": 0.34,
+  "2026-05-09": 2.34,
+  "2026-05-16": 2.41,
+  "2026-05-20": 1.45,
+  "2026-05-28": 3.04,
+  "2026-06-03": 0.65,
+  "2026-06-07": 0.88,
+  "2026-06-13": 4.92,
+  "2026-06-17": 2.29,
+  "2026-06-20": 2.91,
+  "2026-06-25": 3.28,
+  "2026-07-04": 1.95,
+  "2026-07-08": 4.31,
+  "2026-07-11": 2.55,
+  "2026-07-15": 3.14,
+  "2026-07-22": 5.31,
+  "2026-07-28": 3.0
+ }
+}

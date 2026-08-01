@@ -158,7 +158,7 @@ def main() -> None:
     settings = get_settings()
     settings.init_sentry()
     try:
-        asyncio.run(_main())  # type: ignore[arg-type]  # sentry decorator loses Coroutine type
+        asyncio.run(_main())
     except Exception:
         sys.exit(1)
 
