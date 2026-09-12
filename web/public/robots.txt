@@ -1,0 +1,13 @@
+# adsb.aero — public, read-only historical ADS-B data.
+#
+# Agents and API clients are welcome. The API guide is at /llms.txt and the
+# OpenAPI schema at /api/openapi.json; querying those beats scraping the SPA,
+# which renders client-side and contains nothing useful in its HTML.
+#
+# The map tiles under /tiles/ are a cache of a third-party provider and are not
+# ours to serve to crawlers.
+
+User-agent: *
+Allow: /
+Allow: /api/
+Disallow: /tiles/
