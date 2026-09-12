@@ -23,7 +23,11 @@ ADS-B historical query platform at adsb.aero. Map-based UI for querying flight t
 ## Test-running
 
 - Server: `cd server && .venv/bin/pytest` — **must run from `server/`** so `pyproject.toml` is picked up (asyncio mode, testpaths, coverage config all live there). Running `server/.venv/bin/pytest` from the repo root silently uses wrong defaults. Integration tests use testcontainers; Docker must be running.
-- Web: `pnpm test` (vitest)
+- Web: `pnpm exec vitest run`. **`pnpm test` is `vitest` with no arguments, i.e.
+  watch mode** — it never exits, so it hangs any non-interactive run until it is
+  killed. Vitest only drops watch on its own when `CI` is set in the environment,
+  which is why `pnpm test:coverage` works in GitHub Actions but hangs locally.
+  Pass `run` explicitly (or set `CI=true`) whenever you just want the result.
 - E2E: `pnpm e2e` (Playwright; requires the dev stack up via `docker compose up`)
 - Coverage: `pytest --cov` and `pnpm test --coverage`
 
@@ -62,6 +66,26 @@ Also watch for schemas splitting into `-Input`/`-Output` pairs. Pydantic emits t
 `pnpm tsc --noEmit` for a type-check without building. The `dist/` directory may be owned by root (written by Docker); if `pnpm build` fails with EACCES on `dist/`, that's a permissions issue unrelated to the code — use `sudo -A rm -rf web/dist` to clear it.
 
 ## Python environment
+
+On a machine with no Python 3.14 and no Node — the `adsb` host itself, for
+instance — both suites still run in containers, provided the repo is mounted at
+the *same absolute path* it has on the host. `tests/conftest.py` shells out to
+`docker build` for the postgres image, and the daemon resolves that build
+context on the host, so a differing path inside the container fails the build.
+Mount the docker socket, add the host's `docker` group with `--group-add` (a
+plain `-u $(id -u)` cannot open the socket), and use `--network host` so
+testcontainers' published ports are reachable:
+
+```bash
+docker run --rm --network host -v "$PWD:$PWD" -w "$PWD/server" \
+    -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker:ro \
+    -u "$(id -u):$(id -g)" --group-add "$(stat -c %g /var/run/docker.sock)" \
+    -e HOME="$PWD/.container-home" python:3.14-slim \
+    bash -c '.venv/bin/pytest -q'
+```
+
+`tests/test_terrain/test_dem_downloader.py::test_tif_to_npy_from_bytes` fails
+under `python:3.14-slim` because rasterio cannot import there; it passes in CI.
 
 Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. `server/pyproject.toml` requires Python >= 3.14; with an older interpreter pip fails with "Package 'adsb-server' requires a different Python", so create the venv against 3.14 explicitly (`python3.14 -m venv server/.venv`, or `uv venv --python 3.14 server/.venv`) rather than relying on whatever `python` is on PATH. Activate with `source server/.venv/bin/activate` before running Python tools.
 
