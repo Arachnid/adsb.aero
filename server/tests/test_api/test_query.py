@@ -143,10 +143,10 @@ async def test_callsign_prefix_ignores_hyphens(api_client: AsyncClient) -> None:
 
 
 async def test_registration_prefix_normalized(api_client: AsyncClient) -> None:
-    """A hyphenated, lower-case prefix matches the normalized stored registration."""
+    """A lower-case, unhyphenated prefix matches the stored `G-TESTA`."""
     resp = await api_client.post(
         "/api/v1/query",
-        json=qbody(match={"registration_prefix": "g-test"}),
+        json=qbody(match={"registration_prefix": "gtest"}),
     )
     assert resp.status_code == 200
     data = resp.json()

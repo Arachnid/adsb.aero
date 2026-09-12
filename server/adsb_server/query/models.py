@@ -669,8 +669,8 @@ class IcaoType(BaseModel):
     """Flights matching one or more ICAO aircraft type designators."""
 
     icao_type: list[str] = Field(
-        description="List of ICAO type designators to match. Designators are upper-cased "
-        "before matching, as stored ones are. OR semantics.",
+        description="List of ICAO type designators to match. Matching is case-insensitive. "
+        "OR semantics.",
         examples=[["B738", "B737"]],
     )
 
@@ -684,8 +684,8 @@ class EmitterCategory(BaseModel):
     """Flights matching one or more ADS-B emitter category codes."""
 
     emitter_category: list[str] = Field(
-        description="List of ADS-B emitter category codes to match. Codes are upper-cased "
-        "before matching, as stored ones are. OR semantics.",
+        description="List of ADS-B emitter category codes to match. Matching is "
+        "case-insensitive. OR semantics.",
         examples=[["A3", "A5"]],
     )
 
@@ -699,9 +699,9 @@ class CallsignPrefix(BaseModel):
     """Flights whose callsign starts with the given prefix."""
 
     callsign_prefix: str = Field(
-        description="Prefix matched against the callsign. The prefix is upper-cased and "
-        "stripped of hyphens before matching, as stored callsigns are, so `ba-w` matches "
-        "the callsign `BAW123`. Flights with a null callsign never match.",
+        description="Prefix matched against the callsign. Matching is case-insensitive "
+        "and ignores hyphens on both sides, so `ba-w` matches the callsign `BAW123`. "
+        "Flights with a null callsign never match.",
         examples=["BAW"],
     )
 
@@ -715,10 +715,9 @@ class RegistrationPrefix(BaseModel):
     """Flights whose aircraft registration starts with the given prefix."""
 
     registration_prefix: str = Field(
-        description="Prefix matched against the aircraft registration. The prefix is "
-        "upper-cased and stripped of hyphens before matching, as stored registrations "
-        "are, so `g-ab` matches the registration `GABCD`. Flights without a linked "
-        "airframe record never match.",
+        description="Prefix matched against the aircraft registration. Matching is "
+        "case-insensitive and ignores hyphens on both sides, so `gab` matches the "
+        "registration `G-ABCD`. Flights without a linked airframe record never match.",
         examples=["G"],
     )
 
@@ -733,7 +732,7 @@ class Icao24(BaseModel):
 
     icao24: list[str] = Field(
         description="List of ICAO 24-bit addresses (6 hex chars) to match. Addresses are "
-        "lower-cased before matching, as stored ones are. OR semantics.",
+        "lower-cased before matching, as stored ones always are. OR semantics.",
         examples=[["a0b1c2"]],
     )
 

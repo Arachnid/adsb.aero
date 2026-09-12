@@ -1040,13 +1040,13 @@ class TestAttributePredicates:
     def test_icao_type(self) -> None:
         params: list = []
         sql = compile_predicate(IcaoType(icao_type=["B738", "A320"]), params)
-        assert "icao_type = ANY" in sql
+        assert "replace(upper(f.icao_type), '-', '') = ANY" in sql
         assert len(params) == 1
 
     def test_emitter_category(self) -> None:
         params: list = []
         sql = compile_predicate(EmitterCategory(emitter_category=["A3"]), params)
-        assert "emitter_category = ANY" in sql
+        assert "replace(upper(emitter_category), '-', '') = ANY" in sql
         assert len(params) == 1
 
     def test_duration_min_only(self) -> None:
@@ -1077,35 +1077,44 @@ class TestAttributePredicates:
     def test_callsign_prefix_uses_like(self) -> None:
         params: list = []
         sql = compile_predicate(CallsignPrefix(callsign_prefix="BAW"), params)
-        assert "callsign LIKE" in sql
+        assert "replace(upper(callsign), '-', '') LIKE" in sql
         assert params == ["BAW%"]
 
     def test_callsign_prefix_normalizes_case_and_hyphens(self) -> None:
         params: list = []
         sql = compile_predicate(CallsignPrefix(callsign_prefix=" g-abcd "), params)
-        assert "callsign LIKE" in sql
+        assert "replace(upper(callsign), '-', '') LIKE" in sql
         assert params == ["GABCD%"]
 
     def test_registration_prefix_uses_like(self) -> None:
         params: list = []
         sql = compile_predicate(RegistrationPrefix(registration_prefix="G-"), params)
-        assert "registration LIKE" in sql
+        assert "replace(upper(af.registration), '-', '') LIKE" in sql
         assert params == ["G%"]
 
     def test_registration_prefix_normalizes_case_and_hyphens(self) -> None:
         params: list = []
         sql = compile_predicate(RegistrationPrefix(registration_prefix=" g-ab "), params)
-        assert "registration LIKE" in sql
+        assert "replace(upper(af.registration), '-', '') LIKE" in sql
         assert params == ["GAB%"]
 
     def test_icao_type_normalizes_case(self) -> None:
         params: list = []
-        compile_predicate(IcaoType(icao_type=["b738"]), params)
+        sql = compile_predicate(IcaoType(icao_type=["b738"]), params)
+        assert "replace(upper(f.icao_type), '-', '') = ANY" in sql
         assert params == [["B738"]]
 
-    def test_icao24_normalizes_case(self) -> None:
+    def test_emitter_category_matches_normalized_column(self) -> None:
         params: list = []
-        compile_predicate(Icao24(icao24=["A0B1C2"]), params)
+        sql = compile_predicate(EmitterCategory(emitter_category=["a3"]), params)
+        assert "replace(upper(emitter_category), '-', '') = ANY" in sql
+        assert params == [["A3"]]
+
+    def test_icao24_matches_the_raw_column(self) -> None:
+        """icao24 is lower-cased at ingestion, so it needs no expression."""
+        params: list = []
+        sql = compile_predicate(Icao24(icao24=["A0B1C2"]), params)
+        assert "f.icao24 = ANY" in sql
         assert params == [["a0b1c2"]]
 
     def test_icao24_uses_any(self) -> None:

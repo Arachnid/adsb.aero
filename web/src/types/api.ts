@@ -209,7 +209,7 @@ export interface components {
     CallsignPrefix: {
       /**
        * Callsign Prefix
-       * @description Prefix matched against the callsign. The prefix is upper-cased and stripped of hyphens before matching, as stored callsigns are, so `ba-w` matches the callsign `BAW123`. Flights with a null callsign never match.
+       * @description Prefix matched against the callsign. Matching is case-insensitive and ignores hyphens on both sides, so `ba-w` matches the callsign `BAW123`. Flights with a null callsign never match.
        * @example BAW
        */
       callsign_prefix: string;
@@ -283,7 +283,7 @@ export interface components {
     EmitterCategory: {
       /**
        * Emitter Category
-       * @description List of ADS-B emitter category codes to match. Codes are upper-cased before matching, as stored ones are. OR semantics.
+       * @description List of ADS-B emitter category codes to match. Matching is case-insensitive. OR semantics.
        * @example [
        *       "A3",
        *       "A5"
@@ -818,7 +818,7 @@ export interface components {
     Icao24: {
       /**
        * Icao24
-       * @description List of ICAO 24-bit addresses (6 hex chars) to match. Addresses are lower-cased before matching, as stored ones are. OR semantics.
+       * @description List of ICAO 24-bit addresses (6 hex chars) to match. Addresses are lower-cased before matching, as stored ones always are. OR semantics.
        * @example [
        *       "a0b1c2"
        *     ]
@@ -832,7 +832,7 @@ export interface components {
     IcaoType: {
       /**
        * Icao Type
-       * @description List of ICAO type designators to match. Designators are upper-cased before matching, as stored ones are. OR semantics.
+       * @description List of ICAO type designators to match. Matching is case-insensitive. OR semantics.
        * @example [
        *       "B738",
        *       "B737"
@@ -1000,7 +1000,7 @@ export interface components {
     RegistrationPrefix: {
       /**
        * Registration Prefix
-       * @description Prefix matched against the aircraft registration. The prefix is upper-cased and stripped of hyphens before matching, as stored registrations are, so `g-ab` matches the registration `GABCD`. Flights without a linked airframe record never match.
+       * @description Prefix matched against the aircraft registration. Matching is case-insensitive and ignores hyphens on both sides, so `gab` matches the registration `G-ABCD`. Flights without a linked airframe record never match.
        * @example G
        */
       registration_prefix: string;

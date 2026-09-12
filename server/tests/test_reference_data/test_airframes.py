@@ -10,25 +10,25 @@ def _csv_gz(*lines: str) -> bytes:
 
 
 class TestParseRows:
-    def test_identifiers_normalized(self) -> None:
-        """icao24 lower-cases; registration and type designator upper-case and lose hyphens."""
-        rows = _parse_rows(_csv_gz("4CA7B3;g-abcd;b738;0;Boeing 737-800;2015;Ryanair"))
+    def test_registration_keeps_published_spelling(self) -> None:
+        """Registration and type designator are stored as published; icao24 lower-cases."""
+        rows = _parse_rows(_csv_gz("4CA7B3;G-ABCD;B738;0;Boeing 737-800;2015;Ryanair"))
         assert len(rows) == 1
         icao24, registration, icao_type = rows[0][0], rows[0][1], rows[0][2]
         assert icao24 == "4ca7b3"
-        assert registration == "GABCD"
+        assert registration == "G-ABCD"
         assert icao_type == "B738"
+
+    def test_surrounding_whitespace_trimmed(self) -> None:
+        rows = _parse_rows(_csv_gz("4ca7b3;  G-ABCD  ;  B738  ;0"))
+        assert rows[0][1] == "G-ABCD"
+        assert rows[0][2] == "B738"
 
     def test_blank_identifiers_become_none(self) -> None:
         rows = _parse_rows(_csv_gz("4ca7b3;  ;  ;0"))
         assert len(rows) == 1
         assert rows[0][1] is None
         assert rows[0][2] is None
-
-    def test_model_is_left_alone(self) -> None:
-        """Only the identifier columns are normalized; the model name keeps its case."""
-        rows = _parse_rows(_csv_gz("4ca7b3;G-ABCD;B738;0;Boeing 737-800"))
-        assert rows[0][4] == "Boeing 737-800"
 
     def test_short_and_malformed_rows_skipped(self) -> None:
         rows = _parse_rows(_csv_gz("4ca7b3;G-ABCD", "xyz;G-ABCD;B738;0", "4ca7b3;G-ABCD;B738;0"))

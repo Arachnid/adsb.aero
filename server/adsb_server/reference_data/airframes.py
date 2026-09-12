@@ -24,7 +24,7 @@ import httpx
 import sentry_sdk
 
 from adsb_server.config import get_settings
-from adsb_server.idents import normalize_icao24, normalize_ident
+from adsb_server.idents import normalize_icao24
 
 CSV_URL = "https://github.com/wiedehopf/tar1090-db/raw/refs/heads/csv/aircraft.csv.gz"
 BATCH_SIZE = 10_000
@@ -83,10 +83,8 @@ def _parse_rows(data: bytes) -> list[Row]:
             rows.append(
                 (
                     icao24,
-                    # Registration and type designator are normalized to match the
-                    # form query prefixes are normalized to.
-                    normalize_ident(row[1]) or None,
-                    normalize_ident(row[2]) or None,
+                    row[1].strip() or None,
+                    row[2].strip() or None,
                     _parse_flags(row[3].strip()),
                     row[4].strip() or None if len(row) > 4 else None,
                     _parse_year(row[5].strip()) if len(row) > 5 else None,

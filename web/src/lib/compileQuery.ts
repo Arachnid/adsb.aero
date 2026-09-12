@@ -12,10 +12,11 @@ type SpatioTemporalAltitudeValue =
 type ApiGeometry = NonNullable<EndpointWithinValue["geometry"]>;
 
 /**
- * Normalize a callsign or registration prefix for lookup: both are stored
- * upper-case and without hyphens, so upper-case the input and drop hyphens.
- * The server applies the same normalization to the prefix and to what it
- * stores, so this only keeps the request tidy.
+ * Normalize a callsign or registration prefix for lookup: hyphens are
+ * punctuation rather than part of the identifier, and matching is
+ * case-insensitive. The server normalizes the prefix the same way and compares
+ * it against the same normalization of the stored value, so this only keeps
+ * the request tidy.
  */
 export function normalizeIdent(value: string): string {
   return value.trim().toUpperCase().replace(/-/g, "");
