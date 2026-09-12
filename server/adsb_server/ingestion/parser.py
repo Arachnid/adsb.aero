@@ -12,7 +12,7 @@ from typing import IO, Any, cast
 
 import orjson
 
-from adsb_server.callsign import normalize_callsign
+from adsb_server.idents import normalize_icao24, normalize_ident
 from adsb_server.ingestion.models import RawPoint, TraceHeader
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ def _parse_aircraft_obj(
     callsign: str | None = None
     if isinstance(raw_flight, str):
         # Normalized on the way in so prefix lookups can use a plain indexed LIKE.
-        normalized = normalize_callsign(raw_flight)
+        normalized = normalize_ident(raw_flight)
         callsign = normalized if normalized else None
 
     raw_squawk: Any = obj.get("squawk")
@@ -58,7 +58,7 @@ def _parse_aircraft_obj(
     raw_cat: Any = obj.get("category")
     emitter_category: str | None = None
     if isinstance(raw_cat, str) and raw_cat:
-        emitter_category = raw_cat
+        emitter_category = normalize_ident(raw_cat) or None
 
     return callsign, squawk, emitter_category
 
@@ -76,12 +76,12 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
     icao24_raw: Any = data.get("icao")
     if not isinstance(icao24_raw, str):
         raise ValueError(f"Missing or non-string icao field: {icao24_raw!r}")
-    icao24 = icao24_raw.lower()
+    icao24 = normalize_icao24(icao24_raw)
 
     icao_type_raw: Any = data.get("t")
-    icao_type: str | None = (
-        icao_type_raw if isinstance(icao_type_raw, str) and icao_type_raw else None
-    )
+    icao_type: str | None = None
+    if isinstance(icao_type_raw, str):
+        icao_type = normalize_ident(icao_type_raw) or None
 
     header = TraceHeader(icao24=icao24, icao_type=icao_type)
 

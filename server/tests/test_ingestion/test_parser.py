@@ -197,6 +197,17 @@ class TestParseAircraftObj:
         assert len(points) == 1
         assert points[0].callsign is None
 
+    def test_parse_emitter_category_normalized(self) -> None:
+        """aircraft_obj with category='a3' → emitter_category=='A3'."""
+        data = _make_trace(
+            trace_entries=[
+                _make_entry(aircraft_obj={"category": "a3"}),
+            ]
+        )
+        _, points = _parse_trace_json(data)
+        assert len(points) == 1
+        assert points[0].emitter_category == "A3"
+
     def test_parse_emitter_category(self) -> None:
         """aircraft_obj with category='A3' → emitter_category=='A3'."""
         data = _make_trace(
@@ -234,6 +245,12 @@ class TestParseHeader:
     def test_parse_icao_type(self) -> None:
         """t field becomes icao_type."""
         data = _make_trace(t="B738")
+        header, _ = _parse_trace_json(data)
+        assert header.icao_type == "B738"
+
+    def test_parse_icao_type_normalized(self) -> None:
+        """t field is upper-cased."""
+        data = _make_trace(t="b738")
         header, _ = _parse_trace_json(data)
         assert header.icao_type == "B738"
 

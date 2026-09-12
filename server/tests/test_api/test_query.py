@@ -142,6 +142,40 @@ async def test_callsign_prefix_ignores_hyphens(api_client: AsyncClient) -> None:
     assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
 
 
+async def test_registration_prefix_normalized(api_client: AsyncClient) -> None:
+    """A hyphenated, lower-case prefix matches the normalized stored registration."""
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"registration_prefix": "g-test"}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+
+
+async def test_icao_type_case_insensitive(api_client: AsyncClient) -> None:
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"icao_type": ["b738"]}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+
+
+async def test_icao24_case_insensitive(api_client: AsyncClient) -> None:
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"icao24": ["AABBCC"]}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+
+
 async def test_and_composition(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",

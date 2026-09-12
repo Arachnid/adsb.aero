@@ -10,7 +10,7 @@ from datetime import datetime
 
 import pytest
 
-from adsb_server.callsign import normalize_callsign
+from adsb_server.idents import normalize_icao24, normalize_ident
 from adsb_server.query.compiler import CompiledPredicate, compile_predicate
 from adsb_server.query.models import (
     AndPredicate,
@@ -66,12 +66,35 @@ class TestValueValidators:
             ("", ""),
         ],
     )
-    def test_normalize_callsign(self, raw: str, expected: str) -> None:
-        assert normalize_callsign(raw) == expected
+    def test_normalize_ident(self, raw: str, expected: str) -> None:
+        assert normalize_ident(raw) == expected
 
     def test_callsign_prefix_normalized_on_validation(self) -> None:
         pred = CallsignPrefix.model_validate({"callsign_prefix": " g-abcd "})
         assert pred.callsign_prefix == "GABCD"
+
+    def test_registration_prefix_normalized_on_validation(self) -> None:
+        pred = RegistrationPrefix.model_validate({"registration_prefix": " g-ab "})
+        assert pred.registration_prefix == "GAB"
+
+    def test_icao_type_normalized_on_validation(self) -> None:
+        pred = IcaoType.model_validate({"icao_type": ["b738", " a320 "]})
+        assert pred.icao_type == ["B738", "A320"]
+
+    def test_emitter_category_normalized_on_validation(self) -> None:
+        pred = EmitterCategory.model_validate({"emitter_category": ["a3"]})
+        assert pred.emitter_category == ["A3"]
+
+    def test_icao24_normalized_on_validation(self) -> None:
+        pred = Icao24.model_validate({"icao24": [" A0B1C2 "]})
+        assert pred.icao24 == ["a0b1c2"]
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("a0b1c2", "a0b1c2"), ("A0B1C2", "a0b1c2"), ("  A0B1C2  ", "a0b1c2")],
+    )
+    def test_normalize_icao24(self, raw: str, expected: str) -> None:
+        assert normalize_icao24(raw) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -1067,7 +1090,23 @@ class TestAttributePredicates:
         params: list = []
         sql = compile_predicate(RegistrationPrefix(registration_prefix="G-"), params)
         assert "registration LIKE" in sql
-        assert params == ["G-%"]
+        assert params == ["G%"]
+
+    def test_registration_prefix_normalizes_case_and_hyphens(self) -> None:
+        params: list = []
+        sql = compile_predicate(RegistrationPrefix(registration_prefix=" g-ab "), params)
+        assert "registration LIKE" in sql
+        assert params == ["GAB%"]
+
+    def test_icao_type_normalizes_case(self) -> None:
+        params: list = []
+        compile_predicate(IcaoType(icao_type=["b738"]), params)
+        assert params == [["B738"]]
+
+    def test_icao24_normalizes_case(self) -> None:
+        params: list = []
+        compile_predicate(Icao24(icao24=["A0B1C2"]), params)
+        assert params == [["a0b1c2"]]
 
     def test_icao24_uses_any(self) -> None:
         params: list = []

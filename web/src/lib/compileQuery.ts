@@ -12,11 +12,12 @@ type SpatioTemporalAltitudeValue =
 type ApiGeometry = NonNullable<EndpointWithinValue["geometry"]>;
 
 /**
- * Normalize a callsign prefix for lookup: callsigns are broadcast upper-case
- * and without punctuation, so upper-case the input and drop hyphens. The server
- * applies the same normalization to the prefix and the stored callsign.
+ * Normalize a callsign or registration prefix for lookup: both are stored
+ * upper-case and without hyphens, so upper-case the input and drop hyphens.
+ * The server applies the same normalization to the prefix and to what it
+ * stores, so this only keeps the request tidy.
  */
-export function normalizeCallsign(value: string): string {
+export function normalizeIdent(value: string): string {
   return value.trim().toUpperCase().replace(/-/g, "");
 }
 
@@ -67,14 +68,14 @@ function compilePred(
     }
 
     case "callsign": {
-      const prefix = normalizeCallsign(pred.pattern);
+      const prefix = normalizeIdent(pred.pattern);
       return prefix ? { callsign_prefix: prefix } : null;
     }
 
-    case "registration":
-      return pred.prefix.trim()
-        ? { registration_prefix: pred.prefix.trim() }
-        : null;
+    case "registration": {
+      const prefix = normalizeIdent(pred.prefix);
+      return prefix ? { registration_prefix: prefix } : null;
+    }
 
     case "icao24":
       return pred.addresses.length > 0

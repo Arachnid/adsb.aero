@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from adsb_server.callsign import normalize_callsign
+from adsb_server.idents import normalize_icao24, normalize_ident
 
 # ---------------------------------------------------------------------------
 # Response geometry types
@@ -669,18 +669,30 @@ class IcaoType(BaseModel):
     """Flights matching one or more ICAO aircraft type designators."""
 
     icao_type: list[str] = Field(
-        description="List of ICAO type designators to match (case-sensitive). OR semantics.",
+        description="List of ICAO type designators to match. Designators are upper-cased "
+        "before matching, as stored ones are. OR semantics.",
         examples=[["B738", "B737"]],
     )
+
+    @field_validator("icao_type")
+    @classmethod
+    def _normalize(cls, v: list[str]) -> list[str]:
+        return [normalize_ident(t) for t in v]
 
 
 class EmitterCategory(BaseModel):
     """Flights matching one or more ADS-B emitter category codes."""
 
     emitter_category: list[str] = Field(
-        description="List of ADS-B emitter category codes to match. OR semantics.",
+        description="List of ADS-B emitter category codes to match. Codes are upper-cased "
+        "before matching, as stored ones are. OR semantics.",
         examples=[["A3", "A5"]],
     )
+
+    @field_validator("emitter_category")
+    @classmethod
+    def _normalize(cls, v: list[str]) -> list[str]:
+        return [normalize_ident(c) for c in v]
 
 
 class CallsignPrefix(BaseModel):
@@ -696,27 +708,39 @@ class CallsignPrefix(BaseModel):
     @field_validator("callsign_prefix")
     @classmethod
     def _normalize(cls, v: str) -> str:
-        return normalize_callsign(v)
+        return normalize_ident(v)
 
 
 class RegistrationPrefix(BaseModel):
     """Flights whose aircraft registration starts with the given prefix."""
 
     registration_prefix: str = Field(
-        description="Case-sensitive prefix matched against the aircraft registration. "
-        "Flights without a linked airframe record never match.",
-        examples=["G-"],
+        description="Prefix matched against the aircraft registration. The prefix is "
+        "upper-cased and stripped of hyphens before matching, as stored registrations "
+        "are, so `g-ab` matches the registration `GABCD`. Flights without a linked "
+        "airframe record never match.",
+        examples=["G"],
     )
+
+    @field_validator("registration_prefix")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return normalize_ident(v)
 
 
 class Icao24(BaseModel):
     """Flights operated by one of the given ICAO 24-bit aircraft addresses."""
 
     icao24: list[str] = Field(
-        description="List of ICAO 24-bit addresses (6 hex chars, lower-case) to match. "
-        "OR semantics.",
+        description="List of ICAO 24-bit addresses (6 hex chars) to match. Addresses are "
+        "lower-cased before matching, as stored ones are. OR semantics.",
         examples=[["a0b1c2"]],
     )
+
+    @field_validator("icao24")
+    @classmethod
+    def _normalize(cls, v: list[str]) -> list[str]:
+        return [normalize_icao24(a) for a in v]
 
 
 class DurationValue(BaseModel):

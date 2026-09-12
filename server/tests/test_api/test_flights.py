@@ -24,7 +24,7 @@ async def test_get_flight_happy_path(api_client: AsyncClient) -> None:
     assert data["callsign"] == "BAW123"
     assert data["icao_type"] == "B738"
     assert data["emitter_category"] == "A3"
-    assert data["registration"] == "G-TESTA"
+    assert data["registration"] == "GTESTA"
     assert data["model"] == "BOEING 737-800"
     assert data["year"] == 2010
     assert data["operator"] == "Test Airways"

@@ -108,7 +108,8 @@ FLIGHT_C_TRACKS = tint_seq([315, 315, 315], [v[3] for v in _C_VERTS])
 FLIGHT_C_AGL = tfloat_seq([33000.0, 35500.0, 33000.0], [v[3] for v in _C_VERTS])
 _FLIGHT_C_SQUAWK_END = 1743514200.0  # 13:30
 
-FLIGHT_A_REGISTRATION = "G-TESTA"
+# Stored registrations are normalized (upper-case, no hyphens) by the airframe loader.
+FLIGHT_A_REGISTRATION = "GTESTA"
 FLIGHT_A_MODEL = "BOEING 737-800"
 FLIGHT_A_YEAR = 2010
 FLIGHT_A_OPERATOR = "Test Airways"

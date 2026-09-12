@@ -1850,7 +1850,9 @@ function RegistrationCard({
           placeholder="G-"
           value={pred.prefix}
           onChange={(e) => {
-            onChange({ ...pred, prefix: e.target.value });
+            // Registrations are stored upper-case; capitalize as the user types
+            // so the field shows what is actually matched.
+            onChange({ ...pred, prefix: e.target.value.toUpperCase() });
           }}
         />
       </div>
