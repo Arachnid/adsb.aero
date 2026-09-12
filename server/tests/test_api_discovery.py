@@ -1,6 +1,7 @@
 """Tests for the agent-facing surface: CORS, and self-documenting 422s.
 
 None of these touch the database, so they run without a container.
+The static landing-page discovery assets are covered by test_discovery_assets.py.
 """
 
 from __future__ import annotations

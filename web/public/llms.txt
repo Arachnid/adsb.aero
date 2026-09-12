@@ -103,7 +103,7 @@ Request fields:
 | Field | Default | Notes |
 |---|---|---|
 | `match` | `null` | Predicate tree. `null` matches everything. |
-| `end_date` | latest date with data | **Exclusive** upper bound on `start_ts`. |
+| `end_date` | newest flight in the archive | Optional. **Exclusive** upper bound on `start_ts`. Omit it to search the most recent data. |
 | `window_days` | `7` | Window size in days back from `end_date`. **Max 7.** |
 | `start_from` | `null` | Optional floor on `start_ts`. Must be before `end_date`. |
 | `limit` | `100` | 1–10000 per page. |
@@ -117,10 +117,40 @@ Each flight carries `flight_id`, `icao24`, `callsign`, `icao_type`,
 `end_ts`, `start_point`, `end_point`, and `start_airport_ident` /
 `end_airport_ident` (+ `_name`) matched at ingest. With `include_path: true` you
 also get `path`, `timestamps`, `path_tracks`, `path_gs`, `path_vr`, `path_ias`,
-`squawk_runs`, `alt_correction_ft` and `path_agl_ft`.
+`squawk_runs`, `alt_correction_ft` and `path_agl_ft` — all nine come back `null`
+when `include_path` is `false`.
 
 Note the asymmetry: airport idents come back **in results**, but you cannot
 *filter* on them — filtering is geometric, as above.
+
+### How the trajectory fields are encoded
+
+There are two shapes here, and they are **not** parallel arrays. Unpacking them
+as if they were is the easiest way to get silently wrong numbers.
+
+`path` is a GeoJSON **MultiLineString**: `coordinates` is a list of *segments*,
+one per contiguous run of ADS-B coverage (gaps >60 s start a new segment), each
+segment a list of `[lon, lat, pressure_alt_ft]`. `timestamps` mirrors it exactly:
+`timestamps[i][j]` is the time of `path.coordinates[i][j]`.
+
+Every other series — `path_tracks`, `path_gs`, `path_vr`, `path_ias`,
+`path_agl_ft`, `alt_correction_ft`, `squawk_runs` — is a list of segments whose
+entries are **`[unix_epoch_seconds, value]` pairs recorded only where the value
+changed**. Each is simplified independently, so a segment here will *not* have
+the same length as the matching segment of `path.coordinates`. To read a value
+at some instant, take the last entry at or before it (forward-fill).
+
+```jsonc
+{
+  "path":       {"type": "MultiLineString",
+                 "coordinates": [[[-0.12, 51.51, 35000.0], [-1.20, 52.50, 36000.0]]]},
+  "timestamps": [[1743501600.0, 1743505200.0]],       // parallel to coordinates
+  "path_gs":    [[[1743501600.0, 450]]]               // sparse: one change point
+}
+```
+
+So: to plot altitude against time use `path` + `timestamps`; to plot ground
+speed, treat `path_gs` as its own step-function series on its own timestamps.
 
 ## Predicates
 
@@ -146,6 +176,13 @@ Both take the same value object:
 Altitude, time and dwell are evaluated **simultaneously**: `dwell_min_s: 600`
 with `altitude_max: 5000` means ten minutes spent inside the geometry *while
 below 5000 ft*, not ten minutes inside and separately some time below.
+
+**There is a cap on how large `geometry` can be.** These two predicates are
+accelerated by a spatial index that holds at most 1000 cells per geometry —
+about the area of the UK, or a 10°×12° box. Go over it and the query is refused
+with a 422 naming the cell count; split the area into tiles, query each, and
+merge the results. `endpoint_within` is exempt: it tests a single point per
+flight, so any size of geometry is fine there.
 
 **`endpoint_within`** — constrains the departure and/or arrival point.
 
@@ -237,26 +274,39 @@ Emitter categories worth knowing: `A1` light, `A2` small, `A3` large,
 
 ## Pagination and time windows
 
-Two separate mechanisms — this trips people up.
+One response searches at most `window_days` (max 7) of history. `cursor` hides
+that from you: it continues *both* within a window and across window boundaries.
 
-1. **Within a window**, page with `cursor`: if the response has a non-null
-   `cursor`, repeat the *identical* request with `"cursor": <that value>`.
-   Stop when `cursor` is `null`.
-2. **To go further back in time**, the window has exhausted, not the data.
-   Take `window_from` from the response and send it as the next request's
-   `end_date`. Repeat.
+**Page until `cursor` is `null`.** Repeat the identical request with
+`"cursor": <the value from the last response>`. When a window runs out the next
+cursor moves to the preceding window automatically, so the same loop walks
+backwards through time. You do not need to do date arithmetic, and you do not
+need to feed `window_from` back as `end_date`.
 
-So "all of last year" is a loop of up to 52 window-steps, each with its own
-cursor pages. `window_days` is capped at 7 and **will not error** if you ask a
-question spanning a year — you will silently get one week. Check `/data-range`,
-then loop, and tell the user the period you actually covered.
+`cursor` is `null` only when there is nothing further back to read: either the
+walk reached the archive's earliest flight, or it reached the `start_from` you
+set.
+
+That makes the loop terminating but potentially **long** — with no `start_from`
+it will page all the way back to the start of the archive (see `/data-range`;
+currently early 2025). So:
+
+- **Set `start_from`** to the earliest date you actually care about. It is the
+  only thing that stops the walk early, and it is much cheaper than discarding
+  pages you did not want.
+- Or stop the loop yourself after enough results, and say what period you
+  covered. Each response's `window_from` is the floor of the window it came
+  from, which is exactly how far back you have read.
 
 ## Gotchas
 
-- **`window_days` maxes out at 7.** The single most common way to be wrong here
-  is to report a week's results as if they were a year's.
+- **`window_days` maxes out at 7**, so one response covers at most a week.
+  Paging on `cursor` walks further back on its own, but if you stop after a
+  page or two, report the period you actually covered rather than a week's
+  results as if they were a year's.
 - **`include_path: false`** unless you are plotting. A trajectory is thousands
-  of coordinates; `{"limit": 1000}` with paths is a very large response.
+  of coordinates; `{"limit": 1000}` with paths is a very large response. It
+  nulls every time series, `path_agl_ft` and `alt_correction_ft` included.
 - **`end_date` is exclusive** and bounds `start_ts` (departure time), not
   `end_ts`. A flight that departs 23:50 and lands 00:30 belongs to the earlier day.
 - **`callsign_prefix` is a prefix, not a regex.** Callsigns are ICAO format
@@ -273,8 +323,15 @@ then loop, and tell the user the period you actually covered.
 - **Altitude reference matters.** `"ft"` is QNH-corrected MSL; flights lacking
   correction data fall back to pressure altitude (±300 ft). `"fl"` is always
   pressure altitude. Use `"fl"` above the transition altitude, `"ft"` below.
-- **Coverage is not global yet.** Call `/data-range`, and expect gaps outside
-  Europe. An empty result may mean no coverage, not no flights.
+- **Coverage is uneven rather than regional.** It is strong over Europe and
+  North America — major-airport arrivals are usually tracked down to a few
+  hundred feet — and thins out over oceans, and at low level away from populated
+  areas. Call `/data-range` for the dates held. An empty result may mean no
+  coverage, not no flights.
+- **`operator` is the airframe's registered owner, not the airline.** It comes
+  from the registry, so an airliner frequently reads as a bank or leasing trust
+  (`WILMINGTON TRUST CO TR` for a US carrier's 787). Use the `callsign` prefix —
+  the ICAO airline code, e.g. `BAW` — if you want the operating carrier.
 - **Ground data is excluded.** Trajectories are airborne points only, so taxi
   and ground movement do not appear.
 - **A 422 response includes a `hint` field** telling you what was wrong. Read it.

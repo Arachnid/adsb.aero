@@ -527,8 +527,31 @@ async def test_not_predicate(api_client: AsyncClient) -> None:
     assert "aabbcc:2025-04-01T10:00:00Z" not in flight_ids
 
 
-async def test_empty_result(api_client: AsyncClient) -> None:
-    # No start_from: server emits a sentinel cursor so callers can page further back.
+async def test_empty_result_with_archive_behind_it_pages_further_back(
+    api_client: AsyncClient,
+) -> None:
+    # Window sits after the oldest flight held, so there is still archive to walk
+    # back into: the server emits a sentinel cursor to continue from.
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={
+            "end_date": "2025-05-01T00:00:00Z",
+            "window_days": 1,
+            "match": {"icao_type": ["NONEXISTENT"]},
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["flights"] == []
+    assert data["cursor"] is not None
+    assert "window_from" in data
+
+
+async def test_empty_result_at_start_of_archive_yields_null_cursor(
+    api_client: AsyncClient,
+) -> None:
+    # This window already reaches past the oldest flight, so there is nothing
+    # further back and the walk has to stop rather than emit another sentinel.
     resp = await api_client.post(
         "/api/v1/query",
         json=qbody(match={"icao_type": ["NONEXISTENT"]}),
@@ -536,7 +559,7 @@ async def test_empty_result(api_client: AsyncClient) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["flights"] == []
-    assert data["cursor"] is not None
+    assert data["cursor"] is None
     assert "window_from" in data
 
 
@@ -926,3 +949,127 @@ async def test_agl_with_geometry_within(api_client: AsyncClient) -> None:
     assert resp_excl.status_code == 200
     ids_excl = {f["flight_id"] for f in resp_excl.json()["flights"]}
     assert "aabbcc:2025-04-01T10:00:00Z" not in ids_excl
+
+
+# ---------------------------------------------------------------------------
+# Request ergonomics: the contract llms.txt documents
+# ---------------------------------------------------------------------------
+
+# The newest flight in the test fixture (Flight C, 13:00).
+_NEWEST_FLIGHT_ID = "112233:2025-04-01T13:00:00Z"
+
+# Every per-flight time series, all of which include_path=false must suppress.
+_PATH_SERIES = (
+    "path",
+    "timestamps",
+    "path_tracks",
+    "path_gs",
+    "path_vr",
+    "path_ias",
+    "squawk_runs",
+    "alt_correction_ft",
+    "path_agl_ft",
+)
+
+
+async def test_include_path_false_nulls_every_series(api_client: AsyncClient) -> None:
+    """`include_path: false` must suppress all nine series.
+
+    `alt_correction_ft` and `path_agl_ft` were parsed unconditionally, so a
+    listing query still carried a full AGL time series per flight — the bulk
+    that setting the flag is meant to avoid.
+    """
+    resp = await api_client.post("/api/v1/query", json=qbody(limit=100, include_path=False))
+    assert resp.status_code == 200
+    flights = resp.json()["flights"]
+    assert flights, "fixture should return flights"
+    for flight in flights:
+        for field in _PATH_SERIES:
+            assert flight[field] is None, f"{field} leaked with include_path=false"
+
+
+async def test_include_path_true_still_returns_agl(api_client: AsyncClient) -> None:
+    """The converse: the fixture has AGL data, so the default must still include it."""
+    resp = await api_client.post("/api/v1/query", json=qbody(limit=100))
+    assert resp.status_code == 200
+    agl = {f["flight_id"]: f["path_agl_ft"] for f in resp.json()["flights"]}
+    assert agl.get("aabbcc:2025-04-01T10:00:00Z") is not None
+
+
+async def test_end_date_is_optional(api_client: AsyncClient) -> None:
+    """llms.txt documents end_date as defaulting to the newest data.
+
+    It was a required field, so every worked example in the guide — none of
+    which set it — failed with `end_date: Field required`.
+    """
+    resp = await api_client.post("/api/v1/query", json={"limit": 10, "include_path": False})
+    assert resp.status_code == 200
+    assert _NEWEST_FLIGHT_ID in {f["flight_id"] for f in resp.json()["flights"]}
+
+
+async def test_start_from_still_validated_without_end_date(api_client: AsyncClient) -> None:
+    """Making end_date optional must not drop the start_from ordering check."""
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={
+            "end_date": "2025-04-01T00:00:00Z",
+            "start_from": "2025-04-02T00:00:00Z",
+            "limit": 10,
+        },
+    )
+    assert resp.status_code == 422
+
+
+async def test_cursor_walk_terminates_at_the_start_of_the_archive(
+    api_client: AsyncClient,
+) -> None:
+    """Paging until `cursor` is null has to actually end.
+
+    An exhausted window emits a sentinel cursor pointing at the preceding
+    window, so without an end-of-archive check the documented loop walks
+    backwards for ever, long past the oldest flight held.
+    """
+    body: dict[str, Any] = {"window_days": 1, "limit": 1, "include_path": False}
+    pages = 0
+    seen: set[str] = set()
+    for _ in range(30):  # generous guard; the fixture spans a single day
+        resp = await api_client.post("/api/v1/query", json=body)
+        assert resp.status_code == 200
+        data = resp.json()
+        pages += 1
+        seen.update(f["flight_id"] for f in data["flights"])
+        if data["cursor"] is None:
+            break
+        body = {**body, "cursor": data["cursor"]}
+    else:
+        pytest.fail("cursor never became null: the backwards walk does not terminate")
+    assert seen, "the walk should have returned the fixture flights"
+    assert pages < 30
+
+
+async def test_cursor_walk_stops_at_start_from(api_client: AsyncClient) -> None:
+    """An explicit floor still ends the walk, independently of the archive check."""
+    body: dict[str, Any] = {
+        "end_date": "2025-04-02T00:00:00Z",
+        "start_from": "2025-04-01T00:00:00Z",
+        "window_days": 1,
+        "limit": 100,
+        "include_path": False,
+    }
+    resp = await api_client.post("/api/v1/query", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["cursor"] is None
+
+
+async def test_oversized_geometry_error_explains_itself(api_client: AsyncClient) -> None:
+    """llms.txt promises a 422 carries a `hint`; this path returned a bare string."""
+    huge = {"type": "Circle", "coordinates": [0.0, 51.0], "radius": 1_500_000}
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"trajectory_intersects": {"geometry": huge}}, limit=10),
+    )
+    assert resp.status_code == 422
+    payload = resp.json()
+    assert "H3 cells" in payload["detail"]
+    assert payload["documentation"].endswith("/llms.txt")
+    assert "llms.txt" in payload["hint"]

@@ -729,7 +729,7 @@ export interface components {
       path_tracks?: number[][][] | null;
       /**
        * Path Gs
-       * @description Ground speed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no ground speed data was available for this flight.
+       * @description Ground speed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Omitted when `include_path` is false; null when no ground speed data was available for this flight.
        * @example [
        *       [
        *         [
@@ -746,7 +746,7 @@ export interface components {
       path_gs?: number[][][] | null;
       /**
        * Path Vr
-       * @description Vertical rate timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, fpm], ...]`. Rounded to the nearest integer fpm. Positive = climbing, negative = descending. Derived from the path-simplified points, then further reduced by TD-TR with ε=100 fpm. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no vertical rate data was available for this flight.
+       * @description Vertical rate timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, fpm], ...]`. Rounded to the nearest integer fpm. Positive = climbing, negative = descending. Derived from the path-simplified points, then further reduced by TD-TR with ε=100 fpm. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Omitted when `include_path` is false; null when no vertical rate data was available for this flight.
        * @example [
        *       [
        *         [
@@ -763,7 +763,7 @@ export interface components {
       path_vr?: number[][][] | null;
       /**
        * Path Ias
-       * @description Indicated airspeed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when no IAS data was available for this flight.
+       * @description Indicated airspeed timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, knots], ...]`. Rounded to the nearest integer knot. Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). Step-interpolated: forward-fill each entry to the next within each sub-sequence. Omitted when `include_path` is false; null when no IAS data was available for this flight.
        * @example [
        *       [
        *         [
@@ -793,7 +793,7 @@ export interface components {
       squawk_runs?: [number, string][][] | null;
       /**
        * Alt Correction Ft
-       * @description QNH altitude correction timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, correction_ft], ...]`. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Add to the pressure altitude from `path.coordinates[i][j][2]` to obtain feet MSL. Null when no correction data was available at ingestion time.
+       * @description QNH altitude correction timeseries, structured as a list of sub-sequences matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, correction_ft], ...]`. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Add to the pressure altitude from `path.coordinates[i][j][2]` to obtain feet MSL. Omitted when `include_path` is false; null when no correction data was available at ingestion time.
        * @example [
        *       [
        *         [
@@ -810,7 +810,7 @@ export interface components {
       alt_correction_ft?: number[][][] | null;
       /**
        * Path Agl Ft
-       * @description Above-ground-level (AGL) height timeseries, structured as a list of sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. Computed from pressure altitude + QNH correction - GLO-90 terrain elevation. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Null when terrain data was unavailable at ingestion time.
+       * @description Above-ground-level (AGL) height timeseries, structured as a list of sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. Computed from pressure altitude + QNH correction - GLO-90 terrain elevation. Step-interpolated: forward-fill each entry to the next within each sub-sequence. Omitted when `include_path` is false; null when terrain data was unavailable at ingestion time.
        * @example [
        *       [
        *         [
@@ -1107,11 +1107,10 @@ export interface components {
     QueryRequest: {
       /**
        * End Date
-       * Format: date-time
-       * @description Exclusive upper bound on flight start time (`start_ts`). The query returns flights whose `start_ts` is strictly before this value. Defaults to the most recent date with data.
+       * @description Exclusive upper bound on flight start time (`start_ts`). The query returns flights whose `start_ts` is strictly before this value. Omit it to search the newest data: it then defaults to just past the most recent flight in the archive.
        * @example 2025-04-02T00:00:00Z
        */
-      end_date: string;
+      end_date?: string | null;
       /**
        * Start From
        * @description Optional inclusive lower bound on `start_ts`. When set, overrides the automatic window floor if it falls later. Must be strictly before `end_date`.
@@ -1155,7 +1154,7 @@ export interface components {
       cursor?: string | null;
       /**
        * Include Path
-       * @description Whether to include `path`, `timestamps`, `path_tracks`, and `squawk_runs` in each result. Set to `false` for lightweight listing queries where trajectory data is not needed.
+       * @description Whether to include the per-flight time series in each result: `path`, `timestamps`, `path_tracks`, `path_gs`, `path_vr`, `path_ias`, `squawk_runs`, `alt_correction_ft` and `path_agl_ft`. Set to `false` for listing queries — every one of those fields then comes back `null`, which is usually an order of magnitude less data.
        * @default true
        */
       include_path: boolean;
@@ -1172,13 +1171,13 @@ export interface components {
       flights: components["schemas"]["FlightDetail"][];
       /**
        * Cursor
-       * @description Opaque continuation token. Present when the current window contained more results than `limit`; pass unchanged as `cursor` in the next request. `null` when the window was exhausted — use `window_from` as `end_date` to continue searching earlier windows.
+       * @description Opaque continuation token: pass it back unchanged as `cursor` to get the next page. It covers both kinds of continuation — more results inside the current window, and stepping back to the preceding window once this one is exhausted — so paging until `cursor` is `null` walks backwards through history without any date arithmetic by the caller. `null` means there is nothing further back to read: either the archive's earliest flight has been reached, or `start_from` was set and the walk has reached it. Because a walk can cross many windows, set `start_from` (or stop early yourself) when you only want a bounded period.
        */
       cursor: string | null;
       /**
        * Window From
        * Format: date-time
-       * @description The inclusive lower bound on `start_ts` that was actually applied. Reflects the sliding window floor (cursor position minus `window_days`, or `start_from` if that is later). Pass this as `end_date` on the next request to continue searching the preceding window.
+       * @description The inclusive lower bound on `start_ts` that was actually applied — the sliding window floor (cursor position minus `window_days`, or `start_from` if that is later). Useful for reporting the period actually covered; you do not need to feed it back, as `cursor` already steps to the next window.
        */
       window_from: string;
     };

@@ -1,9 +1,9 @@
 """Unit tests for geometry size limiting inside compile_predicate.
 
-These tests verify that oversized geometries raise ValueError at compile time
-and that the compiler produces the size error message for trajectory predicates
-only (EndpointWithin is exempt because it does not use the H3 GIN index).
-No database is required.
+These tests verify that oversized geometries raise GeometryTooLargeError at
+compile time, that an area up to the documented cap still compiles, and that the
+limit applies to trajectory predicates only (EndpointWithin is exempt because it
+does not use the H3 GIN index). No database is required.
 """
 
 from __future__ import annotations
@@ -43,8 +43,16 @@ _HUGE_POLY = {
 # Small circle — well under the cell limit.
 _SMALL_CIRCLE = {"type": "Circle", "coordinates": [-1.0, 52.0], "radius": 50_000}
 
-# Large circle with radius 600 km — exceeds the cell limit.
-_HUGE_CIRCLE = {"type": "Circle", "coordinates": [0.0, 51.0], "radius": 600_000}
+# Large circle with radius 1500 km (~7M km²) — comfortably over the cell limit.
+_HUGE_CIRCLE = {"type": "Circle", "coordinates": [0.0, 51.0], "radius": 1_500_000}
+
+# The bounding box used by the "squawking 7700" worked example in llms.txt.
+# ~723 cells once padded: under the cap, and the largest area the docs promise.
+# A cap set below this made the documented example fail with a 422.
+_UK_BOX = {
+    "type": "Polygon",
+    "coordinates": [[[-8, 49], [2, 49], [2, 61], [-8, 61], [-8, 49]]],
+}
 
 
 class TestGeometrySizeLimit:
@@ -58,6 +66,14 @@ class TestGeometrySizeLimit:
     def test_small_circle_within_compiles(self) -> None:
         pred = TrajectoryWithin(
             trajectory_within=SpatioTemporalAltitudeValue(geometry=_SMALL_CIRCLE)
+        )
+        params: list[object] = []
+        compile_predicate(pred, params)  # must not raise
+
+    def test_uk_sized_box_compiles(self) -> None:
+        """The llms.txt 7700 example must not be refused by its own documented cap."""
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_UK_BOX)
         )
         params: list[object] = []
         compile_predicate(pred, params)  # must not raise

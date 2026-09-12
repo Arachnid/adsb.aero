@@ -220,7 +220,8 @@ class FlightDetail(FlightSummary):
         "Rounded to the nearest integer knot. "
         "Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. "
         "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
-        "Null when no ground speed data was available for this flight.",
+        "Omitted when `include_path` is false; "
+        "null when no ground speed data was available for this flight.",
         examples=[[[[1743501600.0, 450], [1743505200.0, 460]]]],
     )
     path_vr: list[list[list[float]]] | None = Field(
@@ -230,7 +231,8 @@ class FlightDetail(FlightSummary):
         "Rounded to the nearest integer fpm. Positive = climbing, negative = descending. "
         "Derived from the path-simplified points, then further reduced by TD-TR with ε=100 fpm. "
         "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
-        "Null when no vertical rate data was available for this flight.",
+        "Omitted when `include_path` is false; "
+        "null when no vertical rate data was available for this flight.",
         examples=[[[[1743501600.0, 0], [1743505200.0, -512]]]],
     )
     path_ias: list[list[list[float]]] | None = Field(
@@ -241,7 +243,8 @@ class FlightDetail(FlightSummary):
         "Derived from the path-simplified points, then further reduced by TD-TR with ε=5 kt. "
         "Sparse: only available for aircraft broadcasting Mode S EHS (~27% of flights). "
         "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
-        "Null when no IAS data was available for this flight.",
+        "Omitted when `include_path` is false; "
+        "null when no IAS data was available for this flight.",
         examples=[[[[1743501600.0, 275]]]],
     )
     squawk_runs: list[list[tuple[float, str]]] | None = Field(
@@ -259,7 +262,8 @@ class FlightDetail(FlightSummary):
         "matching `path.coordinates`. Each sub-sequence is `[[unix_epoch_s, correction_ft], ...]`. "
         "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
         "Add to the pressure altitude from `path.coordinates[i][j][2]` to obtain feet MSL. "
-        "Null when no correction data was available at ingestion time.",
+        "Omitted when `include_path` is false; "
+        "null when no correction data was available at ingestion time.",
         examples=[[[[1743501600.0, 14.5], [1743505200.0, 14.5]]]],
     )
     path_agl_ft: list[list[list[float]]] | None = Field(
@@ -268,7 +272,8 @@ class FlightDetail(FlightSummary):
         "sub-sequences. Each sub-sequence is `[[unix_epoch_s, agl_ft], ...]`. "
         "Computed from pressure altitude + QNH correction - GLO-90 terrain elevation. "
         "Step-interpolated: forward-fill each entry to the next within each sub-sequence. "
-        "Null when terrain data was unavailable at ingestion time.",
+        "Omitted when `include_path` is false; "
+        "null when terrain data was unavailable at ingestion time.",
         examples=[[[[1743501600.0, 1200.0], [1743505200.0, 850.0]]]],
     )
     raw_point_count: int = Field(
@@ -288,16 +293,21 @@ class QueryResponse(BaseModel):
         description="Flights on this page, ordered by `start_ts` descending then `icao24` descending."  # noqa: E501
     )
     cursor: str | None = Field(
-        description="Opaque continuation token. Present when the current window contained "
-        "more results than `limit`; pass unchanged as `cursor` in the next request. "
-        "`null` when the window was exhausted — use `window_from` as `end_date` to "
-        "continue searching earlier windows."
+        description="Opaque continuation token: pass it back unchanged as `cursor` to get "
+        "the next page. It covers both kinds of continuation — more results inside the "
+        "current window, and stepping back to the preceding window once this one is "
+        "exhausted — so paging until `cursor` is `null` walks backwards through history "
+        "without any date arithmetic by the caller. `null` means there is nothing "
+        "further back to read: either the archive's earliest flight has been reached, "
+        "or `start_from` was set and the walk has reached it. Because a walk can cross "
+        "many windows, set `start_from` (or stop early yourself) when you only want a "
+        "bounded period."
     )
     window_from: datetime = Field(
-        description="The inclusive lower bound on `start_ts` that was actually applied. "
-        "Reflects the sliding window floor (cursor position minus `window_days`, "
-        "or `start_from` if that is later). Pass this as `end_date` on the next "
-        "request to continue searching the preceding window."
+        description="The inclusive lower bound on `start_ts` that was actually applied — "
+        "the sliding window floor (cursor position minus `window_days`, or `start_from` "
+        "if that is later). Useful for reporting the period actually covered; you do not "
+        "need to feed it back, as `cursor` already steps to the next window."
     )
 
 
@@ -845,10 +855,12 @@ NotPredicate.model_rebuild()
 class QueryRequest(BaseModel):
     """Request body for `POST /api/v1/query`."""
 
-    end_date: UtcDatetime = Field(
+    end_date: UtcDatetime | None = Field(
+        default=None,
         description="Exclusive upper bound on flight start time (`start_ts`). "
         "The query returns flights whose `start_ts` is strictly before this value. "
-        "Defaults to the most recent date with data.",
+        "Omit it to search the newest data: it then defaults to just past the most "
+        "recent flight in the archive.",
         examples=["2025-04-02T00:00:00Z"],
     )
     start_from: UtcDatetime | None = Field(
@@ -884,13 +896,20 @@ class QueryRequest(BaseModel):
     )
     include_path: bool = Field(
         default=True,
-        description="Whether to include `path`, `timestamps`, `path_tracks`, and `squawk_runs` in each result. "  # noqa: E501
-        "Set to `false` for lightweight listing queries where trajectory data is not needed.",
+        description="Whether to include the per-flight time series in each result: "
+        "`path`, `timestamps`, `path_tracks`, `path_gs`, `path_vr`, `path_ias`, "
+        "`squawk_runs`, `alt_correction_ft` and `path_agl_ft`. Set to `false` for "
+        "listing queries — every one of those fields then comes back `null`, which is "
+        "usually an order of magnitude less data.",
     )
 
     @model_validator(mode="after")
     def _validate_dates(self) -> QueryRequest:
-        if self.start_from is not None and self.start_from >= self.end_date:
+        if (
+            self.end_date is not None
+            and self.start_from is not None
+            and self.start_from >= self.end_date
+        ):
             raise ValueError("start_from must be strictly before end_date")
         return self
 

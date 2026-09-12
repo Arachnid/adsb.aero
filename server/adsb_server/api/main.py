@@ -6,9 +6,10 @@ import json
 import logging
 import re
 import textwrap
+import time
 from collections.abc import AsyncGenerator  # noqa: TC003
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Path, Query, Request
@@ -152,6 +153,21 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     )
 
 
+@app.exception_handler(HTTPException)
+async def http_error_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Attach the docs pointer to errors the API raises deliberately.
+
+    llms.txt tells agents that a rejected request explains itself, but only body
+    validation failures carried a `hint`; everything raised from the query path —
+    an oversized geometry, a statement timeout — came back as a bare `detail`
+    string. `detail` keeps its exact shape, so existing clients are unaffected.
+    """
+    content: dict[str, Any] = {"detail": exc.detail, "documentation": DOCS_URL}
+    if isinstance(exc.detail, str):
+        content["hint"] = f"{exc.detail} Full query vocabulary: {DOCS_URL}"
+    return JSONResponse(status_code=exc.status_code, content=content, headers=exc.headers)
+
+
 # ---------------------------------------------------------------------------
 # Documentation endpoints
 # ---------------------------------------------------------------------------
@@ -177,6 +193,32 @@ async def get_pool(request: Request) -> asyncpg.Pool:
 
 def get_cache(request: Request) -> ResultCache | None:
     return getattr(request.app.state, "redis", None)
+
+
+# The archive's first and last `start_ts` back two things on the query path: the
+# default `end_date`, and the end-of-archive test that terminates a cursor walk.
+# The underlying MIN/MAX costs ~100 ms and only moves when a nightly ingestion
+# batch lands, so it is cached on app state rather than run per request.
+_DATA_BOUNDS_TTL_S = 300.0
+
+
+async def get_data_bounds(request: Request) -> tuple[datetime | None, datetime | None]:
+    """Return `(earliest_start_ts, latest_start_ts)`, or `(None, None)` if no flights exist."""
+    now = time.monotonic()
+    cached: tuple[float, datetime | None, datetime | None] | None = getattr(
+        request.app.state, "data_bounds", None
+    )
+    if cached is not None and now - cached[0] < _DATA_BOUNDS_TTL_S:
+        return cached[1], cached[2]
+
+    pool = await get_pool(request)
+    row = await pool.fetchrow(
+        "SELECT MIN(start_ts) AS first_ts, MAX(start_ts) AS last_ts FROM flights"
+    )
+    first: datetime | None = row["first_ts"] if row else None
+    last: datetime | None = row["last_ts"] if row else None
+    request.app.state.data_bounds = (now, first, last)
+    return first, last
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +427,8 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
     path_vr = None
     path_ias = None
     squawk_runs = None
+    alt_correction_ft = None
+    path_agl_ft = None
     if include_path:
         path, timestamps = _parse_path(row["path_text"])
         path_tracks = _parse_tint_series(row["path_tracks_text"])
@@ -392,8 +436,8 @@ def _row_to_detail(row: asyncpg.Record, include_path: bool = True) -> FlightDeta
         path_vr = _parse_tint_series(row["path_vr_text"])
         path_ias = _parse_tint_series(row["path_ias_text"])
         squawk_runs = _parse_squawk_seq(row["squawk_seq_text"])
-    alt_correction_ft = _parse_alt_correction(row["alt_correction_ft_text"])
-    path_agl_ft = _parse_alt_correction(row["path_agl_ft_text"])
+        alt_correction_ft = _parse_alt_correction(row["alt_correction_ft_text"])
+        path_agl_ft = _parse_alt_correction(row["path_agl_ft_text"])
     return FlightDetail(
         flight_id=row["flight_id"],
         icao24=row["icao24"],
@@ -602,6 +646,19 @@ async def query_flights(
     pool = await get_pool(request)
     cache = get_cache(request)
 
+    # Resolve the default end_date *before* the cache key is computed: the key has
+    # to name the window actually searched, or a request that omitted end_date
+    # would keep serving the same window for QUERY_TTL after a new batch lands.
+    earliest_ts, latest_ts = await get_data_bounds(request)
+    if body.end_date is None:
+        # end_date is exclusive, so step just past the newest flight to include it.
+        end_date = (
+            latest_ts + timedelta(microseconds=1) if latest_ts is not None else datetime.now(UTC)
+        )
+        body = body.model_copy(update={"end_date": end_date})
+    else:
+        end_date = body.end_date
+
     cache_key = ResultCache.query_key(body.model_dump_json()) if cache else ""
     if cache and (cached := await cache.get(cache_key)):
         return QueryResponse.model_validate_json(cached)
@@ -616,9 +673,7 @@ async def query_flights(
 
     # Effective upper bound: the earlier of end_date and the cursor position.
     # This anchors the window floor so each page slides back by window_days.
-    effective_end: datetime = (
-        min(body.end_date, cursor_ts) if cursor_ts is not None else body.end_date
-    )
+    effective_end: datetime = min(end_date, cursor_ts) if cursor_ts is not None else end_date
 
     # Window floor: window_days back from the effective upper bound, then clamped
     # up to start_from if the caller supplied an explicit earliest bound.
@@ -631,7 +686,7 @@ async def query_flights(
 
     # Time bounds: window floor (inclusive) and end_date (exclusive).
     where_parts.append(f"f.start_ts >= {_p(params, window_floor)}")
-    where_parts.append(f"f.start_ts < {_p(params, body.end_date)}")
+    where_parts.append(f"f.start_ts < {_p(params, end_date)}")
 
     compiled: CompiledPredicate | None = None
     if body.match is not None:
@@ -729,10 +784,12 @@ async def query_flights(
     else:
         # Window exhausted.  Emit a sentinel cursor pointing to window_floor so
         # the next call automatically searches [window_floor - window_days, window_floor).
-        # Exception: if window_floor was clamped to start_from we've reached the
-        # explicit floor and there is nowhere further to look.
+        # Two things stop the walk, and both must, or "page until cursor is null"
+        # never terminates: an explicit start_from floor, and running off the
+        # start of the archive.
         floored_by_start = body.start_from is not None and window_floor <= body.start_from
-        if not floored_by_start:
+        exhausted_archive = earliest_ts is None or window_floor <= earliest_ts
+        if not floored_by_start and not exhausted_archive:
             next_cursor = encode_cursor(window_floor, "")
 
     response = QueryResponse(

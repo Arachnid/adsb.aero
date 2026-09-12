@@ -89,6 +89,16 @@ def test_documents_the_window_days_cap(llms_text: str) -> None:
     assert str(max_days) in llms_text, f"llms.txt must state the window_days maximum ({max_days})"
 
 
+def test_documents_the_geometry_cell_cap(llms_text: str) -> None:
+    """An undocumented cap reads as an arbitrary refusal mid-task, so state the number."""
+    from adsb_server.query.compiler import MAX_QUERY_H3_CELLS
+
+    assert str(MAX_QUERY_H3_CELLS) in llms_text, (
+        f"llms.txt must state the geometry cell cap ({MAX_QUERY_H3_CELLS}) "
+        "and how to work around it."
+    )
+
+
 def test_aerodrome_airspace_types_are_documented(llms_text: str) -> None:
     """The airspace types /airports/{code} can return are named in the doc."""
     from adsb_server.query.models import AERODROME_AIRSPACE_TYPES

@@ -26,22 +26,34 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="root"></div>
-    <!-- Visible only without JS. Many fetch tools and agents render the body and
-         drop <head>, so the discovery links are repeated here as real anchors. -->
-    <noscript>
-      <h1>adsb.aero</h1>
-      <p>
-        Historical ADS-B flight trajectory search. The map interface needs
-        JavaScript, but all of the data is available over a public, unauthenticated
-        HTTP API.
-      </p>
-      <ul>
-        <li><a href="/llms.txt">/llms.txt</a> — complete API guide, written for LLM agents</li>
-        <li><a href="/api/docs">/api/docs</a> — interactive API reference</li>
-        <li><a href="/api/openapi.json">/api/openapi.json</a> — OpenAPI schema</li>
-      </ul>
-    </noscript>
+    <!-- Discovery fallback. This lives in ordinary body markup rather than in
+         <head> or <noscript> because the tools that need it most — the
+         HTML-to-markdown fetchers agents use — routinely render the body while
+         dropping both, which left an agent handed only "adsb.aero" with nothing
+         to follow. React clears #root on mount, and the inline script below
+         hides this before first paint, so browsers never see it; fetchers and
+         JS-less clients, which run neither, get the links as real anchors. -->
+    <div id="root">
+      <div id="discovery-fallback">
+        <h1>adsb.aero</h1>
+        <p>
+          Historical ADS-B flight trajectory search. The map interface needs
+          JavaScript, but all of the data is available over a public, unauthenticated
+          HTTP API.
+        </p>
+        <ul>
+          <li><a href="/llms.txt">/llms.txt</a> — complete API guide, written for LLM agents</li>
+          <li><a href="/api/docs">/api/docs</a> — interactive API reference</li>
+          <li><a href="/api/openapi.json">/api/openapi.json</a> — OpenAPI schema</li>
+        </ul>
+      </div>
+    </div>
+    <script>
+      // Runs before first paint, so the fallback never flashes. Deliberately not
+      // a CSS rule: markdown converters honour inline styles but do not execute
+      // scripts, and this content exists for exactly those converters.
+      document.getElementById("discovery-fallback").hidden = true;
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

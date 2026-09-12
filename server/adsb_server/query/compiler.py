@@ -86,7 +86,14 @@ def _p(params: list[Any], val: Any) -> str:
     return f"${len(params)}"
 
 
-MAX_QUERY_H3_CELLS = 250
+# Ceiling on the H3 res-4 pre-filter array for a single geometry.  The GIN probe
+# cost grows with the number of cells: a UK-sized box (~723 cells after padding)
+# probes in ~0.9 s over a 7-day window, which is the largest area worth allowing
+# on one box.  Anything past that is refused rather than silently skipping the
+# pre-filter — without it the outer ST_Intersects/eIntersects pass runs over the
+# whole window, which is orders of magnitude slower for a common squawk or type.
+# The 15 s statement_timeout is the backstop for what still gets through.
+MAX_QUERY_H3_CELLS = 1000
 
 # Upper bound for the inner subquery LIMIT used in two-level query plans.
 # Forces PostgreSQL to materialise the inner result (sort by start_ts) before
@@ -283,7 +290,9 @@ def _compile_spatial_path(
             if len(h3_cells) > MAX_QUERY_H3_CELLS:
                 raise GeometryTooLargeError(
                     f"Query geometry covers {len(h3_cells)} H3 cells "
-                    f"(limit {MAX_QUERY_H3_CELLS}). Reduce the search area."
+                    f"(limit {MAX_QUERY_H3_CELLS}, roughly the area of the UK). "
+                    "Split the area into smaller geometries, query them separately, "
+                    "and combine the results."
                 )
             h3_p = _p(params, h3_cells)
             parts.append(f"path_h3 && {h3_p}::h3index[]")

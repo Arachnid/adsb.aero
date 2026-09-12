@@ -93,6 +93,12 @@ server {
 
     # SPA — fall back to index.html for all non-file routes
     location / {
+        # The <link rel> hints from index.html, repeated as response headers.
+        # A fetch tool that converts the HTML to markdown typically drops <head>
+        # entirely; headers are the one discovery channel such a pipeline cannot
+        # throw away, so an agent handed only the domain still gets pointed at
+        # the API.
+        add_header Link '</llms.txt>; rel="alternate"; type="text/markdown"; title="API guide for LLM agents", </api/openapi.json>; rel="service-desc"; type="application/openapi+json", </api/docs>; rel="help"' always;
         try_files $uri $uri/ /index.html;
     }
 }
