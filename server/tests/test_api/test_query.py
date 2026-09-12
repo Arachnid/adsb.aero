@@ -603,6 +603,34 @@ async def test_start_from_after_end_date_rejected(api_client: AsyncClient) -> No
     assert resp.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "start_from",
+    ["2025-04-01", "2025-04-01T09:00:00", "2025-04-01T11:00:00+02:00"],
+    ids=["date-only", "naive", "offset"],
+)
+async def test_start_from_without_utc_suffix_is_accepted(
+    api_client: AsyncClient, start_from: str
+) -> None:
+    """A start_from lacking a `Z` used to 500 (TypeError comparing naive to aware)."""
+    resp = await api_client.post(
+        "/api/v1/query",
+        json={"end_date": "2025-04-02T00:00:00Z", "start_from": start_from},
+    )
+    assert resp.status_code == 200
+
+
+async def test_naive_start_from_bounds_match_utc_spelling(api_client: AsyncClient) -> None:
+    """A naive bound is interpreted as UTC, so it selects the same flights as the Z form."""
+    naive = await api_client.post(
+        "/api/v1/query",
+        json={"end_date": "2025-04-01T11:00:00", "start_from": "2025-04-01T09:00:00"},
+    )
+    assert naive.status_code == 200
+    flight_ids = {f["flight_id"] for f in naive.json()["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+
+
 async def test_start_from_equal_end_date_rejected(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",

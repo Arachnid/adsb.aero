@@ -63,7 +63,7 @@ Also watch for schemas splitting into `-Input`/`-Output` pairs. Pydantic emits t
 
 ## Python environment
 
-Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. `server/pyproject.toml` requires Python >= 3.14; with an older interpreter pip fails with "Package 'adsb-server' requires a different Python". Activate with `source server/.venv/bin/activate` before running Python tools.
+Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. `server/pyproject.toml` requires Python >= 3.14; with an older interpreter pip fails with "Package 'adsb-server' requires a different Python", so create the venv against 3.14 explicitly (`python3.14 -m venv server/.venv`, or `uv venv --python 3.14 server/.venv`) rather than relying on whatever `python` is on PATH. Activate with `source server/.venv/bin/activate` before running Python tools.
 
 ## Agent-facing docs
 
