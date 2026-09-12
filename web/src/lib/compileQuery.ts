@@ -12,6 +12,17 @@ type SpatioTemporalAltitudeValue =
 type ApiGeometry = NonNullable<EndpointWithinValue["geometry"]>;
 
 /**
+ * Normalize a callsign or registration prefix for lookup: hyphens are
+ * punctuation rather than part of the identifier, and matching is
+ * case-insensitive. The server normalizes the prefix the same way and compares
+ * it against the same normalization of the stored value, so this only keeps
+ * the request tidy.
+ */
+export function normalizeIdent(value: string): string {
+  return value.trim().toUpperCase().replace(/-/g, "");
+}
+
+/**
  * Compile a FilterGroup into an API Predicate. Returns null for an empty group
  * (caller should send `match: null` to return all flights).
  *
@@ -57,15 +68,15 @@ function compilePred(
       return { and: parts };
     }
 
-    case "callsign":
-      return pred.pattern.trim()
-        ? { callsign_prefix: pred.pattern.trim() }
-        : null;
+    case "callsign": {
+      const prefix = normalizeIdent(pred.pattern);
+      return prefix ? { callsign_prefix: prefix } : null;
+    }
 
-    case "registration":
-      return pred.prefix.trim()
-        ? { registration_prefix: pred.prefix.trim() }
-        : null;
+    case "registration": {
+      const prefix = normalizeIdent(pred.prefix);
+      return prefix ? { registration_prefix: prefix } : null;
+    }
 
     case "icao24":
       return pred.addresses.length > 0

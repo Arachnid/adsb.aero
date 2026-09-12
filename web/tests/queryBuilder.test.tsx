@@ -270,6 +270,18 @@ describe("QueryBuilderBody", () => {
       const pred = updated.items[0];
       expect(pred.kind === "callsign" && pred.pattern).toBe("DLH");
     });
+
+    it("capitalizes lower-case input", () => {
+      const onChange = vi.fn();
+      const group = makeGroup([{ id: "c1", kind: "callsign", pattern: "" }]);
+      render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
+      fireEvent.change(screen.getByPlaceholderText("BAW"), {
+        target: { value: "dlh4" },
+      });
+      const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+      const pred = updated.items[0];
+      expect(pred.kind === "callsign" && pred.pattern).toBe("DLH4");
+    });
   });
 
   // ---- RegistrationCard ------------------------------------------------------
@@ -291,6 +303,18 @@ describe("QueryBuilderBody", () => {
       const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
       const pred = updated.items[0];
       expect(pred.kind === "registration" && pred.prefix).toBe("N");
+    });
+
+    it("capitalizes lower-case input", () => {
+      const onChange = vi.fn();
+      const group = makeGroup([{ id: "r1", kind: "registration", prefix: "" }]);
+      render(<QueryBuilderBody {...bodyProps(group, onChange)} />);
+      fireEvent.change(screen.getByPlaceholderText("G-"), {
+        target: { value: "g-ab" },
+      });
+      const updated: FilterGroup = onChange.mock.calls[0][0] as FilterGroup;
+      const pred = updated.items[0];
+      expect(pred.kind === "registration" && pred.prefix).toBe("G-AB");
     });
   });
 
