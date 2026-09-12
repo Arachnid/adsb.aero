@@ -15,12 +15,33 @@
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="adsb.aero — Historical flight trajectory search" />
     <meta name="twitter:description" content="Query and visualize historical flight trajectories from the ADS-B archive." />
+    <!-- API discovery. An agent handed only "adsb.aero" lands on this page:
+         these give it somewhere to go. /llms.txt is the written guide;
+         service-desc is the IANA relation for a machine-readable API description. -->
+    <link rel="service-desc" type="application/openapi+json" href="/api/openapi.json" />
+    <link rel="alternate" type="text/markdown" href="/llms.txt" title="API guide for LLM agents" />
+    <link rel="help" href="/api/docs" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
+    <!-- Visible only without JS. Many fetch tools and agents render the body and
+         drop <head>, so the discovery links are repeated here as real anchors. -->
+    <noscript>
+      <h1>adsb.aero</h1>
+      <p>
+        Historical ADS-B flight trajectory search. The map interface needs
+        JavaScript, but all of the data is available over a public, unauthenticated
+        HTTP API.
+      </p>
+      <ul>
+        <li><a href="/llms.txt">/llms.txt</a> — complete API guide, written for LLM agents</li>
+        <li><a href="/api/docs">/api/docs</a> — interactive API reference</li>
+        <li><a href="/api/openapi.json">/api/openapi.json</a> — OpenAPI schema</li>
+      </ul>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

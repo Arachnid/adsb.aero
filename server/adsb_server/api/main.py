@@ -11,8 +11,11 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Annotated, Any
 
-from fastapi import APIRouter, Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse  # noqa: TC002
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Path, Query, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from scalar_fastapi import get_scalar_api_reference
 
 from adsb_server.cache import FLIGHT_TTL, QUERY_TTL, ResultCache
@@ -25,6 +28,12 @@ from adsb_server.query.compiler import (
     compile_predicate,
 )
 from adsb_server.query.models import (
+    AERODROME_AIRSPACE_TYPES,
+    AIRSPACE_LIMIT_REFS,
+    AIRSPACE_LIMIT_UNITS,
+    AerodromeAirspace,
+    Airport,
+    AirspaceLimit,
     DataRange,
     FlightDetail,
     GeoJSONMultiLineStringZ,
@@ -105,6 +114,41 @@ app = FastAPI(
     redoc_url="/api/redoc",
 )
 router = APIRouter(prefix="/api/v1")
+
+# Public read-only data: allow any origin so browser-resident clients (and
+# agents running inside a page) can call the API directly.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+    max_age=86400,
+)
+
+DOCS_URL = "https://adsb.aero/llms.txt"
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return FastAPI's validation errors with a pointer to the docs.
+
+    Callers that guessed at the request shape — agents especially — recover from
+    a bad request far more reliably when the response says where the vocabulary
+    is written down. `detail` keeps FastAPI's exact default shape so existing
+    clients are unaffected; `documentation` is purely additive.
+    """
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": jsonable_encoder(exc.errors()),
+            "documentation": DOCS_URL,
+            "hint": (
+                "Request body did not validate. The full query vocabulary, with worked "
+                f"examples, is at {DOCS_URL} (machine-readable schema: /api/openapi.json)."
+            ),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -863,6 +907,126 @@ async def get_waypoint(waypoint_id: str, request: Request) -> Waypoint:
     if row is None:
         raise HTTPException(status_code=404, detail="Waypoint not found")
     return _row_to_waypoint(row)
+
+
+_AIRPORT_LOOKUP_SQL = f"""
+    SELECT {_WAYPOINT_COLS}
+    FROM waypoints
+    WHERE kind = 'airport'
+      AND (upper(ident) = upper($1) OR upper(iata_code) = upper($1))
+    ORDER BY (upper(ident) = upper($1)) DESC, name
+    LIMIT 1
+"""
+
+# Aerodrome airspaces containing the field's reference point, most specific
+# (smallest) first.  Area is computed on the geography type so it is real
+# ground area rather than square degrees.
+_AERODROME_AIRSPACE_SQL = """
+    SELECT id, name, type_code, icao_class,
+           lower_limit_value, lower_limit_unit, lower_limit_ref,
+           upper_limit_value, upper_limit_unit, upper_limit_ref,
+           ST_Area(geometry::geography) / 1e6 AS area_km2,
+           ST_AsGeoJSON(geometry) AS geojson
+    FROM airspaces
+    WHERE type_code = ANY($1::int[])
+      AND ST_Intersects(geometry, ST_SetSRID(ST_MakePoint($2, $3), 4326))
+    ORDER BY area_km2
+"""
+
+
+def _airspace_limit(value: int | None, unit: int | None, ref: int | None) -> AirspaceLimit | None:
+    """Decode OpenAIP's numeric limit codes into a symbolic limit.
+
+    Returns None when the limit is absent or uses a code we don't recognise —
+    a wrong altitude is worse than a missing one.
+    """
+    if value is None or unit is None:
+        return None
+    unit_name = AIRSPACE_LIMIT_UNITS.get(unit)
+    if unit_name is None:
+        return None
+    return AirspaceLimit(
+        value=value,
+        unit=unit_name,
+        ref=AIRSPACE_LIMIT_REFS.get(ref if ref is not None else -1, "msl"),
+    )
+
+
+async def _aerodrome_airspaces(
+    pool: asyncpg.Pool, lon: float, lat: float
+) -> list[AerodromeAirspace]:
+    rows = await pool.fetch(
+        _AERODROME_AIRSPACE_SQL,
+        list(AERODROME_AIRSPACE_TYPES),
+        lon,
+        lat,
+    )
+    return [
+        AerodromeAirspace(
+            id=r["id"],
+            name=r["name"],
+            type_code=r["type_code"],
+            type_name=AERODROME_AIRSPACE_TYPES[r["type_code"]],
+            icao_class=r["icao_class"],
+            lower_limit=_airspace_limit(
+                r["lower_limit_value"], r["lower_limit_unit"], r["lower_limit_ref"]
+            ),
+            upper_limit=_airspace_limit(
+                r["upper_limit_value"], r["upper_limit_unit"], r["upper_limit_ref"]
+            ),
+            area_km2=round(r["area_km2"], 3),
+            geometry=json.loads(r["geojson"]),
+        )
+        for r in rows
+    ]
+
+
+@router.get(
+    "/airports/{code}",
+    response_model=Airport,
+    summary="Look up an airport by ICAO or IATA code",
+    description=(
+        "Resolve an airport code to its position **and the aerodrome airspaces around it**, "
+        "in one call. Matching is case-insensitive; ICAO codes take precedence over IATA.\n\n"
+        "### Use this to build departure/arrival queries\n\n"
+        "For 'who flew into X' or 'who departed X', use `airspaces[0].geometry` as the "
+        "`geometry` of an `endpoint_within` predicate. The ATZ, MATZ, or CTR is the published "
+        "boundary that traffic to and from the field actually crosses, so it is a far better "
+        "match than guessing a radius — it is correctly shaped and correctly sized for that "
+        "particular field.\n\n"
+        "`airspaces` is ordered most-specific-first (smallest ground area). It is empty for "
+        "fields with no published aerodrome airspace, such as most unlicensed strips; only "
+        "then fall back to a `Circle` centred on `lon`/`lat`."
+    ),
+    responses={404: {"description": "No airport matches the given code."}},
+)
+async def get_airport(
+    code: Annotated[
+        str,
+        Path(
+            min_length=2,
+            max_length=8,
+            description="ICAO code (e.g. `EGLL`, `EGHP`) or IATA code (e.g. `LHR`).",
+            examples=["EGHP"],
+        ),
+    ],
+    request: Request,
+) -> Airport:
+    pool = await get_pool(request)
+    row = await pool.fetchrow(_AIRPORT_LOOKUP_SQL, code)
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No airport with ICAO or IATA code {code!r}. "
+                "Search by name with GET /api/v1/waypoints/search?q=..."
+            ),
+        )
+    waypoint = _row_to_waypoint(row)
+    return Airport(
+        **waypoint.model_dump(),
+        airspaces=await _aerodrome_airspaces(pool, waypoint.lon, waypoint.lat),
+    )
 
 
 @router.get(

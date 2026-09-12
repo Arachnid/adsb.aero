@@ -871,3 +871,90 @@ class QueryRequest(BaseModel):
         if self.start_from is not None and self.start_from >= self.end_date:
             raise ValueError("start_from must be strictly before end_date")
         return self
+
+
+# ---------------------------------------------------------------------------
+# Aerodrome lookup (`GET /api/v1/airports/{code}`)
+# ---------------------------------------------------------------------------
+
+# OpenAIP airspace type codes whose extent is tied to a specific aerodrome.
+# These are the airspaces worth using as the query geometry for "departed from"
+# / "arrived at" questions: unlike an arbitrary radius, they are the published
+# boundary that traffic to and from the field actually flies through.
+#
+# Deliberately excluded: TMA (7) and CTA (26), which serve whole terminal areas
+# rather than one field, and every non-aerodrome type (danger areas, airways).
+AERODROME_AIRSPACE_TYPES: dict[int, str] = {
+    13: "ATZ",
+    14: "MATZ",
+    4: "CTR",
+}
+
+# OpenAIP altitude unit codes → symbolic names.
+AIRSPACE_LIMIT_UNITS: dict[int, str] = {0: "m", 1: "ft", 6: "fl"}
+
+# OpenAIP altitude reference codes → symbolic names.
+AIRSPACE_LIMIT_REFS: dict[int, str] = {0: "gnd", 1: "msl", 2: "std"}
+
+
+class AirspaceLimit(BaseModel):
+    """A vertical limit of an airspace, with OpenAIP's numeric codes decoded."""
+
+    value: int = Field(description="Numeric value, interpreted per `unit`.", examples=[2000])
+    unit: str = Field(
+        description="`'ft'` (feet), `'m'` (metres), or `'fl'` (flight level, so value x 100 ft).",
+        examples=["ft"],
+    )
+    ref: str = Field(
+        description="Datum the value is measured from: `'msl'` (mean sea level), "
+        "`'gnd'` (ground level), or `'std'` (standard pressure — i.e. a flight level).",
+        examples=["msl"],
+    )
+
+
+class AerodromeAirspace(BaseModel):
+    """An aerodrome-specific airspace containing an airport's reference point.
+
+    `geometry` is a GeoJSON Polygon or MultiPolygon that can be used directly as
+    the `geometry` of an `endpoint_within` or `trajectory_intersects` predicate.
+    """
+
+    id: str = Field(description="OpenAIP airspace ID.")
+    name: str = Field(description="Airspace name.", examples=["POPHAM ATZ"])
+    type_code: int = Field(description="OpenAIP numeric airspace type.", examples=[13])
+    type_name: str = Field(
+        description="Decoded airspace type: `'ATZ'`, `'MATZ'`, or `'CTR'`.", examples=["ATZ"]
+    )
+    icao_class: int | None = Field(
+        description="OpenAIP ICAO airspace class code (0=A … 6=G, 8=unclassified), or null."
+    )
+    lower_limit: AirspaceLimit | None = Field(
+        description="Lower vertical limit, or null when not published."
+    )
+    upper_limit: AirspaceLimit | None = Field(
+        description="Upper vertical limit, or null when not published."
+    )
+    area_km2: float = Field(
+        description="Approximate ground area in square kilometres. Smaller means more specific "
+        "to this one aerodrome.",
+        examples=[12.4],
+    )
+    geometry: Annotated[GeoJSONPolygon | GeoJSONMultiPolygon, Field(discriminator="type")] = Field(
+        description="Airspace boundary as GeoJSON. Paste directly into a query predicate's "
+        "`geometry` field — both shapes are accepted there."
+    )
+
+
+class Airport(Waypoint):
+    """An airport, together with the aerodrome airspaces surrounding it.
+
+    Returned by `GET /api/v1/airports/{code}`. Use `airspaces[0].geometry` as the
+    query geometry for departure/arrival questions; fall back to a `Circle` around
+    (`lon`, `lat`) only when `airspaces` is empty.
+    """
+
+    airspaces: list[AerodromeAirspace] = Field(
+        description="Aerodrome airspaces (ATZ, MATZ, CTR) whose boundary contains this "
+        "airport's reference point, most specific (smallest) first. Empty when the field "
+        "has no published aerodrome airspace in the OpenAIP dataset.",
+    )

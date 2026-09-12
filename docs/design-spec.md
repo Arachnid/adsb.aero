@@ -208,7 +208,7 @@ Primary endpoint: `POST /query`, accepting a JSON DSL. The search window is cont
       },
       {"icao_type": ["DA40", "DA42"]},
       {"emitter_category": ["A1"]},
-      {"callsign_matches": "^G-"}
+      {"registration_prefix": "G-"}
     ]
   },
   "limit": 1000,
@@ -218,12 +218,14 @@ Primary endpoint: `POST /query`, accepting a JSON DSL. The search window is cont
 
 Predicate types:
 
-- `trajectory_intersects`: flight path ever intersects a geometry. Optional: `altitude_min`/`altitude_max` (with `_ref`: `"ft"` for QNH-corrected feet MSL or `"fl"` for flight level), `time_from`/`time_to`, `squawk_codes`, `dwell_min_s`/`dwell_max_s` (seconds spent inside), `distance_min_m`/`distance_max_m` (path length inside geometry).
+- `trajectory_intersects`: flight path ever intersects a geometry. Optional: `altitude_min`/`altitude_max` (with `_ref`: `"ft"` for QNH-corrected feet MSL or `"fl"` for flight level), `time_from`/`time_to`, `squawk_codes`, `dwell_min_s`/`dwell_max_s` (seconds spent inside), `distance_min_m`/`distance_max_m` (path length inside geometry), `agl_min_ft`/`agl_max_ft` (height above terrain, from the stored `path_agl_ft` series).
 - `trajectory_within`: flight path always stays within a geometry (same optional fields).
 - `endpoint_within`: spatial/temporal constraints on the start or end point. `mode` is one of `"start"`, `"end"`, `"both"` (start AND end), or `"either"` (start OR end). Geometry types: Circle, Polygon (including airspace-sourced polygons), or viewport rectangle.
-- `icao_type`: filter by one or more ICAO type designators.
+- `icao_type`: filter by one or more ICAO type designators. Matched case-insensitively.
 - `emitter_category`: filter by ADS-B emitter category (A1-A7, B1-B7, C1-C3).
-- `callsign_matches`: regex match against callsign.
+- `callsign_prefix`: prefix match against callsign. Not a regex — a prefix was enough for every real query shape and keeps the index usable. Matched case-insensitively with hyphens ignored.
+- `registration_prefix`: prefix match against the airframe registration. Matched case-insensitively with hyphens ignored, since registrations are published with a hyphen (`G-ABCD`) but broadcast without one (`GABCD`).
+- `icao24`: filter by one or more Mode S addresses (6 hex chars). Lower-cased before matching.
 - `duration`: filter on flight length; accepts `min_s` and/or `max_s` bounds (seconds, both inclusive, both optional).
 - `and` / `or` / `not`: boolean composition (recursive).
 
@@ -239,9 +241,82 @@ Result limits enforced at the API: 1–10,000 flights per page (default 100). Cu
 
 - `GET /flights/{flight_id}` — full detail for a single flight. `flight_id` is `icao24:start_ts_utc`.
 - `GET /data-range` — returns `first_date` and `last_date` of available flight data (used to constrain the date picker).
+- `GET /icao-types` — ICAO type designators seen in a date range, with counts. Backed by the pre-aggregated `icao_type_stats` table.
+- `GET /waypoints/search` — typeahead over airports, navaids, VFR reporting points, and airspace names.
+- `GET /waypoints/{id}` — a single waypoint by OpenAIP ID.
+- `GET /airports/{code}` — airport by ICAO or IATA code, **with the aerodrome airspaces around it**. See below.
+- `GET /airspaces` — airspaces near a point.
 - `GET /health` — liveness probe.
 
-Airspace GeoJSON is served by the nginx layer proxying to OpenAIP, not by a dedicated API endpoint.
+### Resolving an aerodrome to a query geometry
+
+`GET /airports/{code}` returns the airport's position together with every
+aerodrome airspace whose boundary contains it, ordered smallest-first, each
+carrying a GeoJSON polygon that drops straight into a predicate's `geometry`.
+
+This exists because "departed from X" / "arrived at X" is the most common
+question the DSL gets asked, and expressing it as a circle around the field is
+a guess: too large for a grass strip, too small for a hub, and circular when
+real airspace rarely is. The published ATZ / MATZ / CTR is the boundary traffic
+to and from the field actually crosses, so it is both better shaped and better
+sized. Callers fall back to a `Circle` only when `airspaces` is empty.
+
+Included types are ATZ (13), MATZ (14) and CTR (4) — the ones whose extent is
+tied to a single aerodrome. TMA (7) and CTA (26) are deliberately excluded:
+they serve a whole terminal area, so a flight inside one has not necessarily
+been anywhere near the field. OpenAIP's numeric unit and reference codes on the
+vertical limits are decoded to symbolic values (`ft`/`m`/`fl`, `msl`/`gnd`/`std`);
+an unrecognised code yields `null` rather than a guessed altitude.
+
+Note the asymmetry: `start_airport_ident` / `end_airport_ident` are returned on
+flight results (matched at ingest), but there is no predicate that filters on
+them. Endpoint filtering is geometric.
+
+## Agent-accessible API
+
+The API is public, unauthenticated and read-only, and a meaningful share of
+callers are LLM agents that arrive knowing only the domain. The goal is that an
+agent given `adsb.aero` and a request can get to a correct query unaided.
+
+Discovery chain, in the order an agent walks it:
+
+1. `GET /` returns the SPA shell. Its `<head>` carries `rel="service-desc"`
+   (`/api/openapi.json`) and `rel="alternate"` (`/llms.txt`); a `<noscript>`
+   block repeats both as real anchors, because many fetch tools render the body
+   and discard `<head>`. Without this the shell is a dead end — it has no
+   content of its own.
+2. `/llms.txt` is the written guide, and the primary entry point. It is
+   self-sufficient: the full predicate vocabulary, worked examples, and the
+   gotchas that produce silently wrong answers (the 7-day `window_days` cap
+   above all). It exists rather than deferring to OpenAPI because the rendered
+   schema is ~56 KB across 37 models — expensive to read and, being a schema,
+   unable to say which of two valid queries is the right one.
+3. `/api/openapi.json` and `/api/docs` for exhaustive detail.
+
+Supporting decisions:
+
+- **Guessed paths redirect instead of soft-404ing.** `/openapi.json`, `/docs`
+  and `/api` are 301s to the real locations. Previously the SPA's
+  `try_files ... /index.html` fallback answered them with HTML and a 200, so a
+  caller could not tell a wrong guess from a right one.
+- **CORS is open** (`*`, no credentials). The data is public and browser-resident
+  clients were otherwise blocked outright.
+- **422s carry a `documentation` field and a `hint`** pointing at `/llms.txt`.
+  Agents recover from error bodies far more reliably than they read docs
+  up front, and this repairs the case where discovery was skipped entirely.
+  `detail` keeps FastAPI's exact default shape, so the addition is backwards
+  compatible.
+- **`robots.txt` states the policy explicitly** — agents and API clients
+  welcome, `/tiles/` (a third-party cache) disallowed.
+
+`llms.txt` is hand-written, because the judgement in it is the valuable part
+and cannot be generated from the schema. It is guarded against drift by
+`server/tests/test_llms_txt.py`, which asserts that every predicate in the
+`Predicate` union and every path in the OpenAPI document appears in the file,
+and that the file names no predicate that does not exist. That last check
+exists because this spec itself documented `callsign_matches` for months after
+the code shipped `callsign_prefix`; prose drifts, and only the vocabulary is
+worth machine-checking.
 
 ## Frontend
 

@@ -51,6 +51,10 @@ gen-types:
 	  "from adsb_server.api.main import app; import json; print(json.dumps(app.openapi(), indent=2))" \
 	  > server/openapi.json
 	cd web && pnpm gen-types
+	# openapi-typescript emits 4-space indent; the pre-commit prettier hook wants
+	# the repo style. Without this the next commit shows ~1500 lines of pure
+	# whitespace churn over a handful of real changes.
+	cd web && pnpm exec prettier --write src/types/api.ts
 
 # ── TLS ───────────────────────────────────────────────────────────────────────
 # Generate a self-signed origin certificate for use behind Cloudflare (Full SSL mode).
