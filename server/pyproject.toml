@@ -40,8 +40,11 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
-    "mypy>=2.1.0",
-    "ruff>=0.8",
+    # Pinned exactly: ruff and mypy gain rules between releases, so an unpinned
+    # floor silently turns green CI red when a new version ships. Bump
+    # deliberately, together with the revs in .pre-commit-config.yaml.
+    "mypy==2.3.1",
+    "ruff==0.16.7",
     "pre-commit>=4.0",
     "testcontainers[postgres]>=4.9",
 ]

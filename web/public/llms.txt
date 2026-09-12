@@ -163,8 +163,8 @@ below 5000 ft*, not ten minutes inside and separately some time below.
 | `icao_type` | array of ICAO type designators | `{"icao_type": ["DA40", "C172"]}` |
 | `emitter_category` | array of ADS-B categories `A1`–`A7`, `B1`–`B7`, `C1`–`C3` | `{"emitter_category": ["A1"]}` |
 | `callsign_prefix` | string prefix (**not** a regex) | `{"callsign_prefix": "BAW"}` |
-| `registration_prefix` | string prefix | `{"registration_prefix": "G-"}` |
-| `icao24` | array of 6-hex Mode S addresses, lowercase | `{"icao24": ["4ca7b3"]}` |
+| `registration_prefix` | string prefix | `{"registration_prefix": "G-AB"}` |
+| `icao24` | array of 6-hex Mode S addresses | `{"icao24": ["4ca7b3"]}` |
 | `duration` | `{"min_s": ..., "max_s": ...}` | `{"duration": {"max_s": 3600}}` |
 
 Emitter categories worth knowing: `A1` light, `A2` small, `A3` large,
@@ -261,13 +261,14 @@ then loop, and tell the user the period you actually covered.
   `end_ts`. A flight that departs 23:50 and lands 00:30 belongs to the earlier day.
 - **`callsign_prefix` is a prefix, not a regex.** Callsigns are ICAO format
   (`BAW123`), not IATA (`BA123`).
-- **Callsign ≠ registration.** `registration_prefix` matches `G-`, `N-` etc.
-  Flights with no linked airframe record never match it.
-- **String matching is case-sensitive**, and the data is upper-case:
-  `callsign_prefix`, `registration_prefix` and `icao_type` all want `"BAW"`,
-  `"G-"`, `"C172"` — not `"baw"`. The one exception is `icao24`, which is
-  **lower-case** hex (`"4ca7b3"`). Airport codes passed to `/airports/{code}`
-  are the only case-insensitive input.
+- **Callsign ≠ registration.** `registration_prefix` matches an airframe's
+  registration; flights with no linked airframe record never match it.
+- **Identifier matching is forgiving, so don't pre-format.** `callsign_prefix`,
+  `registration_prefix`, `icao_type` and `emitter_category` are all matched
+  case-insensitively with hyphens ignored on both sides, so `g-abcd`, `GABCD`
+  and `gAbCd` all match an aircraft registered `G-ABCD` — which matters because
+  registrations are *published* with a hyphen and *broadcast* without one.
+  `icao24` is lower-cased for you. Pass the identifier however the user said it.
 - **`flight_id` is `icao24:start_ts_utc`** — e.g. `4ca7b3:2025-04-15T14:32:18Z`.
 - **Altitude reference matters.** `"ft"` is QNH-corrected MSL; flights lacking
   correction data fall back to pressure altitude (±300 ft). `"fl"` is always

@@ -12,6 +12,7 @@ from typing import IO, Any, cast
 
 import orjson
 
+from adsb_server.idents import normalize_icao24
 from adsb_server.ingestion.models import RawPoint, TraceHeader
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ def _parse_aircraft_obj(
     raw_flight: Any = obj.get("flight")
     callsign: str | None = None
     if isinstance(raw_flight, str):
+        # Stored as broadcast; lookups normalize both sides instead.
         stripped = raw_flight.strip()
         callsign = stripped if stripped else None
 
@@ -74,7 +76,7 @@ def _parse_trace_json(data: dict[str, Any]) -> tuple[TraceHeader, list[RawPoint]
     icao24_raw: Any = data.get("icao")
     if not isinstance(icao24_raw, str):
         raise ValueError(f"Missing or non-string icao field: {icao24_raw!r}")
-    icao24 = icao24_raw.lower()
+    icao24 = normalize_icao24(icao24_raw)
 
     icao_type_raw: Any = data.get("t")
     icao_type: str | None = (

@@ -43,7 +43,7 @@ Primary key: `(icao24, start_ts)` composite. The `flight_id` used in the API (`i
 Key columns:
 
 - `icao24` VARCHAR NOT NULL — Mode S transponder address
-- `callsign` VARCHAR
+- `callsign` VARCHAR — stored as broadcast. `callsign_prefix`, `icao_type`, `emitter_category` and `registration_prefix` lookups normalize the query value (upper-case, hyphens removed) and match it against `replace(upper(col), '-', '')`, which migration 0006 indexes, so a lookup is case- and hyphen-insensitive without the stored spelling being rewritten. `icao24` is lower-cased at ingestion and matched directly
 - `icao_type` VARCHAR — aircraft type designator from Doc 8643
 - `emitter_category` VARCHAR — ADS-B emitter category. When the trace doesn't broadcast it, looked up from a Doc 8643 → emitter category mapping table at ingest. Nullable only as a last resort when neither is available.
 - `start_ts`, `end_ts` TIMESTAMPTZ
@@ -221,11 +221,11 @@ Predicate types:
 - `trajectory_intersects`: flight path ever intersects a geometry. Optional: `altitude_min`/`altitude_max` (with `_ref`: `"ft"` for QNH-corrected feet MSL or `"fl"` for flight level), `time_from`/`time_to`, `squawk_codes`, `dwell_min_s`/`dwell_max_s` (seconds spent inside), `distance_min_m`/`distance_max_m` (path length inside geometry), `agl_min_ft`/`agl_max_ft` (height above terrain, from the stored `path_agl_ft` series).
 - `trajectory_within`: flight path always stays within a geometry (same optional fields).
 - `endpoint_within`: spatial/temporal constraints on the start or end point. `mode` is one of `"start"`, `"end"`, `"both"` (start AND end), or `"either"` (start OR end). Geometry types: Circle, Polygon (including airspace-sourced polygons), or viewport rectangle.
-- `icao_type`: filter by one or more ICAO type designators (case-sensitive).
+- `icao_type`: filter by one or more ICAO type designators. Matched case-insensitively.
 - `emitter_category`: filter by ADS-B emitter category (A1-A7, B1-B7, C1-C3).
-- `callsign_prefix`: case-sensitive prefix match against callsign. Not a regex — a prefix was enough for every real query shape and keeps the index usable.
-- `registration_prefix`: case-sensitive prefix match against the airframe registration.
-- `icao24`: filter by one or more Mode S addresses (6 hex chars, lower-case).
+- `callsign_prefix`: prefix match against callsign. Not a regex — a prefix was enough for every real query shape and keeps the index usable. Matched case-insensitively with hyphens ignored.
+- `registration_prefix`: prefix match against the airframe registration. Matched case-insensitively with hyphens ignored, since registrations are published with a hyphen (`G-ABCD`) but broadcast without one (`GABCD`).
+- `icao24`: filter by one or more Mode S addresses (6 hex chars). Lower-cased before matching.
 - `duration`: filter on flight length; accepts `min_s` and/or `max_s` bounds (seconds, both inclusive, both optional).
 - `and` / `or` / `not`: boolean composition (recursive).
 

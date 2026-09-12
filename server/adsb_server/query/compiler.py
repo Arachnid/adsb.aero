@@ -26,6 +26,17 @@ from adsb_server.query.models import (
     TrajectoryWithin,
 )
 
+
+def _norm(col: str) -> str:
+    """SQL mirror of normalize_ident(), for matching identifiers case- and
+    hyphen-insensitively while leaving the stored value as it was published.
+
+    Migration 0006 indexes exactly this expression for every column matched
+    through it; changing one without the other costs an index scan.
+    """
+    return f"replace(upper({col}), '-', '')"
+
+
 # SQL expression for QNH-corrected altitude in feet.
 # Uses uncorrected getZ(path) when alt_correction_ft is NULL (no correction stored).
 _CORR_ALT = (
@@ -628,19 +639,19 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> CompiledPredicate:
 
     if isinstance(pred, IcaoType):
         types = _p(params, pred.icao_type)
-        return CompiledPredicate(f"f.icao_type = ANY({types}::varchar[])")
+        return CompiledPredicate(f"{_norm('f.icao_type')} = ANY({types}::varchar[])")
 
     if isinstance(pred, EmitterCategory):
         cats = _p(params, pred.emitter_category)
-        return CompiledPredicate(f"emitter_category = ANY({cats}::varchar[])")
+        return CompiledPredicate(f"{_norm('emitter_category')} = ANY({cats}::varchar[])")
 
     if isinstance(pred, CallsignPrefix):
         pattern = _p(params, pred.callsign_prefix + "%")
-        return CompiledPredicate(f"callsign LIKE {pattern}")
+        return CompiledPredicate(f"{_norm('callsign')} LIKE {pattern}")
 
     if isinstance(pred, RegistrationPrefix):
         pattern = _p(params, pred.registration_prefix + "%")
-        return CompiledPredicate(f"af.registration LIKE {pattern}")
+        return CompiledPredicate(f"{_norm('af.registration')} LIKE {pattern}")
 
     if isinstance(pred, Icao24):
         addresses = _p(params, pred.icao24)

@@ -53,7 +53,9 @@ All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) s
 
 After any Python API model change, regenerate frontend types with `make gen-types` (runs from repo root). This exports the OpenAPI schema from the live FastAPI app, runs `openapi-typescript` to update `web/src/types/api.ts`, then runs prettier over the result. Do not edit that file by hand.
 
-The prettier step matters: `openapi-typescript` emits 4-space indent and the pre-commit prettier hook reformats to 2, so skipping it buries a handful of real changes under ~1500 lines of whitespace churn. If you see a diff that size on `api.ts`, that's what happened.
+The prettier step is part of the target because `openapi-typescript` emits 4-space indent while the pre-commit prettier hook reformats to 2; without it a handful of real changes arrive buried under ~1500 lines of whitespace churn. If you see a diff that size on `api.ts`, that's what happened.
+
+Do not run `prettier --write` over hand-written web sources: `web/.prettierrc` sets `printWidth: 100` but the committed code is wrapped at prettier's default 80, so a write pass reformats entire files. Match the surrounding wrapping instead. (`src/types/api.ts` is exempt — it's generated, so prettier owns its formatting outright.)
 
 Also watch for schemas splitting into `-Input`/`-Output` pairs. Pydantic emits those when one model is reachable from both a request and a response and the two serialise differently — usually a sign that a response field is typed more broadly than what it can actually contain. Narrowing the response field (e.g. to `GeoJSONPolygon | GeoJSONMultiPolygon` rather than the whole `Geometry` union) is normally the right fix, and it keeps the generated types stable.
 
@@ -61,7 +63,7 @@ Also watch for schemas splitting into `-Input`/`-Output` pairs. Pydantic emits t
 
 ## Python environment
 
-Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. Activate with `source server/.venv/bin/activate` before running Python tools.
+Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. `server/pyproject.toml` requires Python >= 3.14; with an older interpreter pip fails with "Package 'adsb-server' requires a different Python". Activate with `source server/.venv/bin/activate` before running Python tools.
 
 ## Agent-facing docs
 

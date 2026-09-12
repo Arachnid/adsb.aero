@@ -1813,7 +1813,9 @@ function CallsignCard({
           placeholder="BAW"
           value={pred.pattern}
           onChange={(e) => {
-            onChange({ ...pred, pattern: e.target.value });
+            // Callsigns are broadcast upper-case; capitalize as the user types.
+            // Matching ignores case and hyphens either way.
+            onChange({ ...pred, pattern: e.target.value.toUpperCase() });
           }}
         />
       </div>
@@ -1848,7 +1850,9 @@ function RegistrationCard({
           placeholder="G-"
           value={pred.prefix}
           onChange={(e) => {
-            onChange({ ...pred, prefix: e.target.value });
+            // Registrations are written upper-case; capitalize as the user types.
+            // Matching ignores case and hyphens either way.
+            onChange({ ...pred, prefix: e.target.value.toUpperCase() });
           }}
         />
       </div>
