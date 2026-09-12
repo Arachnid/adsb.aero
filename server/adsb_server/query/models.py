@@ -4,10 +4,32 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AfterValidator, BaseModel, Field, model_validator
+
+# ---------------------------------------------------------------------------
+# Timestamp normalisation
+# ---------------------------------------------------------------------------
+
+
+def to_utc(value: datetime) -> datetime:
+    """Normalise a timestamp to UTC, treating a naive one as already UTC.
+
+    Every timestamp in the system is UTC (`TIMESTAMPTZ` columns, `Z`-suffixed
+    API output), but callers routinely omit the offset -- `"2025-03-01"` and
+    `"2025-03-01T00:00:00"` both parse to naive datetimes.  Without this,
+    mixing a naive bound with an offset-aware one raises `TypeError` from the
+    comparison in `QueryRequest._validate_dates` (a 500, not a 422), and a
+    naive value reaching asyncpg would be encoded in the server process's
+    local timezone rather than UTC.
+    """
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+UtcDatetime = Annotated[datetime, AfterValidator(to_utc)]
+
 
 # ---------------------------------------------------------------------------
 # Response geometry types
@@ -354,7 +376,7 @@ def encode_cursor(start_ts: datetime, icao24: str) -> str:
 def decode_cursor(cursor: str) -> tuple[datetime, str]:
     """Decode a cursor string into (start_ts, icao24)."""
     payload = json.loads(base64.urlsafe_b64decode(cursor.encode()))
-    return datetime.fromisoformat(payload["t"]), payload["i"]
+    return to_utc(datetime.fromisoformat(payload["t"])), payload["i"]
 
 
 # ---------------------------------------------------------------------------
@@ -468,19 +490,19 @@ class EndpointWithinValue(BaseModel):
         description="GeoJSON geometry or Circle to test the constrained endpoint(s) against. "
         "In 'both'/'either' mode the same geometry is applied to both departure and arrival points.",  # noqa: E501
     )
-    start_time_from: datetime | None = Field(
+    start_time_from: UtcDatetime | None = Field(
         default=None,
         description="Inclusive lower bound on start_ts. Applied when mode is 'start', 'either', or 'both'.",  # noqa: E501
     )
-    start_time_to: datetime | None = Field(
+    start_time_to: UtcDatetime | None = Field(
         default=None,
         description="Exclusive upper bound on start_ts. Applied when mode is 'start', 'either', or 'both'.",  # noqa: E501
     )
-    end_time_from: datetime | None = Field(
+    end_time_from: UtcDatetime | None = Field(
         default=None,
         description="Inclusive lower bound on end_ts. Applied when mode is 'end', 'either', or 'both'.",  # noqa: E501
     )
-    end_time_to: datetime | None = Field(
+    end_time_to: UtcDatetime | None = Field(
         default=None,
         description="Exclusive upper bound on end_ts. Applied when mode is 'end', 'either', or 'both'.",  # noqa: E501
     )
@@ -535,14 +557,14 @@ class SpatioTemporalAltitudeValue(BaseModel):
             "`'ft'` (default): feet MSL using the stored QNH correction."
         ),
     )
-    time_from: datetime | None = Field(
+    time_from: UtcDatetime | None = Field(
         default=None,
         description="Inclusive lower bound on the time window. "
         "When combined with `geometry` or altitude, constrains the intersection to "
         "occur within this window. Without geometry/altitude, filters by activity "
         "window (end_ts >= time_from).",
     )
-    time_to: datetime | None = Field(
+    time_to: UtcDatetime | None = Field(
         default=None,
         description="Exclusive upper bound on the time window. "
         "When combined with `geometry` or altitude, constrains the intersection to "
@@ -792,13 +814,13 @@ NotPredicate.model_rebuild()
 class QueryRequest(BaseModel):
     """Request body for `POST /api/v1/query`."""
 
-    end_date: datetime = Field(
+    end_date: UtcDatetime = Field(
         description="Exclusive upper bound on flight start time (`start_ts`). "
         "The query returns flights whose `start_ts` is strictly before this value. "
         "Defaults to the most recent date with data.",
         examples=["2025-04-02T00:00:00Z"],
     )
-    start_from: datetime | None = Field(
+    start_from: UtcDatetime | None = Field(
         default=None,
         description="Optional inclusive lower bound on `start_ts`. "
         "When set, overrides the automatic window floor if it falls later. "

@@ -59,6 +59,8 @@ After any Python API model change, regenerate frontend types with `make gen-type
 
 Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. Activate with `source server/.venv/bin/activate` before running Python tools.
 
+`pyproject.toml` sets `requires-python = ">=3.14"`, so the install fails with "requires a different Python" if the `python` on PATH is older. Create the venv against 3.14 explicitly (`python3.14 -m venv server/.venv`, or `uv venv --python 3.14 server/.venv`) rather than relying on the default interpreter.
+
 ## Things to surface rather than guess
 
 - Schema or query DSL changes: discuss before implementing — they're expensive to undo.

@@ -35,6 +35,7 @@ from adsb_server.query.models import (
     Waypoint,
     decode_cursor,
     encode_cursor,
+    to_utc,
 )
 
 if TYPE_CHECKING:
@@ -737,7 +738,7 @@ async def get_flight(
     ts_str = flight_id[colon_idx + 1 :]
 
     try:
-        start_ts: datetime = datetime.fromisoformat(ts_str)
+        start_ts: datetime = to_utc(datetime.fromisoformat(ts_str))
     except ValueError:
         raise HTTPException(status_code=422, detail="Malformed flight_id timestamp") from None
 
