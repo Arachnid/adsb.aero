@@ -135,7 +135,7 @@ def main() -> None:
         with sentry_sdk.start_transaction(op="task", name="reimport-dates"):
             asyncio.run(_reimport(dates, args.workers))
     else:
-        asyncio.run(_discover(args.workers))  # type: ignore[arg-type]  # sentry decorator loses Coroutine type
+        asyncio.run(_discover(args.workers))
 
 
 if __name__ == "__main__":
