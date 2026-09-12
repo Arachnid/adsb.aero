@@ -60,6 +60,14 @@ server {
         proxy_read_timeout 60s;
     }
 
+    # Discovery aliases. An agent given only the domain guesses these; without
+    # them the SPA fallback below answers 200 with HTML, which looks like a
+    # valid response and gives the caller no way to tell it guessed wrong.
+    location = /openapi.json { return 301 /api/openapi.json; }
+    location = /docs         { return 301 /api/docs; }
+    location = /api          { return 301 /api/docs; }
+    location = /api/         { return 301 /api/docs; }
+
     # Everything else → Vite dev server, including HMR WebSocket upgrades
     location / {
         set $vite http://vite:5173;

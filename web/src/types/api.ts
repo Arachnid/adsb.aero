@@ -154,10 +154,219 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/airports/{code}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Look up an airport by ICAO or IATA code
+     * @description Resolve an airport code to its position **and the aerodrome airspaces around it**, in one call. Matching is case-insensitive; ICAO codes take precedence over IATA.
+     *
+     *     ### Use this to build departure/arrival queries
+     *
+     *     For 'who flew into X' or 'who departed X', use `airspaces[0].geometry` as the `geometry` of an `endpoint_within` predicate. The ATZ, MATZ, or CTR is the published boundary that traffic to and from the field actually crosses, so it is a far better match than guessing a radius — it is correctly shaped and correctly sized for that particular field.
+     *
+     *     `airspaces` is ordered most-specific-first (smallest ground area). It is empty for fields with no published aerodrome airspace, such as most unlicensed strips; only then fall back to a `Circle` centred on `lon`/`lat`.
+     */
+    get: operations["get_airport_api_v1_airports__code__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/airspaces": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Find airspaces near a point
+     * @description Return airspaces whose geometry intersects or is within `dist` km of the given coordinate.  Response shape matches the OpenAIP /api/airspaces proxy it replaces.
+     */
+    get: operations["get_airspaces_api_v1_airspaces_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * AerodromeAirspace
+     * @description An aerodrome-specific airspace containing an airport's reference point.
+     *
+     *     `geometry` is a GeoJSON Polygon or MultiPolygon that can be used directly as
+     *     the `geometry` of an `endpoint_within` or `trajectory_intersects` predicate.
+     */
+    AerodromeAirspace: {
+      /**
+       * Id
+       * @description OpenAIP airspace ID.
+       */
+      id: string;
+      /**
+       * Name
+       * @description Airspace name.
+       * @example POPHAM ATZ
+       */
+      name: string;
+      /**
+       * Type Code
+       * @description OpenAIP numeric airspace type.
+       * @example 13
+       */
+      type_code: number;
+      /**
+       * Type Name
+       * @description Decoded airspace type: `'ATZ'`, `'MATZ'`, or `'CTR'`.
+       * @example ATZ
+       */
+      type_name: string;
+      /**
+       * Icao Class
+       * @description OpenAIP ICAO airspace class code (0=A … 6=G, 8=unclassified), or null.
+       */
+      icao_class: number | null;
+      /** @description Lower vertical limit, or null when not published. */
+      lower_limit: components["schemas"]["AirspaceLimit"] | null;
+      /** @description Upper vertical limit, or null when not published. */
+      upper_limit: components["schemas"]["AirspaceLimit"] | null;
+      /**
+       * Area Km2
+       * @description Approximate ground area in square kilometres. Smaller means more specific to this one aerodrome.
+       * @example 12.4
+       */
+      area_km2: number;
+      /**
+       * Geometry
+       * @description Airspace boundary as GeoJSON. Paste directly into a query predicate's `geometry` field — both shapes are accepted there.
+       */
+      geometry:
+        | components["schemas"]["GeoJSONPolygon"]
+        | components["schemas"]["GeoJSONMultiPolygon"];
+    };
+    /**
+     * Airport
+     * @description An airport, together with the aerodrome airspaces surrounding it.
+     *
+     *     Returned by `GET /api/v1/airports/{code}`. Use `airspaces[0].geometry` as the
+     *     query geometry for departure/arrival questions; fall back to a `Circle` around
+     *     (`lon`, `lat`) only when `airspaces` is empty.
+     */
+    Airport: {
+      /**
+       * Id
+       * @description OpenAIP object ID (primary key).
+       */
+      id: string;
+      /**
+       * Kind
+       * @description 'airport' | 'navaid' | 'reporting_point'.
+       * @example airport
+       */
+      kind: string;
+      /**
+       * Name
+       * @description Name.
+       * @example LONDON HEATHROW
+       */
+      name: string;
+      /**
+       * Ident
+       * @description ICAO code (airports), identifier (navaids), or null.
+       * @example EGLL
+       */
+      ident: string | null;
+      /**
+       * Iata Code
+       * @description IATA 3-letter code (airports only), or null.
+       * @example LHR
+       */
+      iata_code: string | null;
+      /**
+       * Type Code
+       * @description OpenAIP numeric type code.
+       * @example 3
+       */
+      type_code: number | null;
+      /**
+       * Country
+       * @description ISO 3166-1 alpha-2 country code.
+       * @example GB
+       */
+      country: string;
+      /**
+       * Lon
+       * @description Longitude (WGS-84).
+       * @example -0.461389
+       */
+      lon: number;
+      /**
+       * Lat
+       * @description Latitude (WGS-84).
+       * @example 51.4775
+       */
+      lat: number;
+      /**
+       * Elevation Ft
+       * @description Elevation in feet, or null.
+       * @example 83
+       */
+      elevation_ft: number | null;
+      /**
+       * Frequency Mhz
+       * @description Navaid frequency in MHz, or null.
+       * @example 116.7
+       */
+      frequency_mhz: number | null;
+      /**
+       * Compulsory
+       * @description True if a compulsory VFR reporting point, or null.
+       */
+      compulsory?: boolean | null;
+      /**
+       * Airspaces
+       * @description Aerodrome airspaces (ATZ, MATZ, CTR) whose boundary contains this airport's reference point, most specific (smallest) first. Empty when the field has no published aerodrome airspace in the OpenAIP dataset.
+       */
+      airspaces: components["schemas"]["AerodromeAirspace"][];
+    };
+    /**
+     * AirspaceLimit
+     * @description A vertical limit of an airspace, with OpenAIP's numeric codes decoded.
+     */
+    AirspaceLimit: {
+      /**
+       * Value
+       * @description Numeric value, interpreted per `unit`.
+       * @example 2000
+       */
+      value: number;
+      /**
+       * Unit
+       * @description `'ft'` (feet), `'m'` (metres), or `'fl'` (flight level, so value x 100 ft).
+       * @example ft
+       */
+      unit: string;
+      /**
+       * Ref
+       * @description Datum the value is measured from: `'msl'` (mean sea level), `'gnd'` (ground level), or `'std'` (standard pressure — i.e. a flight level).
+       * @example msl
+       */
+      ref: string;
+    };
     /**
      * AndPredicate
      * @description All child predicates must be true (logical AND).
@@ -1400,6 +1609,83 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Waypoint"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_airport_api_v1_airports__code__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description ICAO code (e.g. `EGLL`, `EGHP`) or IATA code (e.g. `LHR`). */
+        code: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Airport"];
+        };
+      };
+      /** @description No airport matches the given code. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_airspaces_api_v1_airspaces_get: {
+    parameters: {
+      query: {
+        /** @description Latitude,longitude (decimal degrees). */
+        pos: string;
+        /** @description Search radius in km. */
+        dist?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: {
+              [key: string]: unknown;
+            }[];
+          };
         };
       };
       /** @description Validation Error */

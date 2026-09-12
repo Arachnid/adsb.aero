@@ -51,13 +51,35 @@ All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) s
 
 ## Web / TypeScript types
 
-After any Python API model change, regenerate frontend types with `make gen-types` (runs from repo root). This exports the OpenAPI schema from the live FastAPI app and runs `openapi-typescript` to update `web/src/types/api.ts`. Do not edit that file by hand.
+After any Python API model change, regenerate frontend types with `make gen-types` (runs from repo root). This exports the OpenAPI schema from the live FastAPI app, runs `openapi-typescript` to update `web/src/types/api.ts`, then runs prettier over the result. Do not edit that file by hand.
+
+The prettier step matters: `openapi-typescript` emits 4-space indent and the pre-commit prettier hook reformats to 2, so skipping it buries a handful of real changes under ~1500 lines of whitespace churn. If you see a diff that size on `api.ts`, that's what happened.
+
+Also watch for schemas splitting into `-Input`/`-Output` pairs. Pydantic emits those when one model is reachable from both a request and a response and the two serialise differently — usually a sign that a response field is typed more broadly than what it can actually contain. Narrowing the response field (e.g. to `GeoJSONPolygon | GeoJSONMultiPolygon` rather than the whole `Geometry` union) is normally the right fix, and it keeps the generated types stable.
 
 `pnpm tsc --noEmit` for a type-check without building. The `dist/` directory may be owned by root (written by Docker); if `pnpm build` fails with EACCES on `dist/`, that's a permissions issue unrelated to the code — use `sudo -A rm -rf web/dist` to clear it.
 
 ## Python environment
 
 Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. Activate with `source server/.venv/bin/activate` before running Python tools.
+
+## Agent-facing docs
+
+`web/public/llms.txt` is the API guide agents read, and for most of them it is
+the *only* thing they read — the OpenAPI schema is ~100 KB. Treat it as part of
+the API surface, not as prose:
+
+- **Any DSL or endpoint change must update it in the same commit.**
+  `server/tests/test_llms_txt.py` fails the commit if a predicate or route is
+  missing from it, or if it names a predicate that doesn't exist. That guard
+  exists because `docs/design-spec.md` documented `callsign_matches` for months
+  after the code shipped `callsign_prefix`.
+- It is hand-written on purpose. The judgement in it — which of two valid
+  queries is the right one, which defaults silently give wrong answers — can't
+  be generated from a schema.
+- Static files under `web/public/` are served at the site root in both dev
+  (Vite) and prod (copied into `dist/`, served by nginx). No nginx change needed
+  to add one.
 
 ## Things to surface rather than guess
 

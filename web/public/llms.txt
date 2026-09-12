@@ -1,0 +1,287 @@
+# adsb.aero
+
+Historical ADS-B flight trajectory search. Every flight is a full 4D trajectory
+(position + altitude + time, plus track, ground speed, vertical rate, IAS and
+squawk as time series), ingested from the adsb.lol global archive.
+
+This file is the complete guide to the HTTP API. If you read only this, you can
+write correct queries. Machine-readable schema: <https://adsb.aero/api/openapi.json>
+(56 KB — you probably don't need it). Human docs: <https://adsb.aero/api/docs>.
+
+- **Base URL**: `https://adsb.aero/api/v1`
+- **Auth**: none. Public read-only data.
+- **Content type**: `application/json`. CORS is open to all origins.
+- **Be polite**: this runs on one box. Prefer one broad query over many narrow
+  ones, keep `limit` modest, and don't poll in a loop.
+
+## Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/query` | Search flights. The main endpoint. |
+| GET | `/airports/{code}` | **Resolve an ICAO/IATA code to a position _and_ its aerodrome airspace polygons.** |
+| GET | `/waypoints/search?q=` | Typeahead over airports, navaids, VFR reporting points, airspaces. |
+| GET | `/waypoints/{id}` | One waypoint by OpenAIP ID. |
+| GET | `/airspaces?pos=lat,lng&dist=` | Airspaces near a point (`dist` in km, max 100). |
+| GET | `/flights/{flight_id}` | Full trajectory for one flight. |
+| GET | `/data-range` | `first_date` / `last_date` actually held. Check this before assuming coverage. |
+| GET | `/icao-types?start=&end=` | Aircraft types seen in a date range, with counts. |
+| GET | `/health` | Liveness. |
+
+## Start here: departures and arrivals
+
+This is the most common question ("who flew into X?", "where do people arriving
+at X come from?"), and the way to get it right is not obvious.
+
+There is **no `departs_from`/`arrives_at` predicate and no airport-code filter.**
+Endpoints are expressed geometrically: a flight arrived at X if its last position
+falls inside a geometry around X.
+
+**Use the aerodrome's published airspace, not a radius.** `GET /airports/{code}`
+returns the ATZ / MATZ / CTR polygons whose boundary contains the field. That
+boundary is the real, correctly-sized, correctly-shaped extent of the aerodrome —
+a guessed radius is too big for a grass strip and too small for a major hub, and
+it is circular when real airspace usually isn't.
+
+Step 1 — resolve the code:
+
+```bash
+curl https://adsb.aero/api/v1/airports/EGHP
+```
+
+```jsonc
+{
+  "ident": "EGHP", "name": "POPHAM", "lon": -1.2347, "lat": 51.1936,
+  "elevation_ft": 550,
+  "airspaces": [                      // most specific (smallest) first
+    {
+      "name": "POPHAM ATZ", "type_name": "ATZ", "area_km2": 7.1,
+      "lower_limit": {"value": 0,    "unit": "ft", "ref": "gnd"},
+      "upper_limit": {"value": 2550, "unit": "ft", "ref": "msl"},
+      "geometry": {"type": "Polygon", "coordinates": [[[...]]]}
+    }
+  ]
+}
+```
+
+Step 2 — paste `airspaces[0].geometry` straight into the query:
+
+```bash
+curl -X POST https://adsb.aero/api/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "match": {
+      "endpoint_within": {
+        "mode": "end",
+        "geometry": { "type": "Polygon", "coordinates": [[[...]]] }
+      }
+    },
+    "end_date": "2026-09-12T00:00:00Z",
+    "window_days": 7,
+    "limit": 100,
+    "include_path": false
+  }'
+```
+
+Use `"mode": "start"` for departures, `"end"` for arrivals, `"both"` for
+circuits and local flights that began and ended at the same field.
+
+If `airspaces` is empty (many unlicensed strips have no published airspace),
+*then* fall back to a circle — 2–3 km for a small field, 8–10 km for a hub:
+
+```json
+{"type": "Circle", "coordinates": [-1.2347, 51.1936], "radius": 3000}
+```
+
+For a place that is not an airport, use `/waypoints/search?q=...` to get `lon`/`lat`.
+Never invent coordinates — look them up.
+
+## POST /query
+
+Request fields:
+
+| Field | Default | Notes |
+|---|---|---|
+| `match` | `null` | Predicate tree. `null` matches everything. |
+| `end_date` | latest date with data | **Exclusive** upper bound on `start_ts`. |
+| `window_days` | `7` | Window size in days back from `end_date`. **Max 7.** |
+| `start_from` | `null` | Optional floor on `start_ts`. Must be before `end_date`. |
+| `limit` | `100` | 1–10000 per page. |
+| `cursor` | `null` | From the previous response. |
+| `include_path` | `true` | **Set `false` unless you are drawing the trajectory.** |
+
+Response: `{"flights": [...], "cursor": ..., "window_from": ...}`.
+
+Each flight carries `flight_id`, `icao24`, `callsign`, `icao_type`,
+`emitter_category`, `registration`, `model`, `year`, `operator`, `start_ts`,
+`end_ts`, `start_point`, `end_point`, and `start_airport_ident` /
+`end_airport_ident` (+ `_name`) matched at ingest. With `include_path: true` you
+also get `path`, `timestamps`, `path_tracks`, `path_gs`, `path_vr`, `path_ias`,
+`squawk_runs`, `alt_correction_ft` and `path_agl_ft`.
+
+Note the asymmetry: airport idents come back **in results**, but you cannot
+*filter* on them — filtering is geometric, as above.
+
+## Predicates
+
+A predicate is a JSON object with exactly one key. These are all of them:
+
+### Spatial
+
+**`trajectory_intersects`** — the path enters the geometry at any point.
+**`trajectory_within`** — the path never leaves the geometry.
+
+Both take the same value object:
+
+| Field | Notes |
+|---|---|
+| `geometry` | GeoJSON `Point`/`LineString`/`Polygon`/`MultiPolygon`/`GeometryCollection`, or `Circle`. |
+| `altitude_min` / `altitude_max` | With `altitude_min_ref`/`altitude_max_ref`: `"ft"` (QNH-corrected feet MSL, default) or `"fl"` (flight level, pressure altitude). |
+| `agl_min_ft` / `agl_max_ft` | Height above terrain. Good for "low flying". |
+| `time_from` / `time_to` | ISO-8601 UTC bounds on time spent inside. |
+| `squawk_codes` | Array of squawk strings, e.g. `["7000"]`. |
+| `dwell_min_s` / `dwell_max_s` | Seconds spent inside the geometry. Needs `geometry`. |
+| `distance_min_m` / `distance_max_m` | Path length inside the geometry. Needs `geometry`. |
+
+Altitude, time and dwell are evaluated **simultaneously**: `dwell_min_s: 600`
+with `altitude_max: 5000` means ten minutes spent inside the geometry *while
+below 5000 ft*, not ten minutes inside and separately some time below.
+
+**`endpoint_within`** — constrains the departure and/or arrival point.
+
+| Field | Notes |
+|---|---|
+| `mode` | `"start"`, `"end"`, `"either"` (start OR end), `"both"` (start AND end). Required. |
+| `geometry` | As above. |
+| `start_time_from` / `start_time_to` | Bounds on `start_ts`. Applied for `start`/`either`/`both`. |
+| `end_time_from` / `end_time_to` | Bounds on `end_ts`. Applied for `end`/`either`/`both`. |
+
+### Attribute
+
+| Predicate | Value | Example |
+|---|---|---|
+| `icao_type` | array of ICAO type designators | `{"icao_type": ["DA40", "C172"]}` |
+| `emitter_category` | array of ADS-B categories `A1`–`A7`, `B1`–`B7`, `C1`–`C3` | `{"emitter_category": ["A1"]}` |
+| `callsign_prefix` | string prefix (**not** a regex) | `{"callsign_prefix": "BAW"}` |
+| `registration_prefix` | string prefix | `{"registration_prefix": "G-"}` |
+| `icao24` | array of 6-hex Mode S addresses, lowercase | `{"icao24": ["4ca7b3"]}` |
+| `duration` | `{"min_s": ..., "max_s": ...}` | `{"duration": {"max_s": 3600}}` |
+
+Emitter categories worth knowing: `A1` light, `A2` small, `A3` large,
+`A5` heavy, `A7` rotorcraft, `B1` glider, `B2` balloon, `B4` ultralight,
+`B6` UAV.
+
+### Boolean
+
+`{"and": [...]}`, `{"or": [...]}`, `{"not": {...}}` — nest freely.
+
+## Worked examples
+
+**Light aircraft that landed at Popham, low and slow.** Resolve `EGHP` first
+(above), then:
+
+```json
+{
+  "match": {"and": [
+    {"endpoint_within": {"mode": "end", "geometry": {"type": "Polygon", "coordinates": [[[...]]]}}},
+    {"emitter_category": ["A1"]}
+  ]},
+  "limit": 200, "include_path": false
+}
+```
+
+**Where do arrivals at Popham come from?** Query as above, then read
+`start_airport_ident` / `start_point` off each result.
+
+**Helicopters below 1500 ft AGL over central London on one day:**
+
+```json
+{
+  "match": {"trajectory_intersects": {
+    "geometry": {"type": "Circle", "coordinates": [-0.1276, 51.5072], "radius": 15000},
+    "agl_max_ft": 1500,
+    "time_from": "2026-09-01T00:00:00Z",
+    "time_to": "2026-09-02T00:00:00Z"
+  }},
+  "end_date": "2026-09-02T00:00:00Z", "window_days": 2,
+  "limit": 500, "include_path": false
+}
+```
+
+**Anything squawking 7700 (emergency) in the last week:**
+
+```json
+{
+  "match": {"trajectory_intersects": {
+    "geometry": {"type": "Polygon", "coordinates": [[[-8,49],[2,49],[2,61],[-8,61],[-8,49]]]},
+    "squawk_codes": ["7700"]
+  }},
+  "limit": 100, "include_path": false
+}
+```
+
+**Gliders that stayed inside a ridge area for over an hour:**
+
+```json
+{
+  "match": {"and": [
+    {"emitter_category": ["B1"]},
+    {"trajectory_intersects": {
+      "geometry": {"type": "Polygon", "coordinates": [[[...]]]},
+      "dwell_min_s": 3600
+    }}
+  ]},
+  "limit": 100, "include_path": false
+}
+```
+
+## Pagination and time windows
+
+Two separate mechanisms — this trips people up.
+
+1. **Within a window**, page with `cursor`: if the response has a non-null
+   `cursor`, repeat the *identical* request with `"cursor": <that value>`.
+   Stop when `cursor` is `null`.
+2. **To go further back in time**, the window has exhausted, not the data.
+   Take `window_from` from the response and send it as the next request's
+   `end_date`. Repeat.
+
+So "all of last year" is a loop of up to 52 window-steps, each with its own
+cursor pages. `window_days` is capped at 7 and **will not error** if you ask a
+question spanning a year — you will silently get one week. Check `/data-range`,
+then loop, and tell the user the period you actually covered.
+
+## Gotchas
+
+- **`window_days` maxes out at 7.** The single most common way to be wrong here
+  is to report a week's results as if they were a year's.
+- **`include_path: false`** unless you are plotting. A trajectory is thousands
+  of coordinates; `{"limit": 1000}` with paths is a very large response.
+- **`end_date` is exclusive** and bounds `start_ts` (departure time), not
+  `end_ts`. A flight that departs 23:50 and lands 00:30 belongs to the earlier day.
+- **`callsign_prefix` is a prefix, not a regex.** Callsigns are ICAO format
+  (`BAW123`), not IATA (`BA123`).
+- **Callsign ≠ registration.** `registration_prefix` matches `G-`, `N-` etc.
+  Flights with no linked airframe record never match it.
+- **String matching is case-sensitive**, and the data is upper-case:
+  `callsign_prefix`, `registration_prefix` and `icao_type` all want `"BAW"`,
+  `"G-"`, `"C172"` — not `"baw"`. The one exception is `icao24`, which is
+  **lower-case** hex (`"4ca7b3"`). Airport codes passed to `/airports/{code}`
+  are the only case-insensitive input.
+- **`flight_id` is `icao24:start_ts_utc`** — e.g. `4ca7b3:2025-04-15T14:32:18Z`.
+- **Altitude reference matters.** `"ft"` is QNH-corrected MSL; flights lacking
+  correction data fall back to pressure altitude (±300 ft). `"fl"` is always
+  pressure altitude. Use `"fl"` above the transition altitude, `"ft"` below.
+- **Coverage is not global yet.** Call `/data-range`, and expect gaps outside
+  Europe. An empty result may mean no coverage, not no flights.
+- **Ground data is excluded.** Trajectories are airborne points only, so taxi
+  and ground movement do not appear.
+- **A 422 response includes a `hint` field** telling you what was wrong. Read it.
+
+## Terms
+
+Data derives from the [adsb.lol](https://adsb.lol) archive (ODbL), with
+reference data from [OpenAIP](https://openaip.net). Positions are crowd-sourced
+receiver data: coverage is uneven, low-level and remote flights are often
+missing, and not all aircraft transmit ADS-B. Treat absence as absence of
+evidence. Do not present this as a complete or authoritative record of flights.
