@@ -12,6 +12,7 @@ from typing import IO, Any, cast
 
 import orjson
 
+from adsb_server.callsign import normalize_callsign
 from adsb_server.ingestion.models import RawPoint, TraceHeader
 
 logger = logging.getLogger(__name__)
@@ -43,8 +44,9 @@ def _parse_aircraft_obj(
     raw_flight: Any = obj.get("flight")
     callsign: str | None = None
     if isinstance(raw_flight, str):
-        stripped = raw_flight.strip()
-        callsign = stripped if stripped else None
+        # Normalized on the way in so prefix lookups can use a plain indexed LIKE.
+        normalized = normalize_callsign(raw_flight)
+        callsign = normalized if normalized else None
 
     raw_squawk: Any = obj.get("squawk")
     squawk: str | None = None

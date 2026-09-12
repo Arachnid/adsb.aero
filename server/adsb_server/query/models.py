@@ -9,22 +9,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-# ---------------------------------------------------------------------------
-# Normalization helpers
-# ---------------------------------------------------------------------------
-
-
-def normalize_callsign(value: str) -> str:
-    """Normalize a callsign (or callsign prefix) for comparison.
-
-    Callsigns are broadcast upper-case and without punctuation, but users type them
-    however they like (`baw123`, `G-ABCD`). Upper-casing and dropping hyphens makes
-    the lookup case-insensitive and hyphen-insensitive. This must stay in step with
-    the `replace(upper(callsign), '-', '')` expression indexed in migration 0006 and
-    used by the query compiler.
-    """
-    return value.strip().upper().replace("-", "")
-
+from adsb_server.callsign import normalize_callsign
 
 # ---------------------------------------------------------------------------
 # Response geometry types
@@ -702,9 +687,9 @@ class CallsignPrefix(BaseModel):
     """Flights whose callsign starts with the given prefix."""
 
     callsign_prefix: str = Field(
-        description="Prefix matched against the callsign. Matching is case-insensitive "
-        "and ignores hyphens on both sides, so `ba-w` matches the callsign `BAW123`. "
-        "Flights with a null callsign never match.",
+        description="Prefix matched against the callsign. The prefix is upper-cased and "
+        "stripped of hyphens before matching, as stored callsigns are, so `ba-w` matches "
+        "the callsign `BAW123`. Flights with a null callsign never match.",
         examples=["BAW"],
     )
 

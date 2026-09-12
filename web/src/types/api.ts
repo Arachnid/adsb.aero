@@ -209,7 +209,7 @@ export interface components {
     CallsignPrefix: {
       /**
        * Callsign Prefix
-       * @description Prefix matched against the callsign. Matching is case-insensitive and ignores hyphens on both sides, so `ba-w` matches the callsign `BAW123`. Flights with a null callsign never match.
+       * @description Prefix matched against the callsign. The prefix is upper-cased and stripped of hyphens before matching, as stored callsigns are, so `ba-w` matches the callsign `BAW123`. Flights with a null callsign never match.
        * @example BAW
        */
       callsign_prefix: string;

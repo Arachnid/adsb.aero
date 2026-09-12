@@ -10,6 +10,7 @@ from datetime import datetime
 
 import pytest
 
+from adsb_server.callsign import normalize_callsign
 from adsb_server.query.compiler import CompiledPredicate, compile_predicate
 from adsb_server.query.models import (
     AndPredicate,
@@ -27,7 +28,6 @@ from adsb_server.query.models import (
     SpatioTemporalAltitudeValue,
     TrajectoryIntersects,
     TrajectoryWithin,
-    normalize_callsign,
 )
 
 _POLYGON = {
@@ -1054,13 +1054,13 @@ class TestAttributePredicates:
     def test_callsign_prefix_uses_like(self) -> None:
         params: list = []
         sql = compile_predicate(CallsignPrefix(callsign_prefix="BAW"), params)
-        assert "replace(upper(callsign), '-', '') LIKE" in sql
+        assert "callsign LIKE" in sql
         assert params == ["BAW%"]
 
     def test_callsign_prefix_normalizes_case_and_hyphens(self) -> None:
         params: list = []
         sql = compile_predicate(CallsignPrefix(callsign_prefix=" g-abcd "), params)
-        assert "replace(upper(callsign), '-', '') LIKE" in sql
+        assert "callsign LIKE" in sql
         assert params == ["GABCD%"]
 
     def test_registration_prefix_uses_like(self) -> None:

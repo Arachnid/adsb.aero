@@ -43,7 +43,7 @@ Primary key: `(icao24, start_ts)` composite. The `flight_id` used in the API (`i
 Key columns:
 
 - `icao24` VARCHAR NOT NULL — Mode S transponder address
-- `callsign` VARCHAR
+- `callsign` VARCHAR — normalized at ingestion to upper-case with hyphens removed, so `callsign_prefix` lookups are a plain indexed `LIKE` against a normalized prefix
 - `icao_type` VARCHAR — aircraft type designator from Doc 8643
 - `emitter_category` VARCHAR — ADS-B emitter category. When the trace doesn't broadcast it, looked up from a Doc 8643 → emitter category mapping table at ingest. Nullable only as a last resort when neither is available.
 - `start_ts`, `end_ts` TIMESTAMPTZ

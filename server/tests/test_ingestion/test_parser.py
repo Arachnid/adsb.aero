@@ -175,6 +175,17 @@ class TestParseAircraftObj:
         assert len(points) == 1
         assert points[0].callsign == "BAW123"
 
+    def test_parse_callsign_normalized(self) -> None:
+        """aircraft_obj with flight='g-abcd' → callsign=='GABCD'."""
+        data = _make_trace(
+            trace_entries=[
+                _make_entry(aircraft_obj={"flight": "g-abcd"}),
+            ]
+        )
+        _, points = _parse_trace_json(data)
+        assert len(points) == 1
+        assert points[0].callsign == "GABCD"
+
     def test_parse_callsign_empty_after_strip(self) -> None:
         """aircraft_obj with flight='   ' → callsign==None."""
         data = _make_trace(
