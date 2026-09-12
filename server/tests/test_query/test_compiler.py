@@ -27,6 +27,7 @@ from adsb_server.query.models import (
     SpatioTemporalAltitudeValue,
     TrajectoryIntersects,
     TrajectoryWithin,
+    normalize_callsign,
 )
 
 _POLYGON = {
@@ -52,6 +53,25 @@ class TestValueValidators:
     def test_spatio_temporal_altitude_value_empty_raises(self) -> None:
         with pytest.raises(ValueError, match="at least one"):
             SpatioTemporalAltitudeValue()
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("BAW", "BAW"),
+            ("baw", "BAW"),
+            ("BaW123", "BAW123"),
+            ("g-abcd", "GABCD"),
+            ("N-123-AB", "N123AB"),
+            ("  ezy  ", "EZY"),
+            ("", ""),
+        ],
+    )
+    def test_normalize_callsign(self, raw: str, expected: str) -> None:
+        assert normalize_callsign(raw) == expected
+
+    def test_callsign_prefix_normalized_on_validation(self) -> None:
+        pred = CallsignPrefix.model_validate({"callsign_prefix": " g-abcd "})
+        assert pred.callsign_prefix == "GABCD"
 
 
 # ---------------------------------------------------------------------------
@@ -1034,8 +1054,14 @@ class TestAttributePredicates:
     def test_callsign_prefix_uses_like(self) -> None:
         params: list = []
         sql = compile_predicate(CallsignPrefix(callsign_prefix="BAW"), params)
-        assert "callsign LIKE" in sql
+        assert "replace(upper(callsign), '-', '') LIKE" in sql
         assert params == ["BAW%"]
+
+    def test_callsign_prefix_normalizes_case_and_hyphens(self) -> None:
+        params: list = []
+        sql = compile_predicate(CallsignPrefix(callsign_prefix=" g-abcd "), params)
+        assert "replace(upper(callsign), '-', '') LIKE" in sql
+        assert params == ["GABCD%"]
 
     def test_registration_prefix_uses_like(self) -> None:
         params: list = []

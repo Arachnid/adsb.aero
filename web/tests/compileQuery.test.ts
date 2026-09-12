@@ -56,6 +56,21 @@ describe("callsign", () => {
     const g = group({ id: "1", kind: "callsign", pattern: "   " });
     expect(compileGroup(g, null)).toBeNull();
   });
+
+  it("upper-cases the pattern", () => {
+    const g = group({ id: "1", kind: "callsign", pattern: "baw123" });
+    expect(compileGroup(g, null)).toEqual({ callsign_prefix: "BAW123" });
+  });
+
+  it("strips hyphens from the pattern", () => {
+    const g = group({ id: "1", kind: "callsign", pattern: "g-abcd" });
+    expect(compileGroup(g, null)).toEqual({ callsign_prefix: "GABCD" });
+  });
+
+  it("returns null for a pattern of only hyphens", () => {
+    const g = group({ id: "1", kind: "callsign", pattern: " - " });
+    expect(compileGroup(g, null)).toBeNull();
+  });
 });
 
 // ---- registration ----------------------------------------------------------

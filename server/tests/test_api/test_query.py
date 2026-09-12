@@ -118,6 +118,30 @@ async def test_callsign_prefix(api_client: AsyncClient) -> None:
     assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
 
 
+async def test_callsign_prefix_case_insensitive(api_client: AsyncClient) -> None:
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"callsign_prefix": "baw"}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+
+
+async def test_callsign_prefix_ignores_hyphens(api_client: AsyncClient) -> None:
+    resp = await api_client.post(
+        "/api/v1/query",
+        json=qbody(match={"callsign_prefix": "BA-W1"}),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    flight_ids = {f["flight_id"] for f in data["flights"]}
+    assert "aabbcc:2025-04-01T10:00:00Z" in flight_ids
+    assert "ddeeff:2025-04-01T06:00:00Z" not in flight_ids
+
+
 async def test_and_composition(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/query",

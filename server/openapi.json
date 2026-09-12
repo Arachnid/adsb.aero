@@ -423,6 +423,70 @@
           }
         }
       }
+    },
+    "/api/v1/airspaces": {
+      "get": {
+        "summary": "Find airspaces near a point",
+        "description": "Return airspaces whose geometry intersects or is within `dist` km of the given coordinate.  Response shape matches the OpenAIP /api/airspaces proxy it replaces.",
+        "operationId": "get_airspaces_api_v1_airspaces_get",
+        "parameters": [
+          {
+            "name": "pos",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Latitude,longitude (decimal degrees).",
+              "title": "Pos"
+            },
+            "description": "Latitude,longitude (decimal degrees)."
+          },
+          {
+            "name": "dist",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Search radius in km.",
+              "default": 1.0,
+              "title": "Dist"
+            },
+            "description": "Search radius in km."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "title": "Response Get Airspaces Api V1 Airspaces Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -487,7 +551,7 @@
           "callsign_prefix": {
             "type": "string",
             "title": "Callsign Prefix",
-            "description": "Case-sensitive prefix matched against the callsign. Flights with a null callsign never match.",
+            "description": "Prefix matched against the callsign. Matching is case-insensitive and ignores hyphens on both sides, so `ba-w` matches the callsign `BAW123`. Flights with a null callsign never match.",
             "examples": [
               "BAW"
             ]

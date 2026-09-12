@@ -24,7 +24,12 @@ from adsb_server.query.models import (
     SpatioTemporalAltitudeValue,
     TrajectoryIntersects,
     TrajectoryWithin,
+    normalize_callsign,
 )
+
+# SQL expression normalizing the callsign for case- and hyphen-insensitive prefix
+# matching. Mirrors normalize_callsign(); indexed by flights_callsign_norm_prefix.
+_NORM_CALLSIGN = "replace(upper(callsign), '-', '')"
 
 # SQL expression for QNH-corrected altitude in feet.
 # Uses uncorrected getZ(path) when alt_correction_ft is NULL (no correction stored).
@@ -635,8 +640,10 @@ def compile_predicate(pred: Predicate, params: list[Any]) -> CompiledPredicate:
         return CompiledPredicate(f"emitter_category = ANY({cats}::varchar[])")
 
     if isinstance(pred, CallsignPrefix):
-        pattern = _p(params, pred.callsign_prefix + "%")
-        return CompiledPredicate(f"callsign LIKE {pattern}")
+        # callsign_prefix is normalized by the model validator, so it matches the
+        # normalized column expression indexed by flights_callsign_norm_prefix.
+        pattern = _p(params, normalize_callsign(pred.callsign_prefix) + "%")
+        return CompiledPredicate(f"{_NORM_CALLSIGN} LIKE {pattern}")
 
     if isinstance(pred, RegistrationPrefix):
         pattern = _p(params, pred.registration_prefix + "%")

@@ -1813,7 +1813,9 @@ function CallsignCard({
           placeholder="BAW"
           value={pred.pattern}
           onChange={(e) => {
-            onChange({ ...pred, pattern: e.target.value });
+            // Callsigns are broadcast upper-case; capitalize as the user types
+            // so the field shows what is actually matched.
+            onChange({ ...pred, pattern: e.target.value.toUpperCase() });
           }}
         />
       </div>

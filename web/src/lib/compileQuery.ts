@@ -12,6 +12,15 @@ type SpatioTemporalAltitudeValue =
 type ApiGeometry = NonNullable<EndpointWithinValue["geometry"]>;
 
 /**
+ * Normalize a callsign prefix for lookup: callsigns are broadcast upper-case
+ * and without punctuation, so upper-case the input and drop hyphens. The server
+ * applies the same normalization to the prefix and the stored callsign.
+ */
+export function normalizeCallsign(value: string): string {
+  return value.trim().toUpperCase().replace(/-/g, "");
+}
+
+/**
  * Compile a FilterGroup into an API Predicate. Returns null for an empty group
  * (caller should send `match: null` to return all flights).
  *
@@ -57,10 +66,10 @@ function compilePred(
       return { and: parts };
     }
 
-    case "callsign":
-      return pred.pattern.trim()
-        ? { callsign_prefix: pred.pattern.trim() }
-        : null;
+    case "callsign": {
+      const prefix = normalizeCallsign(pred.pattern);
+      return prefix ? { callsign_prefix: prefix } : null;
+    }
 
     case "registration":
       return pred.prefix.trim()

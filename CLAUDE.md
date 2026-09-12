@@ -51,13 +51,15 @@ All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) s
 
 ## Web / TypeScript types
 
-After any Python API model change, regenerate frontend types with `make gen-types` (runs from repo root). This exports the OpenAPI schema from the live FastAPI app and runs `openapi-typescript` to update `web/src/types/api.ts`. Do not edit that file by hand.
+After any Python API model change, regenerate frontend types with `make gen-types` (runs from repo root). This exports the OpenAPI schema from the live FastAPI app and runs `openapi-typescript` to update `web/src/types/api.ts`. Do not edit that file by hand. `openapi-typescript` emits its own indentation, so follow it with `cd web && pnpm exec prettier --write src/types/api.ts` — otherwise the whole file shows up reformatted in the diff.
+
+Do not run `prettier --write` over hand-written web sources: `web/.prettierrc` sets `printWidth: 100` but the committed code is wrapped at prettier's default 80, so a write pass reformats entire files. Match the surrounding wrapping instead.
 
 `pnpm tsc --noEmit` for a type-check without building. The `dist/` directory may be owned by root (written by Docker); if `pnpm build` fails with EACCES on `dist/`, that's a permissions issue unrelated to the code — use `sudo -A rm -rf web/dist` to clear it.
 
 ## Python environment
 
-Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. Activate with `source server/.venv/bin/activate` before running Python tools.
+Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. `server/pyproject.toml` requires Python >= 3.14; with an older interpreter pip fails with "Package 'adsb-server' requires a different Python". Activate with `source server/.venv/bin/activate` before running Python tools.
 
 ## Things to surface rather than guess
 
