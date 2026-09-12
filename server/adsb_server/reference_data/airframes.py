@@ -24,6 +24,7 @@ import httpx
 import sentry_sdk
 
 from adsb_server.config import get_settings
+from adsb_server.idents import normalize_icao24
 
 CSV_URL = "https://github.com/wiedehopf/tar1090-db/raw/refs/heads/csv/aircraft.csv.gz"
 BATCH_SIZE = 10_000
@@ -76,7 +77,7 @@ def _parse_rows(data: bytes) -> list[Row]:
         for row in reader:
             if len(row) < 4:
                 continue
-            icao24 = row[0].strip().lower()
+            icao24 = normalize_icao24(row[0])
             if len(icao24) != 6:
                 continue
             rows.append(
@@ -158,7 +159,7 @@ def main() -> None:
     settings = get_settings()
     settings.init_sentry()
     try:
-        asyncio.run(_main())  # type: ignore[arg-type]  # sentry decorator loses Coroutine type
+        asyncio.run(_main())
     except Exception:
         sys.exit(1)
 

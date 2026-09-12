@@ -56,14 +56,29 @@ describe("callsign", () => {
     const g = group({ id: "1", kind: "callsign", pattern: "   " });
     expect(compileGroup(g, null)).toBeNull();
   });
+
+  it("upper-cases the pattern", () => {
+    const g = group({ id: "1", kind: "callsign", pattern: "baw123" });
+    expect(compileGroup(g, null)).toEqual({ callsign_prefix: "BAW123" });
+  });
+
+  it("strips hyphens from the pattern", () => {
+    const g = group({ id: "1", kind: "callsign", pattern: "g-abcd" });
+    expect(compileGroup(g, null)).toEqual({ callsign_prefix: "GABCD" });
+  });
+
+  it("returns null for a pattern of only hyphens", () => {
+    const g = group({ id: "1", kind: "callsign", pattern: " - " });
+    expect(compileGroup(g, null)).toBeNull();
+  });
 });
 
 // ---- registration ----------------------------------------------------------
 
 describe("registration", () => {
-  it("compiles a prefix", () => {
+  it("compiles a prefix, stripping hyphens", () => {
     const g = group({ id: "1", kind: "registration", prefix: "G-" });
-    expect(compileGroup(g, null)).toEqual({ registration_prefix: "G-" });
+    expect(compileGroup(g, null)).toEqual({ registration_prefix: "G" });
   });
 
   it("trims whitespace", () => {
@@ -71,8 +86,18 @@ describe("registration", () => {
     expect(compileGroup(g, null)).toEqual({ registration_prefix: "N" });
   });
 
+  it("upper-cases the prefix", () => {
+    const g = group({ id: "1", kind: "registration", prefix: "g-ab" });
+    expect(compileGroup(g, null)).toEqual({ registration_prefix: "GAB" });
+  });
+
   it("returns null for blank prefix", () => {
     const g = group({ id: "1", kind: "registration", prefix: "   " });
+    expect(compileGroup(g, null)).toBeNull();
+  });
+
+  it("returns null for a prefix of only hyphens", () => {
+    const g = group({ id: "1", kind: "registration", prefix: " - " });
     expect(compileGroup(g, null)).toBeNull();
   });
 });

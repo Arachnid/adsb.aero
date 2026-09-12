@@ -154,6 +154,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/airspaces": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Find airspaces near a point
+     * @description Return airspaces whose geometry intersects or is within `dist` km of the given coordinate.  Response shape matches the OpenAIP /api/airspaces proxy it replaces.
+     */
+    get: operations["get_airspaces_api_v1_airspaces_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -189,7 +209,7 @@ export interface components {
     CallsignPrefix: {
       /**
        * Callsign Prefix
-       * @description Case-sensitive prefix matched against the callsign. Flights with a null callsign never match.
+       * @description Prefix matched against the callsign. Matching is case-insensitive and ignores hyphens on both sides, so `ba-w` matches the callsign `BAW123`. Flights with a null callsign never match.
        * @example BAW
        */
       callsign_prefix: string;
@@ -263,7 +283,7 @@ export interface components {
     EmitterCategory: {
       /**
        * Emitter Category
-       * @description List of ADS-B emitter category codes to match. OR semantics.
+       * @description List of ADS-B emitter category codes to match. Matching is case-insensitive. OR semantics.
        * @example [
        *       "A3",
        *       "A5"
@@ -798,7 +818,7 @@ export interface components {
     Icao24: {
       /**
        * Icao24
-       * @description List of ICAO 24-bit addresses (6 hex chars, lower-case) to match. OR semantics.
+       * @description List of ICAO 24-bit addresses (6 hex chars) to match. Addresses are lower-cased before matching, as stored ones always are. OR semantics.
        * @example [
        *       "a0b1c2"
        *     ]
@@ -812,7 +832,7 @@ export interface components {
     IcaoType: {
       /**
        * Icao Type
-       * @description List of ICAO type designators to match (case-sensitive). OR semantics.
+       * @description List of ICAO type designators to match. Matching is case-insensitive. OR semantics.
        * @example [
        *       "B738",
        *       "B737"
@@ -980,8 +1000,8 @@ export interface components {
     RegistrationPrefix: {
       /**
        * Registration Prefix
-       * @description Case-sensitive prefix matched against the aircraft registration. Flights without a linked airframe record never match.
-       * @example G-
+       * @description Prefix matched against the aircraft registration. Matching is case-insensitive and ignores hyphens on both sides, so `gab` matches the registration `G-ABCD`. Flights without a linked airframe record never match.
+       * @example G
        */
       registration_prefix: string;
     };
@@ -1400,6 +1420,44 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Waypoint"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_airspaces_api_v1_airspaces_get: {
+    parameters: {
+      query: {
+        /** @description Latitude,longitude (decimal degrees). */
+        pos: string;
+        /** @description Search radius in km. */
+        dist?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: {
+              [key: string]: unknown;
+            }[];
+          };
         };
       };
       /** @description Validation Error */
