@@ -14,13 +14,15 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import sentry_sdk
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     import asyncpg
     import xarray as xr
 
-from adsb_server.config import get_settings
+from adsb_server.config import Settings, get_settings
 from adsb_server.geometry.h3_cells import path_h3_cells
 from adsb_server.geometry.stitch import stitched_length_m_sql
 from adsb_server.geometry.wkt import (
@@ -32,6 +34,7 @@ from adsb_server.geometry.wkt import (
 from adsb_server.ingestion.airport_index import AGL_MATCH_MAX_FT, AirportIndex
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import parse_trace_bytes, stream_tarball_raw
+from adsb_server.ingestion.partition_backup import backup_due_partitions
 from adsb_server.ingestion.splitter import finalize_segment, split_flights
 from adsb_server.pressure.correct import build_correction_interpolator, compute_correction_series
 from adsb_server.terrain.agl import compute_agl_series
@@ -342,6 +345,33 @@ def _process_and_correct(
     return params_list, in_progress, total_dropped, icao24
 
 
+async def _backup_settled_partitions(
+    conn: asyncpg.Connection,
+    batch_date: date,
+    settings: Settings,
+) -> None:
+    """Dump any weekly partition this batch has just made immutable.
+
+    Runs after the batch is already recorded as succeeded, and swallows its own
+    failures: an unwritable spool is a backup problem, not an ingestion one, and
+    re-marking a good batch as failed would make the scheduler redo the day.
+    The failure is logged and reported to Sentry, and the next batch — or the
+    `backup-flights` command — picks the partition up again, since what is due
+    is derived from what is on disk rather than from a success flag.
+    """
+    if settings.flight_backup_dir is None:
+        return
+    try:
+        await backup_due_partitions(
+            conn,
+            settings.flight_backup_dir,
+            level=settings.flight_backup_zstd_level,
+        )
+    except Exception:
+        logger.exception("Partition backup after batch %s failed", batch_date)
+        sentry_sdk.capture_exception()
+
+
 async def run_batch(
     conn: asyncpg.Connection,
     tarball_path: Path,
@@ -576,6 +606,8 @@ async def run_batch(
 
     if not effective_keep_herbie_cache:
         _cleanup_old_herbie_cache(effective_cache_dir, batch_date)
+
+    await _backup_settled_partitions(conn, batch_date, settings)
 
     if total_dropped_points:
         logger.info(

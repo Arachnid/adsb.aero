@@ -29,6 +29,12 @@ class Settings(BaseSettings):
 
     terrain_data_dir: Path = Path("/data/terrain")
 
+    # Where each batch drops its partition dumps.  Unset disables flight
+    # backups entirely (the default, so dev and CI never write them); in
+    # production this is a local spool a host timer ships to the backup volume.
+    flight_backup_dir: Path | None = None
+    flight_backup_zstd_level: int = 6
+
     @property
     def effective_sentry_dsn(self) -> str:
         """SENTRY_DSN env var, or /run/secrets/sentry_dsn Docker secret, or empty."""
