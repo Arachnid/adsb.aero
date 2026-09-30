@@ -57,6 +57,7 @@ Key columns:
 - `squawk_seq` ttext — transponder squawk code timeseries (MobilityDB stepwise temporal text). Each instant marks the start of a new code. Run-length encoded; most flights have 1–3 distinct runs.
 - `alt_min_pressure_ft`, `alt_max_pressure_ft` FLOAT4 — min/max pressure altitude over the trajectory. Stored as generated columns derived from `getZ(path)`.
 - `alt_min_qnh_ft`, `alt_max_qnh_ft` FLOAT4 — min/max QNH-corrected altitude. Stored as generated columns (`getZ(path) + alt_correction_ft`, falling back to pressure altitude if correction is unavailable).
+- `path_length_m` FLOAT4 — whole-flight ground track length in metres, with coverage gaps bridged (see *Measuring across coverage gaps* below). Computed in SQL at ingest from the same expression `backfill-path-length` uses (`adsb_server/geometry/stitch.py`); NULL only for flights ingested before migration 0007 and not yet backfilled.
 - `raw_point_count` INT — airborne point count before simplification.
 - `ingest_batch_date` DATE — provenance
 - `path_h3` h3index[] — H3 res-4 cells covering the trajectory, computed at ingest. Drives the GIN spatial pre-filter.
@@ -72,6 +73,7 @@ Indexes:
 - GIN on `squawk_codes text[]` — pre-filter for squawk code queries.
 - Expression GIST on `(startValue(path)::geometry)` and `(endValue(path)::geometry)` — supports radius queries against departure/arrival points.
 - B-tree on `alt_min_pressure_ft`, `alt_max_pressure_ft`, `alt_min_qnh_ft`, `alt_max_qnh_ft` — fast range scans for altitude-band filters.
+- B-tree on `path_length_m` — whole-flight distance filters.
 - B-tree on `start_ts`, `end_ts`, `icao24`, `icao_type`, `emitter_category`
 
 Partitioned by `start_ts` using native Postgres declarative partitioning. Weekly partitions (7-day intervals, starting from 2022-01-03). `pg_partman` automates partition creation; ~260 partitions for 5 years of data, with PostgreSQL 17's O(log n) pruning keeping planning overhead negligible.
@@ -218,7 +220,7 @@ Primary endpoint: `POST /query`, accepting a JSON DSL. The search window is cont
 
 Predicate types:
 
-- `trajectory_intersects`: flight path ever intersects a geometry. Optional: `altitude_min`/`altitude_max` (with `_ref`: `"ft"` for QNH-corrected feet MSL or `"fl"` for flight level), `time_from`/`time_to`, `squawk_codes`, `dwell_min_s`/`dwell_max_s` (seconds spent inside), `distance_min_m`/`distance_max_m` (path length inside geometry), `agl_min_ft`/`agl_max_ft` (height above terrain, from the stored `path_agl_ft` series).
+- `trajectory_intersects`: flight path ever intersects a geometry. Optional: `altitude_min`/`altitude_max` (with `_ref`: `"ft"` for QNH-corrected feet MSL or `"fl"` for flight level), `time_from`/`time_to`, `squawk_codes`, `dwell_min_s`/`dwell_max_s` (seconds spent satisfying the block's other constraints), `distance_min_m`/`distance_max_m` (ground distance covered while satisfying them), `agl_min_ft`/`agl_max_ft` (height above terrain, from the stored `path_agl_ft` series). Every field is optional, geometry included, provided at least one is set.
 - `trajectory_within`: flight path always stays within a geometry (same optional fields).
 - `endpoint_within`: spatial/temporal constraints on the start or end point. `mode` is one of `"start"`, `"end"`, `"both"` (start AND end), or `"either"` (start OR end). Geometry types: Circle, Polygon (including airspace-sourced polygons), or viewport rectangle.
 - `icao_type`: filter by one or more ICAO type designators. Matched case-insensitively.
@@ -226,12 +228,16 @@ Predicate types:
 - `callsign_prefix`: prefix match against callsign. Not a regex — a prefix was enough for every real query shape and keeps the index usable. Matched case-insensitively with hyphens ignored.
 - `registration_prefix`: prefix match against the airframe registration. Matched case-insensitively with hyphens ignored, since registrations are published with a hyphen (`G-ABCD`) but broadcast without one (`GABCD`).
 - `icao24`: filter by one or more Mode S addresses (6 hex chars). Lower-cased before matching.
-- `duration`: filter on flight length; accepts `min_s` and/or `max_s` bounds (seconds, both inclusive, both optional).
+- `duration`: filter on flight length (`end_ts - start_ts`); accepts `min_s` and/or `max_s` bounds (seconds, both inclusive, both optional). Equal to the whole-flight dwell of a `trajectory_within` with no other constraints, since both count coverage gaps.
 - `and` / `or` / `not`: boolean composition (recursive).
 
 Altitude bounds with `ref: "ft"` are applied against **QNH-corrected altitude** using the stored `alt_correction_ft`. Flights without correction data fall back to pressure altitude (±300 ft uncertainty). Bounds with `ref: "fl"` are always pressure altitude (FL × 100 ft), regardless of whether correction data is available.
 
-Dwell-time and distance-inside-geometry predicates require a geometry to be specified (server-side validated). Both measures operate on the path clipped to the geometry and altitude/time window — so "dwell ≥ 10 min inside polygon at 2000–5000 ft" correctly measures only time within both constraints simultaneously.
+Dwell and distance measure the part of the flight that satisfies every other constraint in the block at once — so "dwell ≥ 10 min inside polygon at 2000–5000 ft" measures only time within both simultaneously. With no geometry they measure what the altitude, AGL and time bounds select ("≥ 30 min above FL300"); with nothing else set, the whole flight. In `trajectory_within` altitude and AGL bounds hold over the entire path of any matching flight, so they do not narrow what is measured. When nothing narrows it, the compiler reads the stored `end_ts - start_ts` and `path_length_m` instead of reconstructing the path, so whole-flight filters are index scans.
+
+**Measuring across coverage gaps.** The splitter opens a new sub-sequence at every airborne gap over 60 s, and keeps gaps of up to 12 h in one flight when the jump is physically plausible. Measured directly, `duration(getTime(path))` and the length of `trajectory(path)` drop every gap and under-report patchy flights. Dwell and distance therefore measure the *stitched* path — the same instants rebuilt as one sequence (`tgeompointSeq(instants(path))`), which bridges each gap with a straight segment. Stitching happens **before** clipping: gaps opened by clipping (leaving the geometry or altitude band) are real absences and must not be bridged. The altitude-correction and AGL series are stitched the same way so their own gaps don't cut the bridged spans back out. Lengths are geodesic over `ST_Force2D` of the trajectory — Z is feet and would otherwise be folded into the length as metres. The stored `path` keeps its gaps; they are what the map draws.
+
+Known limits of the estimate: a bridge ignores holds and detours flown inside the gap; length treats a bridging segment as a great circle while `atgeometry` clips it as a straight line in lon/lat, which only diverges for long gaps at high latitude; and the `eIntersects`/`ST_Within` match tests use the unstitched path, so a flight whose only time inside a geometry fell within a gap does not match even though its stitched dwell there is non-zero.
 
 The server compiles the predicate tree to MobilityDB/PostGIS SQL via a Pydantic-based query compiler. Each predicate type emits its WHERE fragment; boolean composition wraps fragments.
 
@@ -324,7 +330,7 @@ Map-centric SPA. The UI breaks into:
 
 - **Map**: MapLibre + deck.gl. Layers: basemap (dark/light/satellite), airspace chart overlay (OpenAIP), query results as `LineLayer` segments coloured by the active colour mode. Start points shown as green dots, end points as red dots.
 - **Colour modes**: altitude, emitter category, squawk code, vertical rate, ground speed, indicated airspeed (IAS). Switched via a toolbar. VS/GS/IAS use diverging colour scales; flights without data for the active mode are shown grey.
-- **Query builder**: structured UI building the JSON DSL. Predicates: aircraft type/emitter, callsign regex, starts-within, ends-within, ever (trajectory_intersects), always (trajectory_within). Each spatial predicate supports circle, drawn polygon, current viewport, or airspace-from-map. Ever/Always predicates support optional altitude range (ft or FL), time window, squawk filter, dwell time, and distance-inside-geometry bounds. Altitude bounds auto-populate from airspace boundaries when an airspace zone is selected. A global departure-date window picker (up to 7-day range) constrains all results.
+- **Query builder**: structured UI building the JSON DSL. Predicates: aircraft type/emitter, callsign regex, starts-within, ends-within, ever (trajectory_intersects), always (trajectory_within). Each spatial predicate supports circle, drawn polygon, current viewport, or airspace-from-map. Ever/Always predicates support optional altitude range (ft or FL), time window, squawk filter, and dwell-time and distance bounds. With no region chosen the last section is labelled "Duration & distance", since an Always block with nothing else set measures the whole flight. Altitude bounds auto-populate from airspace boundaries when an airspace zone is selected. A global departure-date window picker (up to 7-day range) constrains all results.
 - **Airspace selection**: clicking on the map while in airspace-pick mode queries OpenAIP candidates near the cursor and lets the user confirm a zone. The zone's polygon becomes the query geometry; its altitude limits (ft or FL) are automatically applied as altitude bounds.
 - **Results panel**: list of matching flights ordered by `start_ts` descending. Shows callsign, ICAO24, type, departure time, duration, and an altitude sparkline. Clicking a flight selects it; the selected trace is highlighted and dimmed non-selected traces are shown at 20% opacity.
 - **Hover infobox**: hovering over any trace segment shows an infobox with callsign, ICAO24, type, emitter category, interpolated altitude (ft), vertical rate (fpm ↑/↓), ground speed (kt), IAS (kt, if available), heading (degrees + 16-point compass), squawk code, and UTC time — all interpolated to the exact cursor position along the segment. When a flight is selected, hovering over other traces shows no infobox.

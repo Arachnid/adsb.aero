@@ -1185,21 +1185,126 @@ class TestLogicalPredicates:
 
 
 class TestDwellDistance:
-    def test_dwell_min_s_no_geometry_raises(self) -> None:
-        with pytest.raises(ValueError, match="require geometry"):
-            SpatioTemporalAltitudeValue(geometry=None, altitude_min=1000, dwell_min_s=300)
+    def test_measures_no_longer_require_geometry(self) -> None:
+        # Without a geometry they measure the whole flight, or whatever the other
+        # bounds in the block leave of it.
+        v = SpatioTemporalAltitudeValue(dwell_min_s=300, distance_max_m=500000)
+        assert v.geometry is None
+        assert v.dwell_min_s == 300
 
-    def test_dwell_max_s_no_geometry_raises(self) -> None:
-        with pytest.raises(ValueError, match="require geometry"):
-            SpatioTemporalAltitudeValue(geometry=None, altitude_min=1000, dwell_max_s=3600)
+    def test_measures_alone_satisfy_at_least_one_constraint(self) -> None:
+        SpatioTemporalAltitudeValue(distance_min_m=1000)
 
-    def test_distance_min_m_no_geometry_raises(self) -> None:
-        with pytest.raises(ValueError, match="require geometry"):
-            SpatioTemporalAltitudeValue(geometry=None, altitude_min=1000, distance_min_m=10000)
+    def test_within_no_constraints_uses_stored_whole_flight_values(self) -> None:
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(
+                dwell_min_s=3600.0,
+                dwell_max_s=7200.0,
+                distance_min_m=100000.0,
+                distance_max_m=900000.0,
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        assert "EXTRACT(EPOCH FROM (end_ts - start_ts)) >= $1" in compiled
+        assert "EXTRACT(EPOCH FROM (end_ts - start_ts)) <= $2" in compiled
+        assert "path_length_m >= $3" in compiled
+        assert "path_length_m <= $4" in compiled
+        # Index-friendly: no per-row path reconstruction, nothing deferred.
+        assert "tgeompointSeq" not in compiled
+        assert not compiled.outer_parts
+        assert params == [3600.0, 7200.0, 100000.0, 900000.0]
 
-    def test_distance_max_m_no_geometry_raises(self) -> None:
-        with pytest.raises(ValueError, match="require geometry"):
-            SpatioTemporalAltitudeValue(geometry=None, altitude_min=1000, distance_max_m=500000)
+    def test_within_altitude_only_still_whole_flight(self) -> None:
+        # Always-semantics altitude bounds hold over the whole path of every flight
+        # that matches, so they do not clip what is measured.
+        params: list = []
+        pred = TrajectoryWithin(
+            trajectory_within=SpatioTemporalAltitudeValue(
+                altitude_max=100, altitude_max_ref="fl", agl_min_ft=500.0, distance_min_m=5e4
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        assert "alt_max_pressure_ft <=" in compiled
+        assert "path_length_m >=" in compiled
+        assert "tgeompointSeq" not in compiled
+
+    def test_intersects_no_constraints_uses_stored_whole_flight_values(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                squawk_codes=["7700"], distance_min_m=1000.0
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        assert "path_length_m >=" in compiled
+        assert "tgeompointSeq" not in compiled
+
+    def test_intersects_altitude_clips_stitched_path(self) -> None:
+        # Ever-semantics altitude bounds select part of the flight: the measure is
+        # the time spent inside the band, on the stitched path, with no geometry.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                altitude_min=300, altitude_min_ref="fl", dwell_min_s=1800.0
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        assert (
+            "atTime(tgeompointSeq(instants(path)), getTime(atvalues(getZ("
+            "tgeompointSeq(instants(path))), span($1::float8"
+        ) in compiled
+        assert "atgeometry" not in compiled
+        # Short flights are still excluded by the cheap btree pre-filter.
+        assert "EXTRACT(EPOCH FROM (end_ts - start_ts)) >= $2" in compiled
+
+    def test_ft_altitude_clip_stitches_correction_series(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(
+                altitude_max=3000, altitude_max_ref="ft", distance_min_m=1000.0
+            )
+        )
+        compiled = compile_predicate(pred, params)
+        assert "tfloatSeq(instants(alt_correction_ft), interp(alt_correction_ft))" in compiled
+        assert "CASE WHEN alt_correction_ft IS NULL" in compiled
+
+    def test_agl_clip_stitches_agl_series(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(agl_max_ft=1000.0, dwell_min_s=60.0)
+        )
+        compiled = compile_predicate(pred, params)
+        assert "atvalues(tfloatSeq(instants(path_agl_ft), interp(path_agl_ft))" in compiled
+
+    @pytest.mark.parametrize("wrapper", [TrajectoryIntersects, TrajectoryWithin])
+    def test_time_window_clips_measure(self, wrapper: type) -> None:
+        params: list = []
+        key = "trajectory_intersects" if wrapper is TrajectoryIntersects else "trajectory_within"
+        pred = wrapper(**{key: SpatioTemporalAltitudeValue(time_from=_T1, dwell_min_s=60.0)})
+        compiled = compile_predicate(pred, params)
+        assert (
+            "atTime(tgeompointSeq(instants(path)), span($1::timestamptz, 'infinity'::timestamptz"
+        ) in compiled
+
+    def test_time_to_only_window(self) -> None:
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(time_to=_T1, distance_max_m=5000.0)
+        )
+        compiled = compile_predicate(pred, params)
+        assert "span('-infinity'::timestamptz, $1::timestamptz, true, false)" in compiled
+
+    def test_geometry_measure_stitches_before_clipping(self) -> None:
+        # Stitching must precede atgeometry: bridging after the clip would join the
+        # separate visits and count the time spent outside the geometry.
+        params: list = []
+        pred = TrajectoryIntersects(
+            trajectory_intersects=SpatioTemporalAltitudeValue(geometry=_POLYGON, dwell_min_s=60.0)
+        )
+        compiled = compile_predicate(pred, params)
+        outer = " ".join(compiled.outer_parts)
+        assert "atgeometry(tgeompointSeq(instants(path)), _s" in outer
 
     def test_dwell_min_s_with_geometry_emits_duration_ge(self) -> None:
         # Geometry-only dwell: condition deferred to outer_parts alongside eIntersects.
@@ -1230,7 +1335,7 @@ class TestDwellDistance:
             )
         )
         compiled = compile_predicate(pred, params)
-        assert any("ST_Length(trajectory(" in p for p in compiled.outer_parts)
+        assert any("ST_Length(ST_Force2D(trajectory(" in p for p in compiled.outer_parts)
         assert any("::geography)" in p for p in compiled.outer_parts)
         assert any(">= " in p for p in compiled.outer_parts)
         assert 50000.0 in params
@@ -1243,7 +1348,7 @@ class TestDwellDistance:
             )
         )
         compiled = compile_predicate(pred, params)
-        assert any("ST_Length(trajectory(" in p for p in compiled.outer_parts)
+        assert any("ST_Length(ST_Force2D(trajectory(" in p for p in compiled.outer_parts)
         assert any("<= " in p for p in compiled.outer_parts)
         assert 200000.0 in params
 
@@ -1261,7 +1366,7 @@ class TestDwellDistance:
         compiled = compile_predicate(pred, params)
         outer = " ".join(compiled.outer_parts)
         assert outer.count("EXTRACT(EPOCH FROM duration(getTime(") == 2
-        assert outer.count("ST_Length(trajectory(") == 2
+        assert outer.count("ST_Length(ST_Force2D(trajectory(") == 2
         assert 300.0 in params
         assert 3600.0 in params
         assert 10000.0 in params
@@ -1382,7 +1487,10 @@ class TestAglFilter:
         compiled = compile_predicate(pred, params)
         all_sql = " ".join([compiled, *compiled.outer_parts])
         # Duration expression must reference the AGL-restricted (doubly-clipped) path.
-        assert "EXTRACT(EPOCH FROM duration(getTime(atTime(" in all_sql
+        assert (
+            "EXTRACT(EPOCH FROM duration(getTime(atgeometry(atTime(tgeompointSeq(instants(path)),"
+            " getTime(atvalues(tfloatSeq(instants(path_agl_ft)"
+        ) in all_sql
         assert "atvalues(path_agl_ft," in all_sql
 
     def test_agl_with_geometry_within_scoped_to_clipped_path(self) -> None:
@@ -1490,8 +1598,8 @@ class TestAglFilter:
         )
         sql = compile_predicate(pred, params)
         assert "ST_Within(trajectory(path)," in sql
-        assert "EXTRACT(EPOCH FROM duration(getTime(atTime(" in sql
-        assert "atvalues(path_agl_ft," in sql
+        assert "EXTRACT(EPOCH FROM duration(getTime(atgeometry(atTime(" in sql
+        assert "atvalues(tfloatSeq(instants(path_agl_ft), interp(path_agl_ft))," in sql
         assert 60.0 in params
         assert 200.0 in params
 

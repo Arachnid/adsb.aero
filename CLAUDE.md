@@ -87,6 +87,13 @@ docker run --rm --network host -v "$PWD:$PWD" -w "$PWD/server" \
 `tests/test_terrain/test_dem_downloader.py::test_tif_to_npy_from_bytes` fails
 under `python:3.14-slim` because rasterio cannot import there; it passes in CI.
 
+The same recipe is the way to run the server suite in a Claude Code cloud
+session: there `uv` only offers Python 3.14.0rc2, and pydantic fails to import
+under it (`AssertionError` in `eval_type_backport` while loading FastAPI).
+Start `dockerd` first if `docker info` fails, and drop `--network host`: nested
+in the session's container, testcontainers refuses it with `"host" network_mode
+is incompatible with port_bindings`, and the default bridge network works.
+
 Use `python -m venv server/.venv && server/.venv/bin/pip install -e ".[dev]"` to set up the server virtualenv. `server/pyproject.toml` requires Python >= 3.14; with an older interpreter pip fails with "Package 'adsb-server' requires a different Python", so create the venv against 3.14 explicitly (`python3.14 -m venv server/.venv`, or `uv venv --python 3.14 server/.venv`) rather than relying on whatever `python` is on PATH. Activate with `source server/.venv/bin/activate` before running Python tools.
 
 ## Agent-facing docs

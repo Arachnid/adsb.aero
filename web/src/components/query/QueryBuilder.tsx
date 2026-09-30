@@ -472,7 +472,11 @@ export function isPredValid(pred: UIPredicate): boolean {
         pred.altMax !== null ||
         pred.aglMin !== null ||
         pred.aglMax !== null ||
-        pred.squawkCodes.length > 0;
+        pred.squawkCodes.length > 0 ||
+        pred.dwellMinMin !== null ||
+        pred.dwellMaxMin !== null ||
+        pred.distanceMinNm !== null ||
+        pred.distanceMaxNm !== null;
       if (pred.shape === "none") return hasConstraint;
       if (pred.shape === "viewport") return true;
       if (pred.shape === "circle") {
@@ -1280,6 +1284,20 @@ function RegionCard({
   const timeOpen = timeOpenLocal || hasTimeData;
   const squawkOpen = squawkOpenLocal || hasSquawkData;
   const dwellDistOpen = dwellDistOpenLocal || hasDwellDistData;
+  // Without a region the same fields measure the whole flight (or the part the
+  // altitude/time/AGL bounds select), where "dwell" would read oddly.
+  const measureLabels =
+    pred.shape === "none"
+      ? {
+          section: "Duration & distance",
+          min: "Min duration (min)",
+          max: "Max duration (min)",
+        }
+      : {
+          section: "Dwell & distance",
+          min: "Min dwell (min)",
+          max: "Max dwell (min)",
+        };
   const aglOpen = aglOpenLocal || hasAglData;
 
   const handleShapeChange = (s: Shape): void => {
@@ -1692,96 +1710,94 @@ function RegionCard({
           </div>
         )}
       </div>
-      {pred.shape !== "none" && (
-        <div className="optional-group" style={{ marginTop: 4 }}>
-          <label className="optional-group-label">
-            <input
-              type="checkbox"
-              checked={dwellDistOpen}
-              onChange={(e) => {
-                toggleDwellDist(e.target.checked);
-              }}
-            />
-            Dwell &amp; distance
-          </label>
-          {dwellDistOpen && (
-            <div className="optional-group-body" style={{ gap: 6 }}>
-              <div className="pred-row">
-                <div>
-                  <FieldLabel>Min dwell (min)</FieldLabel>
-                  <input
-                    className="text-field mono"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={pred.dwellMinMin ?? ""}
-                    onChange={(e) => {
-                      onChange({
-                        ...pred,
-                        dwellMinMin:
-                          e.target.value === "" ? null : +e.target.value,
-                      });
-                    }}
-                  />
-                </div>
-                <div>
-                  <FieldLabel>Max dwell (min)</FieldLabel>
-                  <input
-                    className="text-field mono"
-                    type="number"
-                    min="0"
-                    placeholder="∞"
-                    value={pred.dwellMaxMin ?? ""}
-                    onChange={(e) => {
-                      onChange({
-                        ...pred,
-                        dwellMaxMin:
-                          e.target.value === "" ? null : +e.target.value,
-                      });
-                    }}
-                  />
-                </div>
+      <div className="optional-group" style={{ marginTop: 4 }}>
+        <label className="optional-group-label">
+          <input
+            type="checkbox"
+            checked={dwellDistOpen}
+            onChange={(e) => {
+              toggleDwellDist(e.target.checked);
+            }}
+          />
+          {measureLabels.section}
+        </label>
+        {dwellDistOpen && (
+          <div className="optional-group-body" style={{ gap: 6 }}>
+            <div className="pred-row">
+              <div>
+                <FieldLabel>{measureLabels.min}</FieldLabel>
+                <input
+                  className="text-field mono"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={pred.dwellMinMin ?? ""}
+                  onChange={(e) => {
+                    onChange({
+                      ...pred,
+                      dwellMinMin:
+                        e.target.value === "" ? null : +e.target.value,
+                    });
+                  }}
+                />
               </div>
-              <div className="pred-row">
-                <div>
-                  <FieldLabel>Min dist (nm)</FieldLabel>
-                  <input
-                    className="text-field mono"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={pred.distanceMinNm ?? ""}
-                    onChange={(e) => {
-                      onChange({
-                        ...pred,
-                        distanceMinNm:
-                          e.target.value === "" ? null : +e.target.value,
-                      });
-                    }}
-                  />
-                </div>
-                <div>
-                  <FieldLabel>Max dist (nm)</FieldLabel>
-                  <input
-                    className="text-field mono"
-                    type="number"
-                    min="0"
-                    placeholder="∞"
-                    value={pred.distanceMaxNm ?? ""}
-                    onChange={(e) => {
-                      onChange({
-                        ...pred,
-                        distanceMaxNm:
-                          e.target.value === "" ? null : +e.target.value,
-                      });
-                    }}
-                  />
-                </div>
+              <div>
+                <FieldLabel>{measureLabels.max}</FieldLabel>
+                <input
+                  className="text-field mono"
+                  type="number"
+                  min="0"
+                  placeholder="∞"
+                  value={pred.dwellMaxMin ?? ""}
+                  onChange={(e) => {
+                    onChange({
+                      ...pred,
+                      dwellMaxMin:
+                        e.target.value === "" ? null : +e.target.value,
+                    });
+                  }}
+                />
               </div>
             </div>
-          )}
-        </div>
-      )}
+            <div className="pred-row">
+              <div>
+                <FieldLabel>Min dist (nm)</FieldLabel>
+                <input
+                  className="text-field mono"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={pred.distanceMinNm ?? ""}
+                  onChange={(e) => {
+                    onChange({
+                      ...pred,
+                      distanceMinNm:
+                        e.target.value === "" ? null : +e.target.value,
+                    });
+                  }}
+                />
+              </div>
+              <div>
+                <FieldLabel>Max dist (nm)</FieldLabel>
+                <input
+                  className="text-field mono"
+                  type="number"
+                  min="0"
+                  placeholder="∞"
+                  value={pred.distanceMaxNm ?? ""}
+                  onChange={(e) => {
+                    onChange({
+                      ...pred,
+                      distanceMaxNm:
+                        e.target.value === "" ? null : +e.target.value,
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </PredCard>
   );
 }

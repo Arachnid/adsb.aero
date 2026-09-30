@@ -1,4 +1,4 @@
-.PHONY: dev dev-down prod prod-down logs build-web migrate import-airframes import-traces download-terrain backfill-agl gen-cert
+.PHONY: dev dev-down prod prod-down logs build-web migrate import-airframes import-traces download-terrain backfill-agl backfill-path-length gen-cert
 
 # ── Dev stack ────────────────────────────────────────────────────────────────
 # Brings up postgres, redis, api (--reload), vite dev server, and nginx.
@@ -42,6 +42,10 @@ download-terrain:
 # Populate path_agl_ft for any flights ingested before AGL was added.
 backfill-agl:
 	docker exec infra-api-1 backfill-agl
+
+# Populate path_length_m for any flights ingested before it was added.
+backfill-path-length:
+	docker exec infra-api-1 backfill-path-length
 
 # ── Code generation ───────────────────────────────────────────────────────────
 # Export the OpenAPI spec from the server and regenerate web TypeScript types.

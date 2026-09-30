@@ -170,12 +170,28 @@ Both take the same value object:
 | `agl_min_ft` / `agl_max_ft` | Height above terrain. Good for "low flying". |
 | `time_from` / `time_to` | ISO-8601 UTC bounds on time spent inside. |
 | `squawk_codes` | Array of squawk strings, e.g. `["7000"]`. |
-| `dwell_min_s` / `dwell_max_s` | Seconds spent inside the geometry. Needs `geometry`. |
-| `distance_min_m` / `distance_max_m` | Path length inside the geometry. Needs `geometry`. |
+| `dwell_min_s` / `dwell_max_s` | Seconds spent satisfying every other field in the block. |
+| `distance_min_m` / `distance_max_m` | Ground distance (m) covered while satisfying every other field in the block. |
 
 Altitude, time and dwell are evaluated **simultaneously**: `dwell_min_s: 600`
 with `altitude_max: 5000` means ten minutes spent inside the geometry *while
 below 5000 ft*, not ten minutes inside and separately some time below.
+
+**`geometry` is optional**, and so is everything else: dwell and distance measure
+whatever part of the flight the other fields select. Without a geometry,
+`trajectory_intersects` with `altitude_min_ref: "fl", altitude_min: 300,
+dwell_min_s: 1800` is "at least 30 minutes at or above FL300", and a
+`trajectory_within` holding only `distance_min_m` is the flight's whole track
+length — **this is how to ask for long or short flights by distance.** For
+duration, `{"duration": {...}}` below is the simpler spelling of the same
+whole-flight number.
+
+Coverage gaps are bridged: when the aircraft went unobserved, dwell and distance
+assume a straight line between the last point before the gap and the first
+after it, so an hour-long gap mid-flight still counts as an hour. That is an
+estimate — holds or detours flown inside a gap are not seen — but the
+alternative, counting only observed stretches, under-reports every flight with
+patchy coverage. The `path` returned still shows the gaps.
 
 **There is a cap on how large `geometry` can be.** These two predicates are
 accelerated by a spatial index that holds at most 1000 cells per geometry —
@@ -202,7 +218,7 @@ flight, so any size of geometry is fine there.
 | `callsign_prefix` | string prefix (**not** a regex) | `{"callsign_prefix": "BAW"}` |
 | `registration_prefix` | string prefix | `{"registration_prefix": "G-AB"}` |
 | `icao24` | array of 6-hex Mode S addresses | `{"icao24": ["4ca7b3"]}` |
-| `duration` | `{"min_s": ..., "max_s": ...}` | `{"duration": {"max_s": 3600}}` |
+| `duration` | `{"min_s": ..., "max_s": ...}` — first to last position, gaps included | `{"duration": {"max_s": 3600}}` |
 
 Emitter categories worth knowing: `A1` light, `A2` small, `A3` large,
 `A5` heavy, `A7` rotorcraft, `B1` glider, `B2` balloon, `B4` ultralight,
@@ -253,6 +269,15 @@ Emitter categories worth knowing: `A1` light, `A2` small, `A3` large,
     "geometry": {"type": "Polygon", "coordinates": [[[-8,49],[2,49],[2,61],[-8,61],[-8,49]]]},
     "squawk_codes": ["7700"]
   }},
+  "limit": 100, "include_path": false
+}
+```
+
+**Flights that covered more than 500 km:**
+
+```json
+{
+  "match": {"trajectory_within": {"distance_min_m": 500000}},
   "limit": 100, "include_path": false
 }
 ```

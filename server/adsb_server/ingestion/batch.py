@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 from adsb_server.config import get_settings
 from adsb_server.geometry.h3_cells import path_h3_cells
+from adsb_server.geometry.stitch import stitched_length_m_sql
 from adsb_server.geometry.wkt import (
     tfloat_stepwise_seqset,
     tgeompoint_seqset,
@@ -72,19 +73,21 @@ ON CONFLICT (day, icao_type) DO UPDATE SET
     flight_count = EXCLUDED.flight_count
 """
 
-_UPSERT_FLIGHT_SQL = """
+# path_length_m is derived in SQL from the path parameter, sharing its definition
+# with backfill-path-length rather than duplicating the geodesic sum in Python.
+_UPSERT_FLIGHT_SQL = f"""
 INSERT INTO flights (icao24, callsign, icao_type, emitter_category,
     start_ts, end_ts, path, path_tracks,
     squawk_seq, alt_correction_ft,
     path_gs, path_vr, path_ias,
     raw_point_count, ingest_batch_date, path_h3, squawk_codes, path_agl_ft,
-    start_airport_ident, end_airport_ident)
+    start_airport_ident, end_airport_ident, path_length_m)
 VALUES ($1,$2,$3,$4,$5,$6,
     $7::tgeompoint, $8::tint,
     $9::ttext, $10::tfloat,
     $11::tint, $12::tint, $13::tint,
     $14, $15, $16::h3index[], $17::text[], $18::tfloat,
-    $19, $20)
+    $19, $20, {stitched_length_m_sql("$7::tgeompoint")})
 ON CONFLICT (icao24, start_ts) DO UPDATE SET
     callsign=EXCLUDED.callsign, icao_type=EXCLUDED.icao_type,
     emitter_category=EXCLUDED.emitter_category,
@@ -99,7 +102,8 @@ ON CONFLICT (icao24, start_ts) DO UPDATE SET
     squawk_codes=EXCLUDED.squawk_codes,
     path_agl_ft=EXCLUDED.path_agl_ft,
     start_airport_ident=EXCLUDED.start_airport_ident,
-    end_airport_ident=EXCLUDED.end_airport_ident
+    end_airport_ident=EXCLUDED.end_airport_ident,
+    path_length_m=EXCLUDED.path_length_m
 """
 
 _FlightParams = tuple[

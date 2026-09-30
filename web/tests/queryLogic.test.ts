@@ -205,11 +205,50 @@ describe("isPredValid", () => {
           timeFrom: "",
           timeTo: "",
           squawkCodes: [],
+          dwellMinMin: null,
+          dwellMaxMin: null,
+          distanceMinNm: null,
+          distanceMaxNm: null,
           aglMin: null,
           aglMax: null,
           negated: false,
         }),
       ).toBe(false);
+    });
+    it("none shape valid with only a whole-flight measure", () => {
+      const base = {
+        id: "1",
+        kind: "region" as const,
+        regionName: "R",
+        shape: "none" as const,
+        lat: null,
+        lng: null,
+        radiusNm: 25,
+        polygon: null,
+        airspaceName: null,
+        airspaceLabel: null,
+        altMin: null,
+        altMinRef: "ft" as const,
+        altMax: null,
+        altMaxRef: "ft" as const,
+        timeFrom: "",
+        timeTo: "",
+        squawkCodes: [],
+        dwellMinMin: null,
+        dwellMaxMin: null,
+        distanceMinNm: null,
+        distanceMaxNm: null,
+        aglMin: null,
+        aglMax: null,
+        negated: false,
+      };
+      expect(isPredValid(base)).toBe(false);
+      expect(isPredValid({ ...base, dwellMinMin: 60 })).toBe(true);
+      expect(isPredValid({ ...base, dwellMaxMin: 60 })).toBe(true);
+      expect(isPredValid({ ...base, distanceMinNm: 100 })).toBe(true);
+      expect(
+        isPredValid({ ...base, kind: "always_within", distanceMaxNm: 100 }),
+      ).toBe(true);
     });
     it("none shape valid with time", () => {
       expect(

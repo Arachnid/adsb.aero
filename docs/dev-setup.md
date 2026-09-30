@@ -140,6 +140,18 @@ make backfill-agl
 
 Processes one `ingest_batch_date` at a time. Pass `--workers N` to control thread-pool parallelism (default 8) and `--batch-size N` for DB fetch/update batch size (default 500).
 
+Flights ingested before migration 0007 have `path_length_m IS NULL`, and the whole-flight
+distance filter (`distance_min_m`/`distance_max_m` on a block with no geometry) skips them
+until it is filled:
+
+```bash
+make backfill-path-length
+# expands to: docker exec infra-api-1 backfill-path-length
+```
+
+Runs entirely in SQL, one day of `start_ts` at a time, newest first. Safe to interrupt and
+re-run: it only touches rows that are still NULL.
+
 ## Importing flight traces
 
 The ingestion process downloads ADS-B trace archives from adsb.lol and stores them in the database. In production, ofelia runs `import-traces` every 12 hours by spinning up a fresh container from the API image (`job-run`), connecting it to the `infra_db` network, and mounting the `infra_scheduler_cache` volume. For manual imports:
