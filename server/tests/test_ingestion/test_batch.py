@@ -109,6 +109,28 @@ async def test_run_batch_creates_flights(
 
 
 @pytest.mark.asyncio
+async def test_run_batch_stores_path_length(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+    mslp: xr.DataArray,
+) -> None:
+    """Ingest fills path_length_m with the stitched track length of the stored path."""
+    from adsb_server.geometry.stitch import stitched_length_m_sql
+    from adsb_server.ingestion.batch import run_batch
+
+    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
+    await run_batch(conn, tarball_dir, date(2021, 1, 1), mslp=mslp)
+
+    row = await conn.fetchrow(
+        f"SELECT path_length_m, {stitched_length_m_sql('path')} AS expected FROM flights"
+    )
+    assert row is not None
+    assert row["path_length_m"] is not None
+    assert row["path_length_m"] > 0
+    assert row["path_length_m"] == pytest.approx(row["expected"], rel=1e-6)
+
+
+@pytest.mark.asyncio
 async def test_run_batch_marks_ingest_batch_succeeded(
     conn: asyncpg.Connection,
     tmp_path: Path,

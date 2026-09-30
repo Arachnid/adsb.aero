@@ -5,6 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from adsb_server.geometry.h3_cells import query_disk, query_polygon_cells
+from adsb_server.geometry.stitch import (
+    path_length_m_sql,
+    stitched_path_sql,
+    stitched_tfloat_sql,
+)
 from adsb_server.query.models import (
     AndPredicate,
     AnyGeometry,
@@ -194,6 +199,46 @@ def _build_stbox_sql(
     return f"stbox({geom_alias}, span({t_min}, {t_max}, true, false))"
 
 
+def _measured_path_sql(
+    *,
+    geom_ref: str | None,
+    time_from_p: str | None,
+    time_to_p: str | None,
+    fl_span_sql: str,
+    ft_span_sql: str,
+    agl_span_sql: str,
+) -> str:
+    """SQL for the stitched path clipped to a block's constraints, for dwell/distance.
+
+    The path is stitched *before* clipping, so coverage gaps are bridged but the
+    gaps clipping opens (leaving the geometry or altitude band) are not.  The
+    altitude and AGL series are stitched the same way, or their own gaps would
+    cut the bridged spans back out.  The cheap time and value restrictions are
+    applied first so atgeometry, the expensive one, runs on the smallest path.
+    """
+    stitched = stitched_path_sql("path")
+    measured = stitched
+    if time_from_p is not None or time_to_p is not None:
+        t_min = time_from_p if time_from_p is not None else "'-infinity'"
+        t_max = time_to_p if time_to_p is not None else "'infinity'"
+        window = f"span({t_min}::timestamptz, {t_max}::timestamptz, true, false)"
+        measured = f"atTime({measured}, {window})"
+    if fl_span_sql:
+        measured = f"atTime({measured}, getTime(atvalues(getZ({stitched}), {fl_span_sql})))"
+    if ft_span_sql:
+        corrected = (
+            f"CASE WHEN alt_correction_ft IS NULL THEN getZ({stitched})"
+            f" ELSE getZ({stitched}) + {stitched_tfloat_sql('alt_correction_ft')} END"
+        )
+        measured = f"atTime({measured}, getTime(atvalues({corrected}, {ft_span_sql})))"
+    if agl_span_sql:
+        stitched_agl = stitched_tfloat_sql("path_agl_ft")
+        measured = f"atTime({measured}, getTime(atvalues({stitched_agl}, {agl_span_sql})))"
+    if geom_ref is not None:
+        measured = f"atgeometry({measured}, {geom_ref})"
+    return measured
+
+
 def _compile_spatial_path(
     spatial_fn: str, v: SpatioTemporalAltitudeValue, params: list[Any]
 ) -> CompiledPredicate:
@@ -283,6 +328,8 @@ def _compile_spatial_path(
     # interest.  Used for squawk correlation so squawk codes are only checked
     # during the instants the flight was inside the constrained region.
     clipped_path_expr: str | None = None
+    # geom_ref: SQL for the block's 2D geometry, reused by the dwell/distance measure.
+    geom_ref: str | None = None
 
     if v.geometry is not None:
         h3_cells = geometry_h3_cells(v.geometry)
@@ -364,12 +411,14 @@ def _compile_spatial_path(
                 parts.append(f"eIntersects({clipped_full}, {cte_name}.geom)")
 
             clipped_path_expr = f"atgeometry({clipped_full}, {cte_name}.geom)"
+            geom_ref = f"{cte_name}.geom"
 
         else:
             # Geometry only — no altitude or time constraints.
             if spatial_fn == "ST_Within":
                 parts.append(f"ST_Within(trajectory(path), {geom_sql})")
                 clipped_path_expr = f"atgeometry(path, {geom_sql})"
+                geom_ref = geom_sql
             else:
                 # Compute geometry once in a CTE.  Move the STBOX pre-filter and
                 # eIntersects to outer_parts: the query builder will sort H3
@@ -383,11 +432,13 @@ def _compile_spatial_path(
                 outer_parts.append(f"path && {cte_name}.sb")
                 outer_parts.append(f"eIntersects(path, {cte_name}.geom)")
                 clipped_path_expr = f"atgeometry(path, {cte_name}.geom)"
+                geom_ref = f"{cte_name}.geom"
 
     # _effective_clipped: clipped_path_expr further restricted to AGL-satisfying instants.
-    # When AGL bounds are present alongside a geometry, dwell, distance, and squawk
-    # all operate on this doubly-clipped path so they measure the portion of the
-    # flight that satisfies geometry + AGL simultaneously (not independently).
+    # When AGL bounds are present alongside a geometry, squawk and the ever-AGL check
+    # operate on this doubly-clipped path so they test the portion of the flight that
+    # satisfies geometry + AGL simultaneously (not independently).  Dwell and distance
+    # use _measured_path_sql instead, which clips the same way but on the stitched path.
     _effective_clipped = clipped_path_expr
     if has_agl and clipped_path_expr is not None:
         agl_clip_span = _float_span_sql(agl_min_p, agl_max_p)
@@ -424,32 +475,59 @@ def _compile_spatial_path(
     if time_to_p is not None:
         parts.append(f"start_ts < {time_to_p}")
 
-    # Dwell time / distance filters on the clipped path inside the geometry.
+    # Dwell time / distance filters.  Both measure the part of the flight that
+    # satisfies every constraint in the block, taken on the stitched path so that
+    # coverage gaps count (see geometry/stitch.py).  With a geometry that part is
+    # the path inside it; without one it is whatever the altitude, time, and AGL
+    # bounds leave, which for an unconstrained block is the whole flight.
     # When eIntersects is deferred to outer_parts (geometry-only case), these
-    # also go to outer_parts since they depend on clipped_path_expr (atgeometry).
-    # The model validator guarantees geometry is set when these are present,
-    # so clipped_path_expr is always non-None here.
+    # also go to outer_parts so they only run on candidates that intersect.
     _expensive = outer_parts if outer_parts else parts
-    if v.dwell_min_s is not None:
-        dmin_p = _p(params, v.dwell_min_s)
-        # Necessary condition: total flight duration >= dwell_min_s.  Cheap btree
-        # pre-filter that eliminates short flights before the expensive atgeometry
-        # + duration computation.  Safe to add unconditionally (inner or outer plan).
-        parts.append(f"EXTRACT(EPOCH FROM (end_ts - start_ts)) >= {dmin_p}")
-        _expensive.append(
-            f"EXTRACT(EPOCH FROM duration(getTime({_effective_clipped}))) >= {dmin_p}"
-        )
-    if v.dwell_max_s is not None:
-        dmax_p = _p(params, v.dwell_max_s)
-        _expensive.append(
-            f"EXTRACT(EPOCH FROM duration(getTime({_effective_clipped}))) <= {dmax_p}"
-        )
-    if v.distance_min_m is not None:
-        distmin_p = _p(params, v.distance_min_m)
-        _expensive.append(f"ST_Length(trajectory({_effective_clipped})::geography) >= {distmin_p}")
-    if v.distance_max_m is not None:
-        distmax_p = _p(params, v.distance_max_m)
-        _expensive.append(f"ST_Length(trajectory({_effective_clipped})::geography) <= {distmax_p}")
+    has_measure = (
+        v.dwell_min_s is not None
+        or v.dwell_max_s is not None
+        or v.distance_min_m is not None
+        or v.distance_max_m is not None
+    )
+    if has_measure:
+        # Whole-flight case: nothing in the block clips the path, so the measure
+        # is the stored duration and track length and both can use an index.
+        # In trajectory_within, altitude and AGL bounds hold over the whole path
+        # for every flight that matches, so only geometry and time clip it.
+        clips = v.geometry is not None or has_time
+        if spatial_fn != "ST_Within":
+            clips = clips or has_alt or has_agl
+        if clips:
+            measured = _measured_path_sql(
+                geom_ref=geom_ref,
+                time_from_p=time_from_p,
+                time_to_p=time_to_p,
+                fl_span_sql=fl_span_sql,
+                ft_span_sql=ft_span_sql,
+                agl_span_sql=_float_span_sql(agl_min_p, agl_max_p) if has_agl else "",
+            )
+            dwell_sql = f"EXTRACT(EPOCH FROM duration(getTime({measured})))"
+            distance_sql = path_length_m_sql(measured)
+            measure_parts = _expensive
+        else:
+            dwell_sql = "EXTRACT(EPOCH FROM (end_ts - start_ts))"
+            distance_sql = "path_length_m"
+            measure_parts = parts
+
+        if v.dwell_min_s is not None:
+            dmin_p = _p(params, v.dwell_min_s)
+            if clips:
+                # Necessary condition: total flight duration >= dwell_min_s.  Cheap
+                # btree pre-filter that eliminates short flights before the
+                # expensive clipped duration.  Safe in either plan.
+                parts.append(f"EXTRACT(EPOCH FROM (end_ts - start_ts)) >= {dmin_p}")
+            measure_parts.append(f"{dwell_sql} >= {dmin_p}")
+        if v.dwell_max_s is not None:
+            measure_parts.append(f"{dwell_sql} <= {_p(params, v.dwell_max_s)}")
+        if v.distance_min_m is not None:
+            measure_parts.append(f"{distance_sql} >= {_p(params, v.distance_min_m)}")
+        if v.distance_max_m is not None:
+            measure_parts.append(f"{distance_sql} <= {_p(params, v.distance_max_m)}")
 
     # Squawk filter: GIN pre-filter then precise temporal check.
     # squawk_codes (text[] GIN) eliminates flights that never had any of the

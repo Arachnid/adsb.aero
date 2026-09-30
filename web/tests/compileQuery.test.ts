@@ -600,6 +600,39 @@ describe("always_within", () => {
   });
 });
 
+// ---- whole-flight measures (no region) -------------------------------------
+
+describe("measures without a region", () => {
+  it("always_within with only distance compiles without geometry", () => {
+    const g = group({
+      id: "1",
+      kind: "always_within",
+      regionName: "R",
+      shape: "none",
+      lat: null,
+      lng: null,
+      radiusNm: 25,
+      polygon: null,
+      altMin: null,
+      altMax: null,
+      timeFrom: "",
+      timeTo: "",
+      squawkCodes: [],
+      ...REGION_DEFAULTS,
+      distanceMinNm: 100,
+      dwellMaxMin: 90,
+    });
+    expect(compileGroup(g, null)).toEqual({
+      trajectory_within: {
+        altitude_min_ref: "ft",
+        altitude_max_ref: "ft",
+        dwell_max_s: 90 * 60,
+        distance_min_m: 100 * 1852,
+      },
+    });
+  });
+});
+
 // ---- boolean combinators ---------------------------------------------------
 
 describe("group combinators", () => {

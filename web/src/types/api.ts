@@ -1261,22 +1261,22 @@ export interface components {
       squawk_codes?: string[] | null;
       /**
        * Dwell Min S
-       * @description Minimum time the flight must spend inside the geometry (seconds, inclusive). Measured as the total duration of the path clipped to the geometry plus any altitude and time constraints. Requires `geometry`.
+       * @description Minimum time (seconds, inclusive) the flight spends satisfying every other constraint in this block: inside `geometry`, within the altitude, AGL, and time bounds. With none of those set it is the whole flight's duration. Coverage gaps are bridged with a straight line between the points either side, so time the aircraft went unobserved counts.
        */
       dwell_min_s?: number | null;
       /**
        * Dwell Max S
-       * @description Maximum time the flight may spend inside the geometry (seconds, inclusive). Requires `geometry`.
+       * @description Maximum time (seconds, inclusive) the flight spends satisfying every other constraint in this block. Measured as for `dwell_min_s`.
        */
       dwell_max_s?: number | null;
       /**
        * Distance Min M
-       * @description Minimum distance the flight must cover inside the geometry (metres, inclusive). Measured along the clipped path. Requires `geometry`.
+       * @description Minimum ground distance (metres, inclusive) the flight covers while satisfying every other constraint in this block. With none set it is the whole flight's track length. Coverage gaps are bridged with a straight line, as for `dwell_min_s`.
        */
       distance_min_m?: number | null;
       /**
        * Distance Max M
-       * @description Maximum distance the flight may cover inside the geometry (metres, inclusive). Requires `geometry`.
+       * @description Maximum ground distance (metres, inclusive) the flight covers while satisfying every other constraint in this block. Measured as for `distance_min_m`.
        */
       distance_max_m?: number | null;
       /**

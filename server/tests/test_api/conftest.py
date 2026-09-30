@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 from adsb_server.api.main import app
 from adsb_server.geometry.h3_cells import path_h3_cells
+from adsb_server.geometry.stitch import stitched_length_m_sql
 from adsb_server.geometry.wkt import tfloat_seq, tgeompoint_seq, tint_seq, ttext_seq
 
 # ---------------------------------------------------------------------------
@@ -82,6 +83,12 @@ FLIGHT_A_AGL = tfloat_seq([34800.0, 35700.0, 34900.0], [v[3] for v in _A_VERTS])
 FLIGHT_B_AGL = tfloat_seq([37300.0, 36800.0], [v[3] for v in _B_VERTS])
 
 _AGL_UPDATE = "UPDATE flights SET path_agl_ft = $1::tfloat WHERE icao24 = $2 AND start_ts = $3"
+
+# Ingest derives path_length_m in SQL; flights inserted directly get it the same way.
+FILL_PATH_LENGTH = (
+    f"UPDATE flights SET path_length_m = {stitched_length_m_sql('path')}"
+    " WHERE path_length_m IS NULL"
+)
 
 # Flight C: inside UK_CORRIDOR, 13:00-15:00.
 # AGL peaks above 35000 ft only around 13:48-14:12 (the high-AGL window).
@@ -168,6 +175,7 @@ async def api_test_data(pool: asyncpg.Pool) -> None:
     await pool.execute(_AGL_UPDATE, FLIGHT_A_AGL, FLIGHT_A_ICAO, FLIGHT_A_START_TS)
     await pool.execute(_AGL_UPDATE, FLIGHT_B_AGL, FLIGHT_B_ICAO, FLIGHT_B_START_TS)
     await pool.execute(_AGL_UPDATE, FLIGHT_C_AGL, FLIGHT_C_ICAO, FLIGHT_C_START_TS)
+    await pool.execute(FILL_PATH_LENGTH)
     # Airframe data for flight A only; flight B tests the null case.
     await pool.execute(
         INSERT_AIRFRAME,

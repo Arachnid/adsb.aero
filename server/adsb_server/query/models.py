@@ -593,27 +593,31 @@ class SpatioTemporalAltitudeValue(BaseModel):
     )
     dwell_min_s: float | None = Field(
         default=None,
-        description="Minimum time the flight must spend inside the geometry (seconds, inclusive). "
-        "Measured as the total duration of the path clipped to the geometry plus any "
-        "altitude and time constraints. Requires `geometry`.",
+        description="Minimum time (seconds, inclusive) the flight spends satisfying every "
+        "other constraint in this block: inside `geometry`, within the altitude, AGL, and "
+        "time bounds. With none of those set it is the whole flight's duration. Coverage "
+        "gaps are bridged with a straight line between the points either side, so time "
+        "the aircraft went unobserved counts.",
     )
     dwell_max_s: float | None = Field(
         default=None,
-        description="Maximum time the flight may spend inside the geometry (seconds, inclusive). "
-        "Requires `geometry`.",
+        description="Maximum time (seconds, inclusive) the flight spends satisfying every "
+        "other constraint in this block. Measured as for `dwell_min_s`.",
     )
     distance_min_m: float | None = Field(
         default=None,
         description=(
-            "Minimum distance the flight must cover inside the geometry "
-            "(metres, inclusive). Measured along the clipped path. Requires `geometry`."
+            "Minimum ground distance (metres, inclusive) the flight covers while satisfying "
+            "every other constraint in this block. With none set it is the whole flight's "
+            "track length. Coverage gaps are bridged with a straight line, as for "
+            "`dwell_min_s`."
         ),
     )
     distance_max_m: float | None = Field(
         default=None,
         description=(
-            "Maximum distance the flight may cover inside the geometry "
-            "(metres, inclusive). Requires `geometry`."
+            "Maximum ground distance (metres, inclusive) the flight covers while satisfying "
+            "every other constraint in this block. Measured as for `distance_min_m`."
         ),
     )
     agl_min_ft: float | None = Field(
@@ -650,19 +654,6 @@ class SpatioTemporalAltitudeValue(BaseModel):
             and self.agl_max_ft is None
         ):
             raise ValueError("at least one constraint must be set")
-        return self
-
-    @model_validator(mode="after")
-    def _dwell_distance_require_geometry(self) -> SpatioTemporalAltitudeValue:
-        if (
-            self.dwell_min_s is not None
-            or self.dwell_max_s is not None
-            or self.distance_min_m is not None
-            or self.distance_max_m is not None
-        ) and self.geometry is None:
-            raise ValueError(
-                "dwell_min_s, dwell_max_s, distance_min_m, and distance_max_m require geometry"
-            )
         return self
 
 

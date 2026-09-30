@@ -34,6 +34,7 @@ import-openaip = "adsb_server.reference_data.openaip:main"
 backfill-airports = "adsb_server.ingestion.backfill_airports:main"
 download-terrain = "adsb_server.terrain.dem_downloader:main"
 backfill-agl = "adsb_server.terrain.backfill_agl:main"
+backfill-path-length = "adsb_server.ingestion.backfill_path_length:main"
 
 [project.optional-dependencies]
 dev = [

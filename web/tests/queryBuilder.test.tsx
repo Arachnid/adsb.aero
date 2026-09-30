@@ -482,6 +482,24 @@ describe("QueryBuilderBody", () => {
       distanceMaxNm: null,
     };
 
+    it("offers duration & distance when shape=none", () => {
+      const group = makeGroup([basePred]);
+      render(<QueryBuilderBody {...bodyProps(group)} />);
+      fireEvent.click(screen.getByLabelText("Duration & distance"));
+      expect(screen.getByText("Min duration (min)")).toBeDefined();
+      expect(screen.getByText("Max duration (min)")).toBeDefined();
+      expect(screen.getByText("Min dist (nm)")).toBeDefined();
+      expect(screen.queryByText("Min dwell (min)")).toBeNull();
+    });
+
+    it("calls it dwell once a region is chosen", () => {
+      const group = makeGroup([{ ...basePred, shape: "viewport" as const }]);
+      render(<QueryBuilderBody {...bodyProps(group)} />);
+      fireEvent.click(screen.getByLabelText("Dwell & distance"));
+      expect(screen.getByText("Min dwell (min)")).toBeDefined();
+      expect(screen.queryByLabelText("Duration & distance")).toBeNull();
+    });
+
     it("shows altitude checkbox even when shape=none", () => {
       const group = makeGroup([basePred]);
       render(<QueryBuilderBody {...bodyProps(group)} />);
