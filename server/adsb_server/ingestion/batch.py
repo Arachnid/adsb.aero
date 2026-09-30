@@ -381,6 +381,7 @@ async def _backup_settled_partitions(
             conn,
             settings.flight_backup_dir,
             level=settings.flight_backup_zstd_level,
+            workers=settings.flight_backup_zstd_workers,
         )
     except Exception:
         logger.exception("Partition backup after batch %s failed", batch_date)

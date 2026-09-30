@@ -49,6 +49,7 @@ import os
 import re
 import sys
 from compression import zstd
+from compression.zstd import CompressionParameter
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -300,7 +301,8 @@ async def dump_partition(
     part: Partition,
     out_dir: Path,
     *,
-    level: int = 6,
+    level: int = 19,
+    workers: int = 4,
 ) -> DumpResult:
     """Dump one partition to `out_dir`, atomically, with a manifest beside it.
 
@@ -320,8 +322,17 @@ async def dump_partition(
     with tmp_path.open("wb") as raw_fh:
         hashing = _HashingWriter(raw_fh)
         # ZstdFile writes through the hasher, so the digest covers exactly the
-        # bytes that end up on disk.
-        with zstd.ZstdFile(hashing, "wb", level=level) as zf:
+        # bytes that end up on disk.  Options rather than `level=` because the
+        # two cannot be combined, and the worker count is what makes the high
+        # compression levels affordable.
+        # Annotated as plain ints: CompressionParameter is an IntEnum, and
+        # Mapping is invariant in its key type, so dict[CompressionParameter, int]
+        # does not satisfy the stub's Mapping[int, int].
+        options: dict[int, int] = {
+            CompressionParameter.compression_level: level,
+            CompressionParameter.nb_workers: workers,
+        }
+        with zstd.ZstdFile(hashing, "wb", options=options) as zf:
 
             async def write(data: bytes) -> None:
                 nonlocal raw_bytes
@@ -360,6 +371,7 @@ async def dump_partition(
         "compressed_bytes": result.compressed_bytes,
         "sha256": result.sha256,
         "zstd_level": level,
+        "zstd_workers": workers,
         "dump_file": part.dump_name,
         "dumped_at": started.isoformat(),
         "duration_seconds": round((datetime.now(UTC) - started).total_seconds(), 1),
@@ -409,7 +421,8 @@ async def backup_due_partitions(
     conn: asyncpg.Connection,
     out_dir: Path,
     *,
-    level: int = 6,
+    level: int = 19,
+    workers: int = 4,
     force: bool = False,
 ) -> list[DumpResult]:
     """Dump every partition that needs it.  Returns what was written.
@@ -422,7 +435,7 @@ async def backup_due_partitions(
         logger.info("No partitions due for backup")
         return []
     logger.info("Backing up %d partition(s): %s", len(due), ", ".join(p.name for p in due))
-    return [await dump_partition(conn, part, out_dir, level=level) for part in due]
+    return [await dump_partition(conn, part, out_dir, level=level, workers=workers) for part in due]
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -454,7 +467,13 @@ async def _run(args: argparse.Namespace) -> int:
                 print(f"No such partition(s): {', '.join(sorted(missing))}", file=sys.stderr)
                 return 2
             results = [
-                await dump_partition(conn, p, out_dir, level=settings.flight_backup_zstd_level)
+                await dump_partition(
+                    conn,
+                    p,
+                    out_dir,
+                    level=settings.flight_backup_zstd_level,
+                    workers=settings.flight_backup_zstd_workers,
+                )
                 for p in parts
             ]
         else:
@@ -462,6 +481,7 @@ async def _run(args: argparse.Namespace) -> int:
                 conn,
                 out_dir,
                 level=settings.flight_backup_zstd_level,
+                workers=settings.flight_backup_zstd_workers,
                 force=args.force,
             )
 

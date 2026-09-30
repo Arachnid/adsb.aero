@@ -437,7 +437,11 @@ adsb-aero/
 
   Making the partition the backup unit — rather than the day — keeps the backup set and the database in step: retention drops whole partitions, and `adsb-backup-purge` removes exactly the dumps whose partitions are gone.
 
-- **Retention**: 18 months of traces. `pg_partman`'s `retention` on `public.flights` (with `retention_keep_table = false`) drops one weekly partition a week from its hourly background worker; `adsb-backup-purge` then removes that partition's dump from the backup volume. The two are cross-checked — the purge job refuses to run if the window configured on the host and the one in `partman.part_config` disagree.
+  The dumped column list is read from `information_schema` at dump time (generated columns excluded, since PostgreSQL will not `COPY` into them) and recorded in each manifest, which the restore then uses. Nothing enumerates columns by hand, so a schema change needs no edit here. Compression is zstd level 19 with worker threads: measured on a week of real data the ratio goes 4.13x at level 6, 4.32x at 9, 4.37x at 12 — and then 5.11x at 19, which is worth ~60 GB across the retention window.
+
+- **Retention**: 18 months of traces, in three places kept in step. `flight_staging` — one compressed blob of in-progress flights per ingested day, which nothing was ageing out — is purged on the same window by `adsb_server.ingestion.retention`, which reads it from `partman.part_config` rather than having a setting of its own.
+
+- **Retention mechanics**: 18 months of traces. `pg_partman`'s `retention` on `public.flights` (with `retention_keep_table = false`) drops one weekly partition a week from its hourly background worker; `adsb-backup-purge` then removes that partition's dump from the backup volume. The two are cross-checked — the purge job refuses to run if the window configured on the host and the one in `partman.part_config` disagree.
 
 ## Cloud migration path
 
