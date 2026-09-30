@@ -35,6 +35,7 @@ from adsb_server.ingestion.airport_index import AGL_MATCH_MAX_FT, AirportIndex
 from adsb_server.ingestion.models import FinalizedFlight, RawFlight, RawPoint, TraceHeader
 from adsb_server.ingestion.parser import parse_trace_bytes, stream_tarball_raw
 from adsb_server.ingestion.partition_backup import backup_due_partitions
+from adsb_server.ingestion.retention import purge_expired_staging
 from adsb_server.ingestion.splitter import finalize_segment, split_flights
 from adsb_server.pressure.correct import build_correction_interpolator, compute_correction_series
 from adsb_server.terrain.agl import compute_agl_series
@@ -345,6 +346,20 @@ def _process_and_correct(
     return params_list, in_progress, total_dropped, icao24
 
 
+async def _purge_expired_staging(conn: asyncpg.Connection, batch_date: date) -> None:
+    """Age `flight_staging` out on the same window partman applies to flights.
+
+    Like the backup step, this runs after the batch is already recorded as
+    succeeded and swallows its own failures: falling behind on retention is not
+    a reason to make the scheduler redo a day's ingestion.
+    """
+    try:
+        await purge_expired_staging(conn)
+    except Exception:
+        logger.exception("Purging expired flight_staging after batch %s failed", batch_date)
+        sentry_sdk.capture_exception()
+
+
 async def _backup_settled_partitions(
     conn: asyncpg.Connection,
     batch_date: date,
@@ -607,6 +622,7 @@ async def run_batch(
     if not effective_keep_herbie_cache:
         _cleanup_old_herbie_cache(effective_cache_dir, batch_date)
 
+    await _purge_expired_staging(conn, batch_date)
     await _backup_settled_partitions(conn, batch_date, settings)
 
     if total_dropped_points:
