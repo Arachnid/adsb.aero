@@ -429,7 +429,19 @@ adsb-aero/
 - **Logs**: stdout from each container, captured by Docker's json-file driver.
 - **Secrets**: Plain text files in `infra/secrets/` (gitignored), mounted by Docker Compose at `/run/secrets/<name>`. Current secrets: `sentry_dsn` (Sentry DSN), `openaip_api_key` (OpenAIP tile/airspace proxy), `origin.crt` and `origin.key` (TLS certificates, prod only). Migrate to `sops` if collaborators are added.
 - **CI/CD**: GitHub Actions builds and pushes `api`, `web`, and `postgres` images to GitHub Container Registry on every push to `main`. Deployment to OVH is `git pull && make prod` (which runs `docker compose pull && docker compose up -d` in `infra/`). Static assets are baked into the web image; no local build step is needed on the server. No Kubernetes.
-- **Backups and DR**: handled at infrastructure level via OVHcloud. Out of scope for this spec.
+- **Backups and DR**: an NFS backup volume holds three things, written by host-side systemd timers on the server (`/usr/local/sbin/adsb-backup-*`, documented in `SERVER-SETUP.md`): a weekly `zfs send` of the host's filesystems plus a nightly capture of the machine's layout and package state; a nightly dump of database globals, schema and reference tables; and one compressed `COPY` dump per weekly `flights` partition.
+
+  The partition dumps are the application's concern, and the only part that lives in this repo. `adsb_server.ingestion.partition_backup` runs as the last step of every batch: it dumps any weekly partition that has become immutable, to a local spool directory that a host timer drains to the backup volume. Ingestion never touches the network filesystem, so a backup outage cannot fail a batch.
+
+  A partition is treated as immutable three days after its range ends, because a batch for date D writes flights with `start_ts` as far back as D-2 (in-progress flights carried across midnight through `flight_staging`). The consequence is deliberate: the most recent ~10 days of traces are not in the backup set. They are reproducible from the adsb.lol archive with `import-traces`, which is where they came from; everything that is *not* reproducible is backed up.
+
+  Making the partition the backup unit — rather than the day — keeps the backup set and the database in step: retention drops whole partitions, and `adsb-backup-purge` removes exactly the dumps whose partitions are gone.
+
+  The dumped column list is read from `information_schema` at dump time (generated columns excluded, since PostgreSQL will not `COPY` into them) and recorded in each manifest, which the restore then uses. Nothing enumerates columns by hand, so a schema change needs no edit here. Compression is zstd level 19 with worker threads: measured on a week of real data the ratio goes 4.13x at level 6, 4.32x at 9, 4.37x at 12 — and then 5.11x at 19, which is worth ~60 GB across the retention window.
+
+- **Retention**: 18 months of traces, in three places kept in step. `flight_staging` — one compressed blob of in-progress flights per ingested day, which nothing was ageing out — is purged on the same window by `adsb_server.ingestion.retention`, which reads it from `partman.part_config` rather than having a setting of its own.
+
+- **Retention mechanics**: 18 months of traces. `pg_partman`'s `retention` on `public.flights` (with `retention_keep_table = false`) drops one weekly partition a week from its hourly background worker; `adsb-backup-purge` then removes that partition's dump from the backup volume. The two are cross-checked — the purge job refuses to run if the window configured on the host and the one in `partman.part_config` disagree.
 
 ## Cloud migration path
 

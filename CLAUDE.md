@@ -53,6 +53,22 @@ All `docker` commands (including `docker exec`, `docker ps`, `docker compose`) s
 
 **Full dev setup guide**: `docs/dev-setup.md`.
 
+## Tooling traps
+
+**`ruff format` can emit invalid Python here.** With this repo's
+`target-version = "py314"`, ruff 0.16.7 rewrites a parenthesised multi-exception
+`except` that has no `as` clause:
+
+```python
+except (OSError, ValueError):      # what you write
+except OSError, ValueError:        # what ruff format produces — a SyntaxError
+```
+
+The `ruff-format` pre-commit hook applies it silently, so the file is broken
+before any other check runs. It does *not* happen when the clause binds the
+exception, so write `except (OSError, ValueError) as exc:` and use `exc`.
+Re-test when ruff is next bumped; if it is fixed, delete this note.
+
 ## Web / TypeScript types
 
 After any Python API model change, regenerate frontend types with `make gen-types` (runs from repo root). This exports the OpenAPI schema from the live FastAPI app, runs `openapi-typescript` to update `web/src/types/api.ts`, then runs prettier over the result. Do not edit that file by hand.

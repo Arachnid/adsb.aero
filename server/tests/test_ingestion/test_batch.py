@@ -1097,3 +1097,67 @@ async def test_run_batch_aborts_after_three_failures(
         await run_batch(flaky, tarball_dir, batch_date, mslp=mslp)  # type: ignore[arg-type]
 
     assert flaky.executemany_calls == 3
+
+
+@pytest.mark.asyncio
+async def test_run_batch_backs_up_settled_partitions(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+    mslp: xr.DataArray,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A batch dumps the weekly partitions its own success has just settled."""
+    from adsb_server.config import Settings
+    from adsb_server.ingestion import batch as batch_module
+    from adsb_server.ingestion.batch import run_batch
+
+    spool = tmp_path / "spool"
+    monkeypatch.setattr(
+        batch_module,
+        "get_settings",
+        lambda: Settings(flight_backup_dir=spool, flight_backup_zstd_level=1),
+    )
+
+    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
+    # Far enough past the 2024-06-03 week that the week is settled by this batch.
+    await run_batch(conn, tarball_dir, date(2024, 6, 20), mslp=mslp)
+
+    assert (spool / "flights_p20240603.copy.zst").exists()
+    manifest = json.loads((spool / "flights_p20240603.json").read_text())
+    assert manifest["partition"] == "flights_p20240603"
+    # The week the batch itself landed in is still open, so it is not dumped.
+    assert not (spool / "flights_p20240617.copy.zst").exists()
+
+
+@pytest.mark.asyncio
+async def test_run_batch_succeeds_when_the_backup_fails(
+    conn: asyncpg.Connection,
+    tmp_path: Path,
+    mslp: xr.DataArray,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broken backup spool must not cost us the ingestion."""
+    from adsb_server.config import Settings
+    from adsb_server.ingestion import batch as batch_module
+    from adsb_server.ingestion.batch import run_batch
+
+    monkeypatch.setattr(
+        batch_module,
+        "get_settings",
+        lambda: Settings(flight_backup_dir=tmp_path / "spool"),
+    )
+
+    async def explode(*args: object, **kwargs: object) -> None:
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(batch_module, "backup_due_partitions", explode)
+
+    tarball_dir = _make_tarball_dir(tmp_path, ["aabbcc"])
+    batch_date = date(2024, 6, 20)
+    count = await run_batch(conn, tarball_dir, batch_date, mslp=mslp)
+
+    assert count == 1
+    status = await conn.fetchval(
+        "SELECT status FROM ingest_batches WHERE batch_date = $1", batch_date
+    )
+    assert status == "succeeded"
