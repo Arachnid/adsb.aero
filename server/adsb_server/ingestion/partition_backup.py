@@ -42,6 +42,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
+import fcntl
 import hashlib
 import json
 import logging
@@ -53,11 +55,14 @@ from compression.zstd import CompressionParameter
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 import asyncpg
 
 from adsb_server.config import get_settings
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -417,6 +422,31 @@ def _fsync_dir(path: Path) -> None:
         os.close(fd)
 
 
+@contextlib.contextmanager
+def exclusive_run(out_dir: Path) -> Iterator[bool]:
+    """Hold a lock on the output directory for the length of a dump run.
+
+    Two dumps of the same partition would write the same temporary file and
+    corrupt each other's output.  That is not hypothetical: seeding a fresh
+    backup volume takes long enough to still be running when the next
+    scheduled batch starts its own dump.
+
+    Yields False when someone else holds the lock, so the caller can skip
+    rather than queue — whatever was due will still be due next time.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with (out_dir / ".backup.lock").open("w") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 async def backup_due_partitions(
     conn: asyncpg.Connection,
     out_dir: Path,
@@ -430,12 +460,18 @@ async def backup_due_partitions(
     Called as the last step of each batch, and by the `backup-flights` command
     to fill gaps (after a spool outage, or to seed a fresh backup volume).
     """
-    due = await partitions_due(conn, out_dir, force=force)
-    if not due:
-        logger.info("No partitions due for backup")
-        return []
-    logger.info("Backing up %d partition(s): %s", len(due), ", ".join(p.name for p in due))
-    return [await dump_partition(conn, part, out_dir, level=level, workers=workers) for part in due]
+    with exclusive_run(out_dir) as acquired:
+        if not acquired:
+            logger.info("Another backup run holds the lock on %s — skipping", out_dir)
+            return []
+        due = await partitions_due(conn, out_dir, force=force)
+        if not due:
+            logger.info("No partitions due for backup")
+            return []
+        logger.info("Backing up %d partition(s): %s", len(due), ", ".join(p.name for p in due))
+        return [
+            await dump_partition(conn, part, out_dir, level=level, workers=workers) for part in due
+        ]
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -466,16 +502,20 @@ async def _run(args: argparse.Namespace) -> int:
             if missing:
                 print(f"No such partition(s): {', '.join(sorted(missing))}", file=sys.stderr)
                 return 2
-            results = [
-                await dump_partition(
-                    conn,
-                    p,
-                    out_dir,
-                    level=settings.flight_backup_zstd_level,
-                    workers=settings.flight_backup_zstd_workers,
-                )
-                for p in parts
-            ]
+            with exclusive_run(out_dir) as acquired:
+                if not acquired:
+                    print(f"Another backup run holds the lock on {out_dir}.", file=sys.stderr)
+                    return 1
+                results = [
+                    await dump_partition(
+                        conn,
+                        p,
+                        out_dir,
+                        level=settings.flight_backup_zstd_level,
+                        workers=settings.flight_backup_zstd_workers,
+                    )
+                    for p in parts
+                ]
         else:
             results = await backup_due_partitions(
                 conn,

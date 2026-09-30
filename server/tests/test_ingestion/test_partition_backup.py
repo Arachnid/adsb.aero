@@ -16,6 +16,7 @@ from adsb_server.ingestion.partition_backup import (
     backup_due_partitions,
     dump_partition,
     dumpable_columns,
+    exclusive_run,
     is_settled,
     latest_succeeded_batch,
     list_partitions,
@@ -251,7 +252,8 @@ async def test_nothing_is_due_without_a_succeeded_batch(
     assert await latest_succeeded_batch(conn) is None
     assert await partitions_due(conn, tmp_path) == []
     assert await backup_due_partitions(conn, tmp_path) == []
-    assert list(tmp_path.iterdir()) == []
+    # Only the run lock, which taking it creates; no dumps, no manifests.
+    assert [p.name for p in tmp_path.iterdir()] == [".backup.lock"]
 
 
 async def test_backup_due_partitions_dumps_and_then_finds_nothing(
@@ -281,3 +283,22 @@ def test_read_manifest_tolerates_junk(tmp_path: Path) -> None:
     assert read_manifest(tmp_path, part) is None
     (tmp_path / f"{_PARTITION}.json").write_text("[1, 2]")
     assert read_manifest(tmp_path, part) is None
+
+
+async def test_a_second_run_does_not_fight_the_first(
+    conn: asyncpg.Connection, tmp_path: Path
+) -> None:
+    """Concurrent dump runs would write the same temp file; the loser skips."""
+    await _mark_batch(conn, _SETTLE_DATE, datetime(2024, 6, 14, tzinfo=UTC))
+
+    with exclusive_run(tmp_path) as first:
+        assert first, "the first caller gets the lock"
+        # A second run, as a scheduled batch would be while a seed is going.
+        assert await backup_due_partitions(conn, tmp_path, level=1) == []
+        assert not list(tmp_path.glob("*.copy.zst")), "and writes nothing"
+
+        with exclusive_run(tmp_path) as second:
+            assert not second, "the lock is exclusive"
+
+    # Released: the work that was skipped is still due.
+    assert await _the_partition(conn) in await partitions_due(conn, tmp_path)
