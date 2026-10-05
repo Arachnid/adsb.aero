@@ -1,0 +1,106 @@
+{
+ "excl_0km": {
+  "excl_km": 0,
+  "hours": 91.81,
+  "conc500": 0.2945,
+  "M": 1.387,
+  "null_conc500": 0.1905,
+  "null_M": 1.02
+ },
+ "excl_3km": {
+  "excl_km": 3,
+  "hours": 81.49,
+  "conc500": 0.2916,
+  "M": 1.457,
+  "null_conc500": 0.198,
+  "null_M": 1.108
+ },
+ "excl_5km": {
+  "excl_km": 5,
+  "hours": 60.5,
+  "conc500": 0.3047,
+  "M": 1.559,
+  "null_conc500": 0.2086,
+  "null_M": 1.288
+ },
+ "excl_8km": {
+  "excl_km": 8,
+  "hours": 23.91,
+  "conc500": 0.3027,
+  "M": 1.762,
+  "null_conc500": 0.2026,
+  "null_M": 1.461
+ },
+ "excl_12km": {
+  "excl_km": 12,
+  "hours": 3.68,
+  "conc500": 0.2704,
+  "M": 2.094,
+  "null_conc500": 0.2231,
+  "null_M": 1.73
+ },
+ "band50_dur120": {
+  "band_pm_ft": 50.0,
+  "min_dur_s": 120.0,
+  "hours": 19.19,
+  "conc500": 0.3174,
+  "M": 1.769
+ },
+ "band75_dur120": {
+  "band_pm_ft": 75.0,
+  "min_dur_s": 120.0,
+  "hours": 23.91,
+  "conc500": 0.3027,
+  "M": 1.762
+ },
+ "band75_dur240": {
+  "band_pm_ft": 75.0,
+  "min_dur_s": 240.0,
+  "hours": 11.72,
+  "conc500": 0.305,
+  "M": 1.921
+ },
+ "band100_dur180": {
+  "band_pm_ft": 100.0,
+  "min_dur_s": 180.0,
+  "hours": 21.31,
+  "conc500": 0.2887,
+  "M": 1.769
+ },
+ "phase_belowTA_allA1": {
+  "conc500_as_is": 0.3027,
+  "best_shift_ft": 35,
+  "conc500_shifted": 0.3204,
+  "null_conc500_as_is": 0.2026,
+  "M_as_is": 1.762,
+  "M_shifted": 1.754
+ },
+ "phase_belowTA_sq7000": {
+  "conc500_as_is": 0.2627,
+  "best_shift_ft": 40,
+  "conc500_shifted": 0.2796,
+  "null_conc500_as_is": 0.1927,
+  "M_as_is": 1.716,
+  "M_shifted": 1.718
+ },
+ "phase_aboveTA_allA1": {
+  "conc500_as_is": 0.3664,
+  "best_shift_ft": -15,
+  "conc500_shifted": 0.3777,
+  "null_conc500_as_is": 0.2339,
+  "M_as_is": 1.298,
+  "M_shifted": 1.292
+ },
+ "phase_aboveTA_sq7000": {
+  "conc500_as_is": 0.2673,
+  "best_shift_ft": -110,
+  "conc500_shifted": 0.3287,
+  "null_conc500_as_is": 0.2421,
+  "M_as_is": 1.755,
+  "M_shifted": 1.766
+ },
+ "squawk_mix_belowTA_level": {
+  "other/none": 44.2,
+  "7000": 55.8
+ }
+}

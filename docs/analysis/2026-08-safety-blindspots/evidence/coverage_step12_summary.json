@@ -1,0 +1,177 @@
+{
+ "cheshire": {
+  "n_total_flights": 900,
+  "n_agl_present": 900,
+  "agl_avail_frac": 1.0,
+  "n_landed_recognized_airport": 872,
+  "n_landed_with_last_agl": 872,
+  "last_agl_quartiles_ft": {
+   "q1": -21.73995,
+   "median": -0.71265,
+   "q3": 35.927724999999995
+  },
+  "min_agl_final_subseq_quartiles_ft": {
+   "q1": -30.96365,
+   "median": -10.2143,
+   "q3": 24.824
+  },
+  "top_end_airports": [
+   [
+    "EGCC",
+    "MANCHESTER",
+    565
+   ],
+   [
+    "EGGP",
+    "LIVERPOOL",
+    177
+   ],
+   [
+    "EGCB",
+    "MANCHESTER/BARTON",
+    130
+   ]
+  ],
+  "truncated_days": [
+   "2026-06-20",
+   "2026-07-18",
+   "2026-01-17"
+  ]
+ },
+ "great_glen": {
+  "n_total_flights": 4,
+  "n_agl_present": 4,
+  "agl_avail_frac": 1.0,
+  "n_landed_recognized_airport": 0,
+  "n_landed_with_last_agl": 0,
+  "last_agl_quartiles_ft": {},
+  "min_agl_final_subseq_quartiles_ft": {},
+  "top_end_airports": [],
+  "truncated_days": []
+ },
+ "leeds": {
+  "n_total_flights": 197,
+  "n_agl_present": 197,
+  "agl_avail_frac": 1.0,
+  "n_landed_recognized_airport": 175,
+  "n_landed_with_last_agl": 175,
+  "last_agl_quartiles_ft": {
+   "q1": -26.9852,
+   "median": -8.2695,
+   "q3": 17.5309
+  },
+  "min_agl_final_subseq_quartiles_ft": {
+   "q1": -27.6717,
+   "median": -9.8813,
+   "q3": 12.3989
+  },
+  "top_end_airports": [
+   [
+    "EGNM",
+    "LEEDS BRADFORD",
+    175
+   ]
+  ],
+  "truncated_days": []
+ },
+ "lincolnshire": {
+  "n_total_flights": 120,
+  "n_agl_present": 120,
+  "agl_avail_frac": 1.0,
+  "n_landed_recognized_airport": 80,
+  "n_landed_with_last_agl": 80,
+  "last_agl_quartiles_ft": {
+   "q1": 111.931175,
+   "median": 230.5798,
+   "q3": 375.63870000000003
+  },
+  "min_agl_final_subseq_quartiles_ft": {
+   "q1": 37.979325,
+   "median": 210.38535,
+   "q3": 357.282425
+  },
+  "top_end_airports": [
+   [
+    "EGNJ",
+    "HUMBERSIDE",
+    42
+   ],
+   [
+    "EGCF",
+    "SANDTOFT",
+    36
+   ],
+   [
+    "EGCS",
+    "STURGATE",
+    2
+   ]
+  ],
+  "truncated_days": []
+ },
+ "snowdonia": {
+  "n_total_flights": 61,
+  "n_agl_present": 61,
+  "agl_avail_frac": 1.0,
+  "n_landed_recognized_airport": 51,
+  "n_landed_with_last_agl": 51,
+  "last_agl_quartiles_ft": {
+   "q1": -39.0921,
+   "median": 12.4905,
+   "q3": 83.1554
+  },
+  "min_agl_final_subseq_quartiles_ft": {
+   "q1": -57.0977,
+   "median": 8.1191,
+   "q3": 81.8049
+  },
+  "top_end_airports": [
+   [
+    "EGCK",
+    "CAERNARFON",
+    51
+   ]
+  ],
+  "truncated_days": []
+ },
+ "wiltshire": {
+  "n_total_flights": 207,
+  "n_agl_present": 207,
+  "agl_avail_frac": 1.0,
+  "n_landed_recognized_airport": 75,
+  "n_landed_with_last_agl": 75,
+  "last_agl_quartiles_ft": {
+   "q1": 366.2452,
+   "median": 696.3949,
+   "q3": 905.4739
+  },
+  "min_agl_final_subseq_quartiles_ft": {
+   "q1": 321.6794,
+   "median": 548.7096,
+   "q3": 898.4331
+  },
+  "top_end_airports": [
+   [
+    "EGLS",
+    "OLD SARUM",
+    29
+   ],
+   [
+    "EGDJ",
+    "UPAVON",
+    29
+   ],
+   [
+    "EGVP",
+    "MIDDLE WALLOP",
+    9
+   ],
+   [
+    "EGHO",
+    "THRUXTON",
+    8
+   ]
+  ],
+  "truncated_days": []
+ }
+}

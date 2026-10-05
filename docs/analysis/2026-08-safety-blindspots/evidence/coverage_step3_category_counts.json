@@ -1,0 +1,340 @@
+[
+ {
+  "area": "snowdonia",
+  "day": "2026-06-20",
+  "n_total": 150,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A3": 72,
+   "A5": 26,
+   "A1": 28,
+   "A7": 9,
+   "null": 8,
+   "A2": 7
+  },
+  "n_a1": 28,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "snowdonia",
+  "day": "2026-07-18",
+  "n_total": 137,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 27,
+   "A3": 61,
+   "A7": 23,
+   "A0": 1,
+   "A2": 9,
+   "A1": 10,
+   "null": 6
+  },
+  "n_a1": 10,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "snowdonia",
+  "day": "2026-01-17",
+  "n_total": 132,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 25,
+   "A3": 78,
+   "A7": 5,
+   "A1": 20,
+   "null": 4
+  },
+  "n_a1": 20,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "great_glen",
+  "day": "2026-06-20",
+  "n_total": 117,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 61,
+   "A3": 26,
+   "A7": 2,
+   "A1": 9,
+   "A2": 19
+  },
+  "n_a1": 9,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "great_glen",
+  "day": "2026-07-18",
+  "n_total": 102,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 42,
+   "A7": 6,
+   "A3": 21,
+   "A2": 21,
+   "A1": 6,
+   "null": 1,
+   "B4": 1,
+   "A0": 2,
+   "A4": 2
+  },
+  "n_a1": 6,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "great_glen",
+  "day": "2026-01-17",
+  "n_total": 58,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A3": 27,
+   "A5": 19,
+   "A7": 1,
+   "A2": 8,
+   "A1": 2,
+   "null": 1
+  },
+  "n_a1": 2,
+  "n_a1_null_icao_type": 1
+ },
+ {
+  "area": "cheshire",
+  "day": "2026-06-20",
+  "n_total": 1430,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A3": 922,
+   "A5": 188,
+   "null": 48,
+   "A7": 31,
+   "A4": 2,
+   "A0": 9,
+   "B4": 11,
+   "A2": 110,
+   "A1": 105,
+   "B0": 4
+  },
+  "n_a1": 105,
+  "n_a1_null_icao_type": 2
+ },
+ {
+  "area": "cheshire",
+  "day": "2026-07-18",
+  "n_total": 1535,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 232,
+   "null": 57,
+   "A3": 970,
+   "A1": 111,
+   "A7": 30,
+   "A2": 116,
+   "A0": 7,
+   "B4": 9,
+   "B0": 2,
+   "A4": 1
+  },
+  "n_a1": 111,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "cheshire",
+  "day": "2026-01-17",
+  "n_total": 969,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 145,
+   "A3": 679,
+   "null": 20,
+   "A2": 68,
+   "A1": 40,
+   "B4": 3,
+   "A7": 12,
+   "A0": 1,
+   "A4": 1
+  },
+  "n_a1": 40,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "wiltshire",
+  "day": "2026-06-20",
+  "n_total": 441,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 147,
+   "A3": 118,
+   "A7": 14,
+   "null": 44,
+   "A1": 76,
+   "B4": 8,
+   "A2": 23,
+   "B1": 11
+  },
+  "n_a1": 76,
+  "n_a1_null_icao_type": 3
+ },
+ {
+  "area": "wiltshire",
+  "day": "2026-07-18",
+  "n_total": 575,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 125,
+   "null": 49,
+   "A3": 118,
+   "A7": 23,
+   "A1": 134,
+   "B4": 13,
+   "A2": 39,
+   "B1": 64,
+   "A0": 8,
+   "B0": 1,
+   "A4": 1
+  },
+  "n_a1": 134,
+  "n_a1_null_icao_type": 2
+ },
+ {
+  "area": "wiltshire",
+  "day": "2026-01-17",
+  "n_total": 278,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 132,
+   "A3": 89,
+   "A2": 7,
+   "A7": 7,
+   "null": 15,
+   "B4": 1,
+   "A1": 21,
+   "B1": 1,
+   "A4": 5
+  },
+  "n_a1": 21,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "lincolnshire",
+  "day": "2026-06-20",
+  "n_total": 414,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 58,
+   "A3": 144,
+   "A1": 107,
+   "A7": 7,
+   "null": 85,
+   "B4": 3,
+   "A2": 6,
+   "A0": 3,
+   "B1": 1
+  },
+  "n_a1": 107,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "lincolnshire",
+  "day": "2026-07-18",
+  "n_total": 366,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 75,
+   "A3": 144,
+   "A1": 83,
+   "null": 48,
+   "A2": 8,
+   "A7": 5,
+   "A0": 2,
+   "B0": 1
+  },
+  "n_a1": 83,
+  "n_a1_null_icao_type": 1
+ },
+ {
+  "area": "lincolnshire",
+  "day": "2026-01-17",
+  "n_total": 167,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 38,
+   "A3": 101,
+   "A1": 7,
+   "A2": 10,
+   "null": 3,
+   "A7": 8
+  },
+  "n_a1": 7,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "leeds",
+  "day": "2026-06-20",
+  "n_total": 359,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A3": 219,
+   "null": 34,
+   "A5": 49,
+   "A1": 22,
+   "A0": 2,
+   "A2": 26,
+   "B4": 2,
+   "A7": 5
+  },
+  "n_a1": 22,
+  "n_a1_null_icao_type": 0
+ },
+ {
+  "area": "leeds",
+  "day": "2026-07-18",
+  "n_total": 309,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A3": 216,
+   "A5": 12,
+   "null": 22,
+   "A2": 23,
+   "A1": 29,
+   "A7": 3,
+   "B4": 3,
+   "A0": 1
+  },
+  "n_a1": 29,
+  "n_a1_null_icao_type": 2
+ },
+ {
+  "area": "leeds",
+  "day": "2026-01-17",
+  "n_total": 221,
+  "pages": 1,
+  "truncated": false,
+  "category_counts": {
+   "A5": 48,
+   "A3": 144,
+   "A2": 15,
+   "A1": 8,
+   "null": 5,
+   "A4": 1
+  },
+  "n_a1": 8,
+  "n_a1_null_icao_type": 0
+ }
+]
